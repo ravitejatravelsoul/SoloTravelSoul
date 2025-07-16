@@ -1,0 +1,46 @@
+[
+    {
+        "id": "826f99ba-0e5b-4b36-b7e1-7b73c2f2ec0a",
+        "name": "Santa Monica Beach",
+        "description": "A famous sandy beach with a scenic pier, shops, and restaurants.",
+        "type": "Beach",
+        "state": "California",
+        "city": "Santa Monica",
+        "imageName": "santa_monica_beach",
+        "latitude": 34.011286,
+        "longitude": -118.492935
+    },
+    {
+        "id": "b8f7b1b3-4f5a-4e9b-812e-8e5f02e0a9c4",
+        "name": "Yosemite National Park",
+        "description": "World-renowned national park, great for hiking and breathtaking views.",
+        "type": "Hiking",
+        "state": "California",
+        "city": null,
+        "imageName": "yosemite",
+        "latitude": 37.8651,
+        "longitude": -119.5383
+    },
+    {
+        "id": "e2e2a63b-1c7a-4e37-9021-4b68b7d1f7c0",
+        "name": "Big Sur Coast",
+        "description": "Dramatic coastline ideal for scenic drives and beautiful beaches.",
+        "type": "Beach",
+        "state": "California",
+        "city": null,
+        "imageName": "big_sur",
+        "latitude": 36.3615,
+        "longitude": -121.8563
+    },
+    {
+        "id": "d45f1c0e-2bd1-41a0-9b3e-1c6b2d3ef441",
+        "name": "Runyon Canyon Park",
+        "description": "Popular hiking destination with panoramic views of Los Angeles.",
+        "type": "Hiking",
+        "state": "California",
+        "city": "Los Angeles",
+        "imageName": "runyon_canyon",
+        "latitude": 34.1053,
+        "longitude": -118.3480
+    }
+]
