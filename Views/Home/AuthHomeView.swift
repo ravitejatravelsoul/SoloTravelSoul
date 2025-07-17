@@ -5,6 +5,7 @@ struct AuthHomeView: View {
 
     var body: some View {
         VStack(spacing: 30) {
+            // Use CarouselView from CarouselView.swift, do NOT redeclare it here!
             CarouselView()
                 .frame(height: 220)
                 .padding(.top, 30)
@@ -30,26 +31,8 @@ struct AuthHomeView: View {
     }
 }
 
-struct CarouselView: View {
-    let images = ["travel1", "travel2", "travel3"] // Make sure these images exist in Assets.xcassets
-
-    @State private var index = 0
-
-    var body: some View {
-        TabView(selection: $index) {
-            ForEach(0..<images.count, id: \.self) { idx in
-                Image(images[idx])
-                    .resizable()
-                    .scaledToFill()
-                    .tag(idx)
-            }
-        }
-        .tabViewStyle(PageTabViewStyle())
-        .indexViewStyle(PageIndexViewStyle())
-        .clipShape(RoundedRectangle(cornerRadius: 18))
-        .shadow(radius: 6)
-    }
-}
+// REMOVE ANY struct CarouselView {...} FROM THIS FILE!
+// Only use the reference CarouselView() here.
 
 struct LoginForm: View {
     @AppStorage("isLoggedIn") private var isLoggedIn = false

@@ -6,7 +6,7 @@ struct HomeView: View {
             CarouselView()
                 .frame(height: 220)
                 .padding(.top, 30)
-            // Add any home page content here
+            // ... other home content
             Spacer()
         }
         .padding()

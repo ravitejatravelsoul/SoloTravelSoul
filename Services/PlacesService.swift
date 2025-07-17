@@ -1,69 +1,104 @@
 import Foundation
 import CoreLocation
 
+// MARK: - Google Places API (New) Models
+
 struct GooglePlace: Codable {
-    let name: String
-    let place_id: String
-    let geometry: Geometry
+    let id: String
+    let displayName: DisplayName?
+    let formattedAddress: String?
+    let location: LatLng?
+    let types: [String]?
+    let rating: Double?
+    let userRatingCount: Int?
     let photos: [Photo]?
-    let types: [String]
-    let vicinity: String?
-    
-    struct Geometry: Codable {
-        let location: Location
-        struct Location: Codable {
-            let lat: Double
-            let lng: Double
-        }
+
+    struct DisplayName: Codable {
+        let text: String?
+    }
+    struct LatLng: Codable {
+        let latitude: Double
+        let longitude: Double
     }
     struct Photo: Codable {
-        let photo_reference: String
+        let name: String?
     }
 }
 
 struct GooglePlacesResponse: Codable {
-    let results: [GooglePlace]
-    let status: String
+    let places: [GooglePlace]?
 }
 
 class PlacesService {
     static let shared = PlacesService()
-    let apiKey = "YOUR_GOOGLE_API_KEY_HERE" // Replace with your actual API key
+    let apiKey = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU" // <-- Replace with your actual API key
 
     func fetchAttractions(
         keyword: String,
-        location: CLLocationCoordinate2D,
-        radius: Int = 50000, // meters
-        type: String? = nil,
+        location: CLLocationCoordinate2D? = nil,
+        pageSize: Int = 10,
         completion: @escaping ([Attraction]?, Error?) -> Void
     ) {
-        var urlString = "https://maps.googleapis.com/maps/api/place/nearbysearch/json?"
-        urlString += "location=\(location.latitude),\(location.longitude)"
-        urlString += "&radius=\(radius)"
-        urlString += "&keyword=\(keyword.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
-        urlString += "&key=\(apiKey)"
-        if let type = type {
-            urlString += "&type=\(type)"
-        }
-        guard let url = URL(string: urlString) else {
+        guard let url = URL(string: "https://places.googleapis.com/v1/places:searchText?key=\(apiKey)") else {
             completion(nil, NSError(domain: "PlacesService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"]))
             return
         }
-        URLSession.shared.dataTask(with: url) { data, response, error in
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.addValue("places.displayName,places.id,places.formattedAddress,places.location,places.types,places.rating,places.userRatingCount,places.photos", forHTTPHeaderField: "X-Goog-FieldMask")
+
+        var requestBody: [String: Any] = [
+            "textQuery": keyword,
+            "pageSize": pageSize,
+            "languageCode": "en"
+        ]
+        if let location = location {
+            let radius = 50000
+            requestBody["locationBias"] = [
+                "circle": [
+                    "center": [
+                        "latitude": location.latitude,
+                        "longitude": location.longitude
+                    ],
+                    "radius": radius
+                ]
+            ]
+        }
+
+        // Debug: print outgoing JSON and headers
+        if let json = try? JSONSerialization.data(withJSONObject: requestBody, options: .prettyPrinted),
+           let jsonString = String(data: json, encoding: .utf8) {
+            print("DEBUG Request JSON: \(jsonString)")
+        }
+        print("DEBUG HEADERS: \(request.allHTTPHeaderFields ?? [:])")
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody, options: [])
+        } catch {
+            completion(nil, error)
+            return
+        }
+
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
             if let data = data {
+                if let rawString = String(data: data, encoding: .utf8) {
+                    print("RAW JSON RESPONSE: \(rawString)")
+                }
                 do {
                     let decoded = try JSONDecoder().decode(GooglePlacesResponse.self, from: data)
-                    let attractions = decoded.results.map { place in
+                    let attractions: [Attraction] = (decoded.places ?? []).map { place in
                         Attraction(
                             id: UUID(),
-                            name: place.name,
-                            description: place.vicinity ?? "",
+                            name: place.displayName?.text ?? "",
+                            description: place.formattedAddress ?? "",
                             type: keyword.capitalized,
                             state: "",
                             city: nil,
-                            imageName: place.photos?.first?.photo_reference ?? "",
-                            latitude: place.geometry.location.lat,
-                            longitude: place.geometry.location.lng
+                            imageName: place.photos?.first?.name ?? "",
+                            latitude: place.location?.latitude ?? 0.0,
+                            longitude: place.location?.longitude ?? 0.0
                         )
                     }
                     completion(attractions, nil)
@@ -73,13 +108,13 @@ class PlacesService {
             } else {
                 completion(nil, error)
             }
-        }.resume()
+        }
+        task.resume()
     }
-    
-    // Helper to get photo URL from photo_reference
+
     func photoURL(forReference ref: String, maxWidth: Int = 400) -> URL? {
         guard !ref.isEmpty else { return nil }
-        let urlString = "https://maps.googleapis.com/maps/api/place/photo?maxwidth=\(maxWidth)&photoreference=\(ref)&key=\(apiKey)"
+        let urlString = "https://places.googleapis.com/v1/\(ref)/media?key=\(apiKey)&maxWidthPx=\(maxWidth)"
         return URL(string: urlString)
     }
 }
