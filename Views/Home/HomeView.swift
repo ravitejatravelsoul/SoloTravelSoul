@@ -1,20 +1,14 @@
-//
-//  HomeView.swift
-//  SoloTravelSoul
-//
-//  Created by Raviteja Vemulapelli on 7/16/25.
-//
-
-
 import SwiftUI
 
 struct HomeView: View {
     var body: some View {
-        VStack {
-            Text("Welcome to SoloTravelSoul!")
-                .font(.largeTitle)
-            Text("Find and plan your next adventure.")
-                .foregroundColor(.secondary)
+        VStack(spacing: 30) {
+            CarouselView()
+                .frame(height: 220)
+                .padding(.top, 30)
+            // Add any home page content here
+            Spacer()
         }
+        .padding()
     }
 }

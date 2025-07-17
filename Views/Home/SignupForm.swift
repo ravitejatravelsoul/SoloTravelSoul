@@ -1,6 +1,15 @@
+//
+//  SignupForm.swift
+//  SoloTravelSoul
+//
+//  Created by Raviteja Vemulapelli on 7/16/25.
+//
+
+
 import SwiftUI
 
-struct SignupView: View {
+struct SignupForm: View {
+    @AppStorage("isLoggedIn") private var isLoggedIn = false
     @State private var firstName = ""
     @State private var lastName = ""
     @State private var dob = Date()
@@ -8,10 +17,6 @@ struct SignupView: View {
     @State private var stateOfResidence = ""
     @State private var email = ""
     @State private var password = ""
-    @State private var showAlert = false
-    @State private var alertMessage = ""
-    @AppStorage("isSignedUp") private var isSignedUp = false
-    @AppStorage("isLoggedIn") private var isLoggedIn = false
 
     let states = ["California", "Texas", "Florida", "New York", "Washington"]
 
@@ -24,32 +29,17 @@ struct SignupView: View {
         !password.isEmpty
     }
 
-    func signup() -> Bool {
-        // Accept any non-empty values for signup
-        return isFormValid
-    }
-
     var body: some View {
         VStack(spacing: 16) {
-            Text("Create Account")
-                .font(.largeTitle)
-                .padding(.top)
-
             HStack {
                 TextField("First Name", text: $firstName)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                 TextField("Last Name", text: $lastName)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
             }
-            .padding(.horizontal)
-
             DatePicker("Date of Birth", selection: $dob, displayedComponents: .date)
-                .padding(.horizontal)
-
             TextField("Address", text: $address)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
-                .padding(.horizontal)
-
             Picker("State of Residence", selection: $stateOfResidence) {
                 Text("Select a state").tag("")
                 ForEach(states, id: \.self) { state in
@@ -57,44 +47,19 @@ struct SignupView: View {
                 }
             }
             .pickerStyle(MenuPickerStyle())
-            .padding(.horizontal)
-
             TextField("Email", text: $email)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
                 .keyboardType(.emailAddress)
                 .autocapitalization(.none)
-                .padding(.horizontal)
-
+                .textFieldStyle(RoundedBorderTextFieldStyle())
             SecureField("Password", text: $password)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
-                .padding(.horizontal)
-
-            Button(action: {
-                if signup() {
-                    isSignedUp = true
+            Button("Sign Up") {
+                if isFormValid {
                     isLoggedIn = true
-                    alertMessage = "Sign up complete!"
-                } else {
-                    alertMessage = "Please fill all fields."
                 }
-                showAlert = true
-            }) {
-                Text("Sign Up")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(isFormValid ? Color.green : Color.gray)
-                    .cornerRadius(10)
-                    .padding(.horizontal)
             }
+            .buttonStyle(.borderedProminent)
             .disabled(!isFormValid)
-            .alert(isPresented: $showAlert) {
-                Alert(title: Text("Sign Up"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
-            }
-
-            Spacer()
         }
-        .navigationTitle("Sign Up")
     }
 }

@@ -4,6 +4,13 @@ struct LoginView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var showAlert = false
+    @State private var alertMessage = ""
+    @AppStorage("isLoggedIn") private var isLoggedIn = false
+
+    func validateCredentials(email: String, password: String) -> Bool {
+        // Accept any non-empty email and password for now
+        return !email.isEmpty && !password.isEmpty
+    }
 
     var body: some View {
         VStack(spacing: 20) {
@@ -22,6 +29,12 @@ struct LoginView: View {
                 .padding(.horizontal)
 
             Button(action: {
+                if validateCredentials(email: email, password: password) {
+                    isLoggedIn = true
+                    alertMessage = "Login successful!"
+                } else {
+                    alertMessage = "Email and password cannot be empty."
+                }
                 showAlert = true
             }) {
                 Text("Login")
@@ -33,8 +46,11 @@ struct LoginView: View {
                     .cornerRadius(10)
                     .padding(.horizontal)
             }
+            .disabled(email.isEmpty || password.isEmpty)
             .alert(isPresented: $showAlert) {
-                Alert(title: Text("Success"), message: Text("Login successful!"), dismissButton: .default(Text("OK")))
+                Alert(title: Text("Login"),
+                      message: Text(alertMessage),
+                      dismissButton: .default(Text("OK")))
             }
 
             Spacer()

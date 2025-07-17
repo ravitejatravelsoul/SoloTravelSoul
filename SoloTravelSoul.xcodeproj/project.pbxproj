@@ -8,8 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		8C9D1B742E260BDF00858387 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C714C1A2E25F09D0002CDCD /* ContentView.swift */; };
-		8C9D1B752E260C1400858387 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C714C1C2E25F0F10002CDCD /* LoginView.swift */; };
-		8C9D1B762E260C2000858387 /* SignupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C714C1B2E25F0DA0002CDCD /* SignupView.swift */; };
 		8C9D1B7A2E273E1A00858387 /* AuthHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9D1B792E273E1A00858387 /* AuthHomeView.swift */; };
 		8C9D1B832E27479F00858387 /* Trip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9D1B7B2E27444400858387 /* Trip.swift */; };
 		8C9D1B852E27492C00858387 /* PlannedTrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9D1B842E27492C00858387 /* PlannedTrip.swift */; };
@@ -42,8 +40,6 @@
 		8C714BF52E25EB4C0002CDCD /* SoloTravelSoulTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SoloTravelSoulTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8C714BFF2E25EB4D0002CDCD /* SoloTravelSoulUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SoloTravelSoulUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8C714C1A2E25F09D0002CDCD /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		8C714C1B2E25F0DA0002CDCD /* SignupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignupView.swift; sourceTree = "<group>"; };
-		8C714C1C2E25F0F10002CDCD /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		8C9D1B792E273E1A00858387 /* AuthHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthHomeView.swift; sourceTree = "<group>"; };
 		8C9D1B7B2E27444400858387 /* Trip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Trip.swift; sourceTree = "<group>"; };
 		8C9D1B842E27492C00858387 /* PlannedTrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannedTrip.swift; sourceTree = "<group>"; };
@@ -194,8 +190,6 @@
 				8C9D1B8C2E274ADE00858387 /* RootTabView.swift */,
 				8C9D1B792E273E1A00858387 /* AuthHomeView.swift */,
 				8C714C1A2E25F09D0002CDCD /* ContentView.swift */,
-				8C714C1C2E25F0F10002CDCD /* LoginView.swift */,
-				8C714C1B2E25F0DA0002CDCD /* SignupView.swift */,
 			);
 			path = Home;
 			sourceTree = "<group>";
@@ -351,10 +345,8 @@
 			files = (
 				8C9D1BA42E27792800858387 /* PlacesService.swift in Sources */,
 				8C9D1B8D2E274ADE00858387 /* RootTabView.swift in Sources */,
-				8C9D1B762E260C2000858387 /* SignupView.swift in Sources */,
 				8C9D1B852E27492C00858387 /* PlannedTrip.swift in Sources */,
 				8C9D1B9A2E276ECD00858387 /* Attraction.swift in Sources */,
-				8C9D1B752E260C1400858387 /* LoginView.swift in Sources */,
 				8C9D1B832E27479F00858387 /* Trip.swift in Sources */,
 				8C9D1B7A2E273E1A00858387 /* AuthHomeView.swift in Sources */,
 				8C9D1B742E260BDF00858387 /* ContentView.swift in Sources */,
