@@ -370,8 +370,7 @@
 				8CDB231D2E28BADA00949D00 /* CarouselView.swift in Sources */,
 				8CDB23192E28AF5500949D00 /* ExploreView.swift in Sources */,
 				8CDB231B2E28B0CD00949D00 /* TripsView.swift in Sources */,
-				8C02E0FF2E29C36B000C4AA9 /* PlaceSearchView.swift in Sources */,
-			);
+
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		8C714BF12E25EB4C0002CDCD /* Sources */ = {
