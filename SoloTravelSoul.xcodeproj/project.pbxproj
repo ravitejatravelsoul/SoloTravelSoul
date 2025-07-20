@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		8C02E0FD2E29BE8E000C4AA9 /* GooglePlacesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C02E0FC2E29BE8E000C4AA9 /* GooglePlacesService.swift */; };
+		8C02E0FF2E29C36B000C4AA9 /* PlaceSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C02E0FE2E29C36B000C4AA9 /* PlaceSearchView.swift */; };
 		8C9D1B742E260BDF00858387 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C714C1A2E25F09D0002CDCD /* ContentView.swift */; };
 		8C9D1B7A2E273E1A00858387 /* AuthHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9D1B792E273E1A00858387 /* AuthHomeView.swift */; };
 		8C9D1B832E27479F00858387 /* Trip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9D1B7B2E27444400858387 /* Trip.swift */; };
@@ -39,6 +41,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		8C02E0FC2E29BE8E000C4AA9 /* GooglePlacesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GooglePlacesService.swift; sourceTree = "<group>"; };
+		8C02E0FE2E29C36B000C4AA9 /* PlaceSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceSearchView.swift; sourceTree = "<group>"; };
 		8C714BE82E25EB480002CDCD /* SoloTravelSoul.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SoloTravelSoul.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8C714BF52E25EB4C0002CDCD /* SoloTravelSoulTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SoloTravelSoulTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8C714BFF2E25EB4D0002CDCD /* SoloTravelSoulUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SoloTravelSoulUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -149,6 +153,7 @@
 		8C714C122E25EB7E0002CDCD /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				8C02E0FE2E29C36B000C4AA9 /* PlaceSearchView.swift */,
 				8C9D1BAB2E277DF900858387 /* Profile */,
 				8C9D1B9F2E27773D00858387 /* Discover */,
 				8C9D1B7E2E27449500858387 /* Trips */,
@@ -184,6 +189,7 @@
 		8C714C162E25EBEB0002CDCD /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				8C02E0FC2E29BE8E000C4AA9 /* GooglePlacesService.swift */,
 				8C9D1B9E2E27707500858387 /* PlacesService.swift */,
 			);
 			path = Services;
@@ -359,11 +365,12 @@
 				8C9D1B832E27479F00858387 /* Trip.swift in Sources */,
 				8C9D1B7A2E273E1A00858387 /* AuthHomeView.swift in Sources */,
 				8C9D1B742E260BDF00858387 /* ContentView.swift in Sources */,
+				8C02E0FD2E29BE8E000C4AA9 /* GooglePlacesService.swift in Sources */,
 				8C9D1BAA2E277DC700858387 /* HomeView.swift in Sources */,
 				8CDB231D2E28BADA00949D00 /* CarouselView.swift in Sources */,
 				8CDB23192E28AF5500949D00 /* ExploreView.swift in Sources */,
 				8CDB231B2E28B0CD00949D00 /* TripsView.swift in Sources */,
-			);
+
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		8C714BF12E25EB4C0002CDCD /* Sources */ = {
