@@ -5,6 +5,8 @@ struct DiscoverView: View {
     @State private var attractions: [Attraction] = []
     @State private var isLoading = false
     @State private var errorMessage: String? = nil
+    @State private var searchText: String = ""
+    @State private var location: CLLocationCoordinate2D = CLLocationCoordinate2D(latitude: 40.7128, longitude: -74.0060) // Default: NYC
 
     var body: some View {
         NavigationView {
@@ -25,6 +27,10 @@ struct DiscoverView: View {
 #endif
                 }
                 .listStyle(PlainListStyle())
+                .searchable(text: $searchText, prompt: "Search attractions (e.g. museum, park)")
+                .onSubmit(of: .search) {
+                    loadAttractions()
+                }
             }
             .navigationTitle("Discover")
             .onAppear {
@@ -36,9 +42,8 @@ struct DiscoverView: View {
     func loadAttractions() {
         isLoading = true
         errorMessage = nil
-        // Example: search for "museum" near a coordinate (make this dynamic as you wish)
-        let sampleLocation = CLLocationCoordinate2D(latitude: 40.7128, longitude: -74.0060) // New York City
-        PlacesService.shared.fetchAttractions(keyword: "museum", location: sampleLocation, pageSize: 10) { fetchedAttractions, error in
+        let keyword = searchText.isEmpty ? "museum" : searchText
+        PlacesService.shared.fetchAttractions(keyword: keyword, location: location, pageSize: 10) { fetchedAttractions, error in
             DispatchQueue.main.async {
                 isLoading = false
                 if let error = error {
