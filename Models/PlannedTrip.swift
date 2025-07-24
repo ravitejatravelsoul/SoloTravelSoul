@@ -1,30 +1,60 @@
 import Foundation
-import CoreLocation
 
-struct PlannedTrip: Identifiable, Codable, Equatable {
+struct PlannedTrip: Identifiable, Codable, Hashable {
     let id: UUID
     var destination: String
-    var date: Date
+    var startDate: Date
+    var endDate: Date
     var notes: String
+    var itinerary: [ItineraryDay]
     var photoData: Data?
     var latitude: Double?
     var longitude: Double?
+    var isPlanned: Bool { true }
 
-    init(
-        id: UUID = UUID(),
-        destination: String,
-        date: Date,
-        notes: String,
-        photoData: Data? = nil,
-        latitude: Double? = nil,
-        longitude: Double? = nil
-    ) {
-        self.id = id
-        self.destination = destination
-        self.date = date
-        self.notes = notes
-        self.photoData = photoData
-        self.latitude = latitude
-        self.longitude = longitude
+    // Sample Data
+    static func samplePlannedTrips() -> [PlannedTrip] {
+        [
+            PlannedTrip(
+                id: UUID(),
+                destination: "Paris",
+                startDate: Date(),
+                endDate: Calendar.current.date(byAdding: .day, value: 5, to: Date())!,
+                notes: "Excited for the trip!",
+                itinerary: []
+            ),
+            PlannedTrip(
+                id: UUID(),
+                destination: "London",
+                startDate: Date(),
+                endDate: Calendar.current.date(byAdding: .day, value: 3, to: Date())!,
+                notes: "Business trip.",
+                itinerary: []
+            )
+        ]
+    }
+
+    static func sampleHistoryTrips() -> [PlannedTrip] {
+        [
+            PlannedTrip(
+                id: UUID(),
+                destination: "New York",
+                startDate: Calendar.current.date(byAdding: .day, value: -10, to: Date())!,
+                endDate: Calendar.current.date(byAdding: .day, value: -5, to: Date())!,
+                notes: "Had a great time.",
+                itinerary: []
+            )
+        ]
+    }
+
+    static func sampleNewPlanned() -> PlannedTrip {
+        PlannedTrip(
+            id: UUID(),
+            destination: "New Trip",
+            startDate: Date(),
+            endDate: Calendar.current.date(byAdding: .day, value: 1, to: Date())!,
+            notes: "",
+            itinerary: []
+        )
     }
 }

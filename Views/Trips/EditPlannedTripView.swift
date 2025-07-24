@@ -4,7 +4,7 @@ import MapKit
 
 struct EditPlannedTripView: View {
     @Environment(\.dismiss) var dismiss
-    @State var trip: PlannedTrip
+    @Binding var trip: PlannedTrip
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var selectedCoordinate: CLLocationCoordinate2D?
 
@@ -17,8 +17,12 @@ struct EditPlannedTripView: View {
                     TextField("e.g. Paris, Tokyo, Sydney", text: $trip.destination)
                         .autocapitalization(.words)
                 }
-                Section(header: Label("Date", systemImage: "calendar")) {
-                    DatePicker("Trip Date", selection: $trip.date, displayedComponents: .date)
+                Section(header: Label("Start Date", systemImage: "calendar")) {
+                    DatePicker("Trip Start", selection: $trip.startDate, displayedComponents: .date)
+                        .accentColor(.accentColor)
+                }
+                Section(header: Label("End Date", systemImage: "calendar")) {
+                    DatePicker("Trip End", selection: $trip.endDate, in: trip.startDate..., displayedComponents: .date)
                         .accentColor(.accentColor)
                 }
                 Section(header: Label("Notes", systemImage: "note.text")) {
@@ -61,19 +65,21 @@ struct EditPlannedTripView: View {
                     }
                 }
                 Section(header: Label("Map Location (optional)", systemImage: "map")) {
-                    LocationPickerView(coordinate: Binding(
-                        get: {
-                            if let lat = trip.latitude, let lon = trip.longitude {
-                                return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+                    LocationPickerView(
+                        coordinate: Binding<CLLocationCoordinate2D?>(
+                            get: {
+                                if let lat = trip.latitude, let lon = trip.longitude {
+                                    return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+                                }
+                                return selectedCoordinate
+                            },
+                            set: { newCoord in
+                                selectedCoordinate = newCoord
+                                trip.latitude = newCoord?.latitude
+                                trip.longitude = newCoord?.longitude
                             }
-                            return selectedCoordinate
-                        },
-                        set: { newCoord in
-                            selectedCoordinate = newCoord
-                            trip.latitude = newCoord?.latitude
-                            trip.longitude = newCoord?.longitude
-                        }
-                    ))
+                        )
+                    )
                     .frame(height: 180)
                 }
             }

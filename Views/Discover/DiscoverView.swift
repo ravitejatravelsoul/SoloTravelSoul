@@ -1,55 +1,76 @@
 import SwiftUI
-import CoreLocation
 
 struct DiscoverView: View {
-    @State private var attractions: [Attraction] = []
-    @State private var isLoading = false
-    @State private var errorMessage: String? = nil
-    @State private var searchText: String = ""
-    @State private var location: CLLocationCoordinate2D = CLLocationCoordinate2D(latitude: 40.7128, longitude: -74.0060) // Default: NYC
+    @EnvironmentObject var tripViewModel: TripViewModel
+    @StateObject private var searchViewModel: PlaceSearchViewModel
+    @State private var selectedTrip: PlannedTrip?
+    @State private var selectedDate: Date = Date()
+
+    init() {
+        // This will be replaced by @EnvironmentObject onAppear
+        _searchViewModel = StateObject(wrappedValue: PlaceSearchViewModel(tripViewModel: TripViewModel()))
+    }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack {
-                if isLoading {
-                    ProgressView("Loading Attractions...")
-                        .padding()
+                TextField("Search places...", text: $searchViewModel.searchText)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .padding([.horizontal, .top])
+
+                if searchViewModel.isLoading {
+                    ProgressView("Searching...")
+                        .padding(.top)
                 }
-                if let errorMessage = errorMessage {
-                    Text(errorMessage)
+
+                if let error = searchViewModel.errorMessage {
+                    Text(error)
                         .foregroundColor(.red)
-                        .padding()
+                        .padding(.top)
                 }
-                List(attractions) { attraction in
-                    AttractionCardView(attraction: attraction)
-#if canImport(UIKit)
-                    .listRowSeparator(.hidden)
-#endif
+
+                List(searchViewModel.results) { place in
+                    NavigationLink(destination: PlaceDetailView(
+                        place: place,
+                        onAddToItinerary: {
+                            searchViewModel.selectedPlace = place
+                            searchViewModel.showAddToItinerarySheet = true
+                        })
+                    ) {
+                        VStack(alignment: .leading) {
+                            Text(place.name)
+                                .font(.headline)
+                            if let address = place.address {
+                                Text(address)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
                 }
-                .listStyle(PlainListStyle())
-                .searchable(text: $searchText, prompt: "Search attractions (e.g. museum, park)")
-                .onSubmit(of: .search) {
-                    loadAttractions()
-                }
+                .listStyle(.plain)
             }
             .navigationTitle("Discover")
             .onAppear {
-                loadAttractions()
+                // Inject correct instance on appear
+                searchViewModel.setTripViewModel(tripViewModel)
             }
-        }
-    }
-
-    func loadAttractions() {
-        isLoading = true
-        errorMessage = nil
-        let keyword = searchText.isEmpty ? "museum" : searchText
-        PlacesService.shared.fetchAttractions(keyword: keyword, location: location, pageSize: 10) { fetchedAttractions, error in
-            DispatchQueue.main.async {
-                isLoading = false
-                if let error = error {
-                    errorMessage = error.localizedDescription
-                } else if let fetchedAttractions = fetchedAttractions {
-                    attractions = fetchedAttractions
+            .sheet(isPresented: $searchViewModel.showAddToItinerarySheet) {
+                if let selectedPlace = searchViewModel.selectedPlace {
+                    AddToItinerarySheet(
+                        trips: searchViewModel.trips, // <--- THIS IS THE KEY LINE
+                        place: selectedPlace,
+                        selectedTrip: $selectedTrip,
+                        selectedDate: $selectedDate,
+                        onAddExisting: { trip, date, place in
+                            searchViewModel.addPlaceToTrip(tripId: trip.id, date: date, place: place)
+                            searchViewModel.showAddToItinerarySheet = false
+                        },
+                        onAddNew: { name, notes, date, place in
+                            searchViewModel.createTripAndAddPlace(name: name, notes: notes, date: date, place: place)
+                            searchViewModel.showAddToItinerarySheet = false
+                        }
+                    )
                 }
             }
         }

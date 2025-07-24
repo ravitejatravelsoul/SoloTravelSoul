@@ -1,28 +1,30 @@
 import SwiftUI
 
 struct TripDetailView: View {
-    @State var trip: Trip
-    var onSave: (Trip) -> Void
-    @Environment(\.presentationMode) var presentationMode
+    let trip: PlannedTrip
 
     var body: some View {
-        NavigationView {
-            Form {
-                TextField("Destination", text: $trip.destination)
-                DatePicker("Start Date", selection: $trip.startDate, displayedComponents: .date)
-                DatePicker("End Date", selection: $trip.endDate, displayedComponents: .date)
-                TextField("Notes", text: $trip.notes)
-                Picker("Type", selection: $trip.isPlanned) {
-                    Text("Planned Trip").tag(true)
-                    Text("Travel History").tag(false)
+        VStack(alignment: .leading) {
+            Text(trip.destination).font(.largeTitle).bold()
+            Text("From \(trip.startDate, style: .date) to \(trip.endDate, style: .date)")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            Divider()
+            ForEach(trip.itinerary) { day in
+                VStack(alignment: .leading) {
+                    Text(day.date, style: .date)
+                        .font(.headline)
+                    ForEach(day.places) { place in
+                        Text(place.name)
+                            .font(.subheadline)
+                            .padding(.leading)
+                    }
                 }
-                .pickerStyle(SegmentedPickerStyle())
+                .padding(.vertical, 4)
             }
-            .navigationTitle("Trip Details")
-            .navigationBarItems(trailing: Button("Save") {
-                onSave(trip)
-                presentationMode.wrappedValue.dismiss()
-            })
+            Spacer()
         }
+        .padding()
+        .navigationTitle("Trip Details")
     }
 }

@@ -1,32 +1,22 @@
 import SwiftUI
 
 struct TripRowView: View {
-    let trip: Trip
+    let trip: PlannedTrip
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(trip.destination)
-                    .font(.headline)
-                Text("\(trip.startDate, formatter: Self.dateFormatter) - \(trip.endDate, formatter: Self.dateFormatter)")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                if !trip.notes.isEmpty {
-                    Text(trip.notes)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            Spacer()
-            Image(systemName: trip.isPlanned ? "airplane.departure" : "clock.arrow.circlepath")
-                .foregroundColor(trip.isPlanned ? .blue : .gray)
+        VStack(alignment: .leading) {
+            Text(trip.destination)
+                .font(.headline)
+            Text("Start: \(trip.startDate, formatter: dateFormatter)")
+                .font(.subheadline)
+            Text("End: \(trip.endDate, formatter: dateFormatter)")
+                .font(.subheadline)
         }
-        .padding(.vertical, 4)
     }
 
-    static let dateFormatter: DateFormatter = {
+    private var dateFormatter: DateFormatter {
         let df = DateFormatter()
         df.dateStyle = .medium
         return df
-    }()
+    }
 }

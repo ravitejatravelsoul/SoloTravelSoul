@@ -7,7 +7,8 @@ struct Trip: Identifiable, Codable, Equatable {
     var endDate: Date
     var notes: String
     var isPlanned: Bool // true for planned, false for history
-
+    var latitude: Double?
+    var longitude: Double?
     static func samplePlannedTrips() -> [Trip] {
         [
             Trip(id: UUID(), destination: "San Francisco", startDate: Date().addingTimeInterval(86400 * 5), endDate: Date().addingTimeInterval(86400 * 10), notes: "Golden Gate Bridge visit", isPlanned: true),
