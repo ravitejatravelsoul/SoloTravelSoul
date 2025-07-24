@@ -399,8 +399,11 @@
 				8C3993792E2DC46300739CF8 /* TripViewModel.swift in Sources */,
 				8CDB231B2E28B0CD00949D00 /* TripsView.swift in Sources */,
 				8C02E0FF2E29C36B000C4AA9 /* PlaceSearchView.swift in Sources */,
+
 				8C3993B12E2DEC8A00739CF8 /* GooglePlacesAutocompleteView.swift in Sources */,
 			);
+			);
+ main
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		8C714BF12E25EB4C0002CDCD /* Sources */ = {
