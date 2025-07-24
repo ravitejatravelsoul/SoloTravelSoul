@@ -5,7 +5,8 @@ import MapKit
 struct AddPlannedTripView: View {
     @Environment(\.dismiss) var dismiss
     @State private var destination = ""
-    @State private var date = Date()
+    @State private var startDate = Date()
+    @State private var endDate = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
     @State private var notes = ""
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var photoData: Data?
@@ -20,8 +21,12 @@ struct AddPlannedTripView: View {
                     TextField("e.g. Paris, Tokyo, Sydney", text: $destination)
                         .autocapitalization(.words)
                 }
-                Section(header: Label("Date", systemImage: "calendar")) {
-                    DatePicker("Trip Date", selection: $date, displayedComponents: .date)
+                Section(header: Label("Start Date", systemImage: "calendar")) {
+                    DatePicker("Trip Start", selection: $startDate, displayedComponents: .date)
+                        .accentColor(.accentColor)
+                }
+                Section(header: Label("End Date", systemImage: "calendar")) {
+                    DatePicker("Trip End", selection: $endDate, in: startDate..., displayedComponents: .date)
                         .accentColor(.accentColor)
                 }
                 Section(header: Label("Notes", systemImage: "note.text")) {
@@ -76,12 +81,12 @@ struct AddPlannedTripView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
                         let trip = PlannedTrip(
+                            id: UUID(),
                             destination: destination,
-                            date: date,
+                            startDate: startDate,
+                            endDate: endDate,
                             notes: notes,
-                            photoData: photoData,
-                            latitude: selectedCoordinate?.latitude,
-                            longitude: selectedCoordinate?.longitude
+                            itinerary: []
                         )
                         onAdd(trip)
                         dismiss()

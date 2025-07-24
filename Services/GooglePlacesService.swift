@@ -1,17 +1,5 @@
 import Foundation
 
-struct Place: Identifiable, Codable {
-    let id: String
-    let name: String
-    let address: String?
-    let latitude: Double
-    let longitude: Double
-    let types: [String]?
-    let rating: Double?
-    let userRatingsTotal: Int?
-    let photoReference: String?
-}
-
 private struct PlacesSearchResponse: Codable {
     let places: [PlaceResult]?
 }
@@ -44,9 +32,9 @@ final class GooglePlacesService {
     static let shared = GooglePlacesService()
     private init() {}
 
-    private let apiKey = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU" // <-- Replace with your new API key
+    private let apiKey = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU" // <-- Replace with your real API key
 
-    // Optionally add locationBias parameter
+    /// Searches Google Places and returns [Place] using async/await.
     func searchPlaces(query: String, locationBias: (latitude: Double, longitude: Double)? = nil) async throws -> [Place] {
         guard let url = URL(string: "https://places.googleapis.com/v1/places:searchText?key=\(apiKey)") else {
             throw PlacesServiceError.invalidURL

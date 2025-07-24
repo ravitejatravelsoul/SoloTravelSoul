@@ -1,10 +1,14 @@
 import SwiftUI
 
 struct UpcomingTripsView: View {
-    @State private var plannedTrips: [Trip] = Trip.samplePlannedTrips()
-    @State private var travelHistory: [Trip] = Trip.sampleHistoryTrips()
-    @State private var editingTrip: Trip? = nil
+    @EnvironmentObject var tripViewModel: TripViewModel
+    @State private var editingTrip: PlannedTrip? = nil
     @State private var showEditor = false
+
+    var plannedTrips: [PlannedTrip] {
+        tripViewModel.trips
+    }
+    // If you want to support travel history, you can use a computed property here as well or extend your TripViewModel.
 
     var body: some View {
         NavigationView {
@@ -22,26 +26,15 @@ struct UpcomingTripsView: View {
                             }
                     }
                     .onDelete { indices in
-                        plannedTrips.remove(atOffsets: indices)
+                        indices.forEach { idx in
+                            let trip = plannedTrips[idx]
+                            tripViewModel.deleteTrip(withId: trip.id)
+                        }
                     }
                 }
 
-                Section(header: Text("Travel History")) {
-                    if travelHistory.isEmpty {
-                        Text("No travel history yet.")
-                            .foregroundColor(.secondary)
-                    }
-                    ForEach(travelHistory) { trip in
-                        TripRowView(trip: trip)
-                            .onTapGesture {
-                                editingTrip = trip
-                                showEditor = true
-                            }
-                    }
-                    .onDelete { indices in
-                        travelHistory.remove(atOffsets: indices)
-                    }
-                }
+                // Optional: If you want travel history, implement it in TripViewModel and display here.
+                // Section(header: Text("Travel History")) { ... }
             }
             .listStyle(InsetGroupedListStyle())
             .navigationTitle("Trips")
@@ -54,7 +47,7 @@ struct UpcomingTripsView: View {
             }
             .sheet(isPresented: $showEditor) {
                 if let trip = editingTrip {
-                    TripDetailView(trip: trip) { updatedTrip in
+                    PlannedTripDetailView(plannedTrip: trip) { updatedTrip in
                         saveTrip(updatedTrip)
                         showEditor = false
                     }
@@ -64,29 +57,13 @@ struct UpcomingTripsView: View {
     }
 
     func addPlannedTrip() {
-        let newTrip = Trip.sampleNewPlanned()
-        plannedTrips.append(newTrip)
+        let newTrip = PlannedTrip.sampleNewPlanned()
+        tripViewModel.addTrip(newTrip)
         editingTrip = newTrip
         showEditor = true
     }
 
-    func saveTrip(_ updatedTrip: Trip) {
-        if updatedTrip.isPlanned {
-            if let idx = plannedTrips.firstIndex(where: { $0.id == updatedTrip.id }) {
-                plannedTrips[idx] = updatedTrip
-            } else {
-                plannedTrips.append(updatedTrip)
-                // Remove from history if moved from history
-                travelHistory.removeAll { $0.id == updatedTrip.id }
-            }
-        } else {
-            if let idx = travelHistory.firstIndex(where: { $0.id == updatedTrip.id }) {
-                travelHistory[idx] = updatedTrip
-            } else {
-                travelHistory.append(updatedTrip)
-                // Remove from planned if moved from planned
-                plannedTrips.removeAll { $0.id == updatedTrip.id }
-            }
-        }
+    func saveTrip(_ updatedTrip: PlannedTrip) {
+        tripViewModel.updateTrip(updatedTrip)
     }
 }

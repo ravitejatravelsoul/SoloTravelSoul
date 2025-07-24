@@ -1,71 +1,44 @@
 import SwiftUI
-import MapKit
 
 struct PlannedTripDetailView: View {
-    let trip: PlannedTrip
-    var onEdit: (() -> Void)? = nil
+    var plannedTrip: PlannedTrip
+    var onSave: ((PlannedTrip) -> Void)?
 
-    @State private var region: MKCoordinateRegion
+    @State private var notes: String
 
-    init(trip: PlannedTrip, onEdit: (() -> Void)? = nil) {
-        self.trip = trip
-        self.onEdit = onEdit
-        if let lat = trip.latitude, let lon = trip.longitude {
-            _region = State(initialValue: MKCoordinateRegion(
-                center: CLLocationCoordinate2D(latitude: lat, longitude: lon),
-                span: MKCoordinateSpan(latitudeDelta: 0.3, longitudeDelta: 0.3)
-            ))
-        } else {
-            _region = State(initialValue: MKCoordinateRegion(
-                center: CLLocationCoordinate2D(latitude: 20, longitude: 0),
-                span: MKCoordinateSpan(latitudeDelta: 30, longitudeDelta: 30)
-            ))
-        }
+    init(plannedTrip: PlannedTrip, onSave: ((PlannedTrip) -> Void)? = nil) {
+        self.plannedTrip = plannedTrip
+        self.onSave = onSave
+        _notes = State(initialValue: plannedTrip.notes)
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                if let data = trip.photoData, let uiImage = UIImage(data: data) {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: 300, maxHeight: 200)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .shadow(radius: 6)
-                }
-                Text(trip.destination)
-                    .font(.title)
-                    .fontWeight(.bold)
-                Text(trip.date, style: .date)
-                    .font(.headline)
-                    .foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 16) {
+            Text(plannedTrip.destination)
+                .font(.largeTitle)
+                .bold()
+            Text("Start Date: \(plannedTrip.startDate, formatter: dateFormatter)")
+            Text("End Date: \(plannedTrip.endDate, formatter: dateFormatter)")
 
-                if let lat = trip.latitude, let lon = trip.longitude {
-                    Map(initialPosition: .region(region)) {
-                        Marker(trip.destination,
-                               coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon))
-                    }
-                    .frame(height: 200)
-                    .cornerRadius(12)
-                }
+            TextField("Notes", text: $notes)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
 
-                Text(trip.notes)
-                    .font(.body)
-                    .padding()
-                Spacer()
-                if let onEdit = onEdit {
-                    Button {
-                        onEdit()
-                    } label: {
-                        Label("Edit Plan", systemImage: "pencil")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.bottom)
-                }
+            Button("Save") {
+                var updatedTrip = plannedTrip
+                updatedTrip.notes = notes
+                onSave?(updatedTrip)
             }
-            .padding()
+            .padding(.top)
+
+            Spacer()
         }
-        .navigationTitle(trip.destination)
+        .padding()
+        .navigationTitle("Trip Details")
+    }
+
+    private var dateFormatter: DateFormatter {
+        let df = DateFormatter()
+        df.dateStyle = .medium
+        return df
     }
 }

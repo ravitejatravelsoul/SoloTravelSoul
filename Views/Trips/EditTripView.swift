@@ -1,4 +1,5 @@
 import SwiftUI
+import GooglePlaces
 
 struct EditTripView: View {
     @Environment(\.presentationMode) var presentationMode
@@ -6,11 +7,17 @@ struct EditTripView: View {
 
     var onSave: (Trip) -> Void
 
+    @State private var showAutocomplete = false
+
     var body: some View {
         NavigationView {
             Form {
                 Section(header: Text("Destination")) {
                     TextField("Enter destination", text: $trip.destination)
+                        .autocapitalization(.words)
+                    Button("Search Place") {
+                        showAutocomplete = true
+                    }
                 }
                 Section(header: Text("Dates")) {
                     DatePicker("Start Date", selection: $trip.startDate, displayedComponents: .date)
@@ -39,6 +46,15 @@ struct EditTripView: View {
                 }
                 .disabled(trip.destination.isEmpty)
             )
+            .sheet(isPresented: $showAutocomplete) {
+                GooglePlacesAutocompleteView { place in
+                    trip.destination = place.name ?? ""
+                    let coordinate = place.coordinate
+                    trip.latitude = coordinate.latitude
+                    trip.longitude = coordinate.longitude
+                    showAutocomplete = false
+                }
+            }
         }
     }
 }

@@ -3,7 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>We use your location to help you pick trip destinations on the map.</string>
+	<string>his app needs your location to search for places nearby.</string>
+	<key>GMSApiKey</key>
+	<string>AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU</string>
 	<key>LSApplicationCategoryType</key>
 	<string></string>
 	<key>CFBundleDevelopmentRegion</key>
