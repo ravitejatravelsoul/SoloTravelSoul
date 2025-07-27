@@ -1,22 +1,17 @@
 import Foundation
 import Combine
+import CoreLocation
 
 class PlaceSearchViewModel: ObservableObject {
     @Published var searchText: String = ""
-    @Published var results: [Place] = []
+    @Published var results: [Place] = [] // Uses your unified Place model
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
-
-    // For Add to Itinerary
     @Published var showAddToItinerarySheet: Bool = false
-    @Published var selectedPlace: Place?
+    @Published var selectedPlace: Place? = nil
 
     private var cancellables = Set<AnyCancellable>()
     private var tripViewModel: TripViewModel
-
-    var trips: [PlannedTrip] {
-        tripViewModel.trips
-    }
 
     init(tripViewModel: TripViewModel) {
         self.tripViewModel = tripViewModel
@@ -36,7 +31,7 @@ class PlaceSearchViewModel: ObservableObject {
 
     @MainActor
     func searchPlaces(query: String) async {
-        guard !query.isEmpty else {
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
             results = []
             errorMessage = nil
             return
@@ -53,20 +48,24 @@ class PlaceSearchViewModel: ObservableObject {
         isLoading = false
     }
 
-    func addPlaceToTrip(tripId: UUID, date: Date, place: Place) {
-        tripViewModel.addPlaceToTrip(tripId: tripId, date: date, place: place)
-    }
-
-    func createTripAndAddPlace(name: String, notes: String, date: Date, place: Place) {
-        let newTrip = PlannedTrip(
-            id: UUID(),
-            destination: name,
-            startDate: date,
-            endDate: date,
-            notes: notes,
-            itinerary: []
-        )
-        tripViewModel.addTrip(newTrip)
-        tripViewModel.addPlaceToTrip(tripId: newTrip.id, date: date, place: place)
+    /// Fetch top places for a city or country (returns top 15 results)
+    @MainActor
+    func fetchTopPlaces(for location: String) async {
+        guard !location.trimmingCharacters(in: .whitespaces).isEmpty else {
+            results = []
+            errorMessage = nil
+            return
+        }
+        isLoading = true
+        errorMessage = nil
+        do {
+            // Use smart query for Google Places (no geocode/location bias!)
+            let places = try await GooglePlacesService.shared.fetchTopPlaces(for: location)
+            self.results = Array(places.prefix(15))
+        } catch {
+            errorMessage = error.localizedDescription
+            results = []
+        }
+        isLoading = false
     }
 }

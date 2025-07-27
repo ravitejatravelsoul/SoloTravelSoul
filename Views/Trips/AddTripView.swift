@@ -6,9 +6,9 @@ struct AddTripView: View {
     @State private var startDate: Date = Date()
     @State private var endDate: Date = Date().addingTimeInterval(86400)
     @State private var notes: String = ""
-    @State private var isPlanned: Bool = true
+    // Remove isPlanned: all trips created here are PlannedTrip
 
-    var onSave: (Trip) -> Void
+    var onSave: (PlannedTrip) -> Void
 
     var body: some View {
         NavigationView {
@@ -23,13 +23,6 @@ struct AddTripView: View {
                 Section(header: Text("Notes")) {
                     TextField("Notes", text: $notes)
                 }
-                Section(header: Text("Trip Type")) {
-                    Picker("Type", selection: $isPlanned) {
-                        Text("Planned Trip").tag(true)
-                        Text("Travel History").tag(false)
-                    }
-                    .pickerStyle(SegmentedPickerStyle())
-                }
             }
             .navigationTitle("Add Trip")
             .navigationBarTitleDisplayMode(.inline)
@@ -38,13 +31,16 @@ struct AddTripView: View {
                     presentationMode.wrappedValue.dismiss()
                 },
                 trailing: Button("Save") {
-                    let newTrip = Trip(
+                    let newTrip = PlannedTrip(
                         id: UUID(),
                         destination: destination,
                         startDate: startDate,
                         endDate: endDate,
                         notes: notes,
-                        isPlanned: isPlanned
+                        itinerary: [],
+                        photoData: nil,
+                        latitude: nil,
+                        longitude: nil
                     )
                     onSave(newTrip)
                     presentationMode.wrappedValue.dismiss()

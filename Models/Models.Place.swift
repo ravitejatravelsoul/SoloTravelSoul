@@ -1,6 +1,6 @@
 import Foundation
 
-struct Place: Identifiable, Codable, Hashable {
+struct Place: Identifiable, Codable, Hashable, Equatable {
     let id: String
     let name: String
     let address: String?

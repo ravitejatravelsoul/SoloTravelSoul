@@ -15,9 +15,19 @@
 		8C3993792E2DC46300739CF8 /* TripViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C3993782E2DC46300739CF8 /* TripViewModel.swift */; };
 		8C3993802E2DCE4500739CF8 /* ItineraryPlace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C39937F2E2DCE4500739CF8 /* ItineraryPlace.swift */; };
 		8C3993B12E2DEC8A00739CF8 /* GooglePlacesAutocompleteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C3993B02E2DEC8A00739CF8 /* GooglePlacesAutocompleteView.swift */; };
+		8C75F1392E32E9A5001D915E /* HomeGreetingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F1382E32E9A5001D915E /* HomeGreetingView.swift */; };
+		8C75F13B2E32EAE9001D915E /* NextTripOverviewCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F13A2E32EAE9001D915E /* NextTripOverviewCard.swift */; };
+		8C75F13D2E32F15F001D915E /* QuickActionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F13C2E32F15F001D915E /* QuickActionView.swift */; };
+		8C75F13F2E32F244001D915E /* RecentTripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F13E2E32F244001D915E /* RecentTripsView.swift */; };
+		8C75F1412E32F25A001D915E /* TravelJournalPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F1402E32F25A001D915E /* TravelJournalPreview.swift */; };
+		8C75F1432E32F278001D915E /* DiscoverInspirationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F1422E32F278001D915E /* DiscoverInspirationView.swift */; };
+		8C75F1472E32F64F001D915E /* ItineraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F1462E32F64F001D915E /* ItineraryView.swift */; };
+		8C75F14B2E32F867001D915E /* JournalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F14A2E32F867001D915E /* JournalView.swift */; };
+		8C75F1512E3333E3001D915E /* PlacePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F1502E3333E3001D915E /* PlacePickerView.swift */; };
+		8C75F1532E344149001D915E /* ItineraryOptimizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F1522E344149001D915E /* ItineraryOptimizer.swift */; };
+		8C75F1592E35AC88001D915E /* AccessibleCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F1582E35AC88001D915E /* AccessibleCardView.swift */; };
 		8C9D1B742E260BDF00858387 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C714C1A2E25F09D0002CDCD /* ContentView.swift */; };
 		8C9D1B7A2E273E1A00858387 /* AuthHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9D1B792E273E1A00858387 /* AuthHomeView.swift */; };
-		8C9D1B832E27479F00858387 /* Trip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9D1B7B2E27444400858387 /* Trip.swift */; };
 		8C9D1B852E27492C00858387 /* PlannedTrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9D1B842E27492C00858387 /* PlannedTrip.swift */; };
 		8C9D1B8D2E274ADE00858387 /* RootTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9D1B8C2E274ADE00858387 /* RootTabView.swift */; };
 		8C9D1B982E27677B00858387 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 8C9D1B972E27677B00858387 /* Info.plist */; };
@@ -62,8 +72,18 @@
 		8C714BF52E25EB4C0002CDCD /* SoloTravelSoulTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SoloTravelSoulTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8C714BFF2E25EB4D0002CDCD /* SoloTravelSoulUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SoloTravelSoulUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8C714C1A2E25F09D0002CDCD /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		8C75F1382E32E9A5001D915E /* HomeGreetingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeGreetingView.swift; sourceTree = "<group>"; };
+		8C75F13A2E32EAE9001D915E /* NextTripOverviewCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NextTripOverviewCard.swift; sourceTree = "<group>"; };
+		8C75F13C2E32F15F001D915E /* QuickActionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionView.swift; sourceTree = "<group>"; };
+		8C75F13E2E32F244001D915E /* RecentTripsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentTripsView.swift; sourceTree = "<group>"; };
+		8C75F1402E32F25A001D915E /* TravelJournalPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelJournalPreview.swift; sourceTree = "<group>"; };
+		8C75F1422E32F278001D915E /* DiscoverInspirationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverInspirationView.swift; sourceTree = "<group>"; };
+		8C75F1462E32F64F001D915E /* ItineraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItineraryView.swift; sourceTree = "<group>"; };
+		8C75F14A2E32F867001D915E /* JournalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalView.swift; sourceTree = "<group>"; };
+		8C75F1502E3333E3001D915E /* PlacePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacePickerView.swift; sourceTree = "<group>"; };
+		8C75F1522E344149001D915E /* ItineraryOptimizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItineraryOptimizer.swift; sourceTree = "<group>"; };
+		8C75F1582E35AC88001D915E /* AccessibleCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibleCardView.swift; sourceTree = "<group>"; };
 		8C9D1B792E273E1A00858387 /* AuthHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthHomeView.swift; sourceTree = "<group>"; };
-		8C9D1B7B2E27444400858387 /* Trip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Trip.swift; sourceTree = "<group>"; };
 		8C9D1B842E27492C00858387 /* PlannedTrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannedTrip.swift; sourceTree = "<group>"; };
 		8C9D1B8C2E274ADE00858387 /* RootTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabView.swift; sourceTree = "<group>"; };
 		8C9D1B962E27677B00858387 /* Base */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Base; path = Base.lproj/Info.plist; sourceTree = "<group>"; };
@@ -173,6 +193,10 @@
 		8C714C122E25EB7E0002CDCD /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				8C75F1582E35AC88001D915E /* AccessibleCardView.swift */,
+				8C75F1502E3333E3001D915E /* PlacePickerView.swift */,
+				8C75F1462E32F64F001D915E /* ItineraryView.swift */,
+				8C75F14A2E32F867001D915E /* JournalView.swift */,
 				8C02E0FE2E29C36B000C4AA9 /* PlaceSearchView.swift */,
 				8C9D1BAB2E277DF900858387 /* Profile */,
 				8C9D1B9F2E27773D00858387 /* Discover */,
@@ -185,12 +209,12 @@
 		8C714C132E25EB970002CDCD /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				8C75F1522E344149001D915E /* ItineraryOptimizer.swift */,
 				8C39937F2E2DCE4500739CF8 /* ItineraryPlace.swift */,
 				8C3993762E2DC3EA00739CF8 /* ItineraryDay.swift */,
 				8C3993742E2DC3D300739CF8 /* Models.Place.swift */,
 				8C9D1B992E276ECD00858387 /* Attraction.swift */,
 				8C9D1B842E27492C00858387 /* PlannedTrip.swift */,
-				8C9D1B7B2E27444400858387 /* Trip.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -223,6 +247,12 @@
 		8C714C172E25EC0E0002CDCD /* Home */ = {
 			isa = PBXGroup;
 			children = (
+				8C75F1422E32F278001D915E /* DiscoverInspirationView.swift */,
+				8C75F1402E32F25A001D915E /* TravelJournalPreview.swift */,
+				8C75F13E2E32F244001D915E /* RecentTripsView.swift */,
+				8C75F13C2E32F15F001D915E /* QuickActionView.swift */,
+				8C75F13A2E32EAE9001D915E /* NextTripOverviewCard.swift */,
+				8C75F1382E32E9A5001D915E /* HomeGreetingView.swift */,
 				8CDB231C2E28BADA00949D00 /* CarouselView.swift */,
 				8CDB231A2E28B0CD00949D00 /* TripsView.swift */,
 				8CDB23182E28AF5500949D00 /* ExploreView.swift */,
@@ -382,28 +412,35 @@
 			files = (
 				8C9D1BA42E27792800858387 /* PlacesService.swift in Sources */,
 				8C9D1B8D2E274ADE00858387 /* RootTabView.swift in Sources */,
+				8C75F1432E32F278001D915E /* DiscoverInspirationView.swift in Sources */,
 				8C9D1B852E27492C00858387 /* PlannedTrip.swift in Sources */,
 				8C9D1B9A2E276ECD00858387 /* Attraction.swift in Sources */,
-				8C9D1B832E27479F00858387 /* Trip.swift in Sources */,
+				8C75F13D2E32F15F001D915E /* QuickActionView.swift in Sources */,
+				8C75F1512E3333E3001D915E /* PlacePickerView.swift in Sources */,
+				8C75F13F2E32F244001D915E /* RecentTripsView.swift in Sources */,
+				8C75F14B2E32F867001D915E /* JournalView.swift in Sources */,
 				8C9D1B7A2E273E1A00858387 /* AuthHomeView.swift in Sources */,
 				8C3993752E2DC3D300739CF8 /* Models.Place.swift in Sources */,
+				8C75F1472E32F64F001D915E /* ItineraryView.swift in Sources */,
+				8C75F13B2E32EAE9001D915E /* NextTripOverviewCard.swift in Sources */,
+				8C75F1412E32F25A001D915E /* TravelJournalPreview.swift in Sources */,
 				8C2EC34A2E31E4500094CCDB /* PlaceSearchViewModel.swift in Sources */,
 				8C9D1B742E260BDF00858387 /* ContentView.swift in Sources */,
 				8CAA0E1C2E2F31EF0015B571 /* AppDelegate.swift in Sources */,
 				8C02E0FD2E29BE8E000C4AA9 /* GooglePlacesService.swift in Sources */,
+				8C75F1592E35AC88001D915E /* AccessibleCardView.swift in Sources */,
 				8C9D1BAA2E277DC700858387 /* HomeView.swift in Sources */,
 				8C3993802E2DCE4500739CF8 /* ItineraryPlace.swift in Sources */,
 				8C3993772E2DC3EA00739CF8 /* ItineraryDay.swift in Sources */,
 				8CDB231D2E28BADA00949D00 /* CarouselView.swift in Sources */,
 				8CDB23192E28AF5500949D00 /* ExploreView.swift in Sources */,
 				8C3993792E2DC46300739CF8 /* TripViewModel.swift in Sources */,
+				8C75F1392E32E9A5001D915E /* HomeGreetingView.swift in Sources */,
 				8CDB231B2E28B0CD00949D00 /* TripsView.swift in Sources */,
+				8C75F1532E344149001D915E /* ItineraryOptimizer.swift in Sources */,
 				8C02E0FF2E29C36B000C4AA9 /* PlaceSearchView.swift in Sources */,
-
 				8C3993B12E2DEC8A00739CF8 /* GooglePlacesAutocompleteView.swift in Sources */,
 			);
-			);
- main
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		8C714BF12E25EB4C0002CDCD /* Sources */ = {

@@ -2,13 +2,15 @@ import SwiftUI
 
 struct UpcomingTripsView: View {
     @EnvironmentObject var tripViewModel: TripViewModel
-    @State private var editingTrip: PlannedTrip? = nil
-    @State private var showEditor = false
+
+    struct EditingTrip: Identifiable {
+        let id: UUID
+    }
+    @State private var editingTrip: EditingTrip? = nil
 
     var plannedTrips: [PlannedTrip] {
         tripViewModel.trips
     }
-    // If you want to support travel history, you can use a computed property here as well or extend your TripViewModel.
 
     var body: some View {
         NavigationView {
@@ -19,22 +21,20 @@ struct UpcomingTripsView: View {
                             .foregroundColor(.secondary)
                     }
                     ForEach(plannedTrips) { trip in
-                        TripRowView(trip: trip)
-                            .onTapGesture {
-                                editingTrip = trip
-                                showEditor = true
-                            }
+                        TripRowView(trip: trip, onEdit: {
+                            editingTrip = EditingTrip(id: trip.id)
+                        })
                     }
                     .onDelete { indices in
                         indices.forEach { idx in
                             let trip = plannedTrips[idx]
                             tripViewModel.deleteTrip(withId: trip.id)
+                            if editingTrip?.id == trip.id {
+                                editingTrip = nil
+                            }
                         }
                     }
                 }
-
-                // Optional: If you want travel history, implement it in TripViewModel and display here.
-                // Section(header: Text("Travel History")) { ... }
             }
             .listStyle(InsetGroupedListStyle())
             .navigationTitle("Trips")
@@ -45,11 +45,20 @@ struct UpcomingTripsView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showEditor) {
-                if let trip = editingTrip {
-                    PlannedTripDetailView(plannedTrip: trip) { updatedTrip in
-                        saveTrip(updatedTrip)
-                        showEditor = false
+            .sheet(item: $editingTrip) { item in
+                if let index = plannedTrips.firstIndex(where: { $0.id == item.id }) {
+                    EditTripView(
+                        trip: $tripViewModel.trips[index],
+                        onSave: { updatedTrip in
+                            saveTrip(updatedTrip)
+                            editingTrip = nil
+                        },
+                        tripViewModel: tripViewModel
+                    )
+                } else {
+                    VStack {
+                        Text("Trip not found or already deleted.")
+                        Button("Close") { editingTrip = nil }
                     }
                 }
             }
@@ -59,8 +68,7 @@ struct UpcomingTripsView: View {
     func addPlannedTrip() {
         let newTrip = PlannedTrip.sampleNewPlanned()
         tripViewModel.addTrip(newTrip)
-        editingTrip = newTrip
-        showEditor = true
+        editingTrip = EditingTrip(id: newTrip.id)
     }
 
     func saveTrip(_ updatedTrip: PlannedTrip) {

@@ -1,13 +1,22 @@
 import SwiftUI
-import GooglePlaces
+import MapKit
 
 struct EditTripView: View {
     @Environment(\.presentationMode) var presentationMode
-    @Binding var trip: Trip
+    @EnvironmentObject var tripViewModel: TripViewModel
 
-    var onSave: (Trip) -> Void
+    @StateObject private var searchViewModel: PlaceSearchViewModel
 
-    @State private var showAutocomplete = false
+    @Binding var trip: PlannedTrip
+    var onSave: (PlannedTrip) -> Void
+
+    @State private var showPlacePicker = false
+
+    init(trip: Binding<PlannedTrip>, onSave: @escaping (PlannedTrip) -> Void, tripViewModel: TripViewModel) {
+        _trip = trip
+        self.onSave = onSave
+        _searchViewModel = StateObject(wrappedValue: PlaceSearchViewModel(tripViewModel: tripViewModel))
+    }
 
     var body: some View {
         NavigationView {
@@ -16,7 +25,14 @@ struct EditTripView: View {
                     TextField("Enter destination", text: $trip.destination)
                         .autocapitalization(.words)
                     Button("Search Place") {
-                        showAutocomplete = true
+                        showPlacePicker = true
+                    }
+                    if let placeName = trip.placeName, !placeName.isEmpty {
+                        HStack {
+                            Image(systemName: "mappin.and.ellipse")
+                            Text(placeName)
+                                .foregroundColor(.blue)
+                        }
                     }
                 }
                 Section(header: Text("Dates")) {
@@ -25,13 +41,6 @@ struct EditTripView: View {
                 }
                 Section(header: Text("Notes")) {
                     TextField("Notes", text: $trip.notes)
-                }
-                Section(header: Text("Trip Type")) {
-                    Picker("Type", selection: $trip.isPlanned) {
-                        Text("Planned Trip").tag(true)
-                        Text("Travel History").tag(false)
-                    }
-                    .pickerStyle(SegmentedPickerStyle())
                 }
             }
             .navigationTitle("Edit Trip")
@@ -46,13 +55,13 @@ struct EditTripView: View {
                 }
                 .disabled(trip.destination.isEmpty)
             )
-            .sheet(isPresented: $showAutocomplete) {
-                GooglePlacesAutocompleteView { place in
-                    trip.destination = place.name ?? ""
-                    let coordinate = place.coordinate
-                    trip.latitude = coordinate.latitude
-                    trip.longitude = coordinate.longitude
-                    showAutocomplete = false
+            .sheet(isPresented: $showPlacePicker) {
+                PlacePickerView(searchViewModel: searchViewModel) { place in
+                    trip.destination = place.name
+                    trip.placeName = place.name
+                    trip.latitude = place.latitude
+                    trip.longitude = place.longitude
+                    showPlacePicker = false
                 }
             }
         }

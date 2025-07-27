@@ -36,8 +36,9 @@ struct PlaceDetailView: View {
                         .font(.subheadline)
                         .foregroundColor(.gray)
                 }
-                Map(coordinateRegion: $region, annotationItems: [place]) { place in
-                    MapMarker(coordinate: CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude), tint: .accentColor)
+                Map(initialPosition: .region(region)) {
+                    Marker(place.name, coordinate: CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude))
+                        .tint(Color.accentColor)
                 }
                 .frame(height: 200)
                 .cornerRadius(10)

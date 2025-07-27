@@ -1,3 +1,11 @@
+//
+//  TripRowView.swift
+//  SoloTravelSoul
+//
+//  Created by Raviteja Vemulapelli on 7/26/25.
+//
+
+
 import SwiftUI
 
 struct TripRowView: View {

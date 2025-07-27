@@ -1,12 +1,12 @@
 import Foundation
 
-struct ItineraryDay: Identifiable, Codable, Equatable, Hashable {
+struct ItineraryDay: Identifiable, Codable, Hashable {
     let id: UUID
     var date: Date
-    var places: [ItineraryPlace]
+    var places: [Place]
 
-    init(date: Date, places: [ItineraryPlace] = []) {
-        self.id = UUID()
+    init(id: UUID = UUID(), date: Date, places: [Place] = []) {
+        self.id = id
         self.date = date
         self.places = places
     }

@@ -1,4 +1,5 @@
 import Foundation
+import MapKit
 
 class TripViewModel: ObservableObject {
     @Published var trips: [PlannedTrip] = [
@@ -32,40 +33,61 @@ class TripViewModel: ObservableObject {
     }
 
     func addTrip(_ trip: PlannedTrip) {
+        // Prevent duplicate trips with same id
+        guard !trips.contains(where: { $0.id == trip.id }) else { return }
         trips.append(trip)
     }
 
     func addPlaceToTrip(tripId: UUID, date: Date, place: Place) {
-        let itineraryPlace = ItineraryPlace(
-            id: place.id,
-            name: place.name,
-            address: place.address,
-            latitude: place.latitude,
-            longitude: place.longitude,
-            types: place.types,
-            rating: place.rating,
-            userRatingsTotal: place.userRatingsTotal,
-            photoReference: place.photoReference
-        )
         guard let tripIdx = trips.firstIndex(where: { $0.id == tripId }) else { return }
         var trip = trips[tripIdx]
         if let dayIdx = trip.itinerary.firstIndex(where: { Calendar.current.isDate($0.date, inSameDayAs: date) }) {
-            trip.itinerary[dayIdx].places.append(itineraryPlace)
+            trip.itinerary[dayIdx].places.append(place)
         } else {
-            let newDay = ItineraryDay(date: date, places: [itineraryPlace])
+            let newDay = ItineraryDay(date: date, places: [place])
             trip.itinerary.append(newDay)
         }
         trips[tripIdx] = trip
     }
-}
-extension TripViewModel {
+
     func deleteTrip(withId id: UUID) {
         trips.removeAll { $0.id == id }
     }
 
     func updateTrip(_ updatedTrip: PlannedTrip) {
+        // Only update if exists, else ignore (or optionally add)
         if let idx = trips.firstIndex(where: { $0.id == updatedTrip.id }) {
             trips[idx] = updatedTrip
         }
+    }
+
+    // Optimize all places in a trip (across all days)
+    func optimizeTripItinerary(tripId: UUID) {
+        guard let tripIdx = trips.firstIndex(where: { $0.id == tripId }) else { return }
+        var trip = trips[tripIdx]
+        let optimized = ItineraryOptimizer.optimizeRoute(places: trip.allPlaces)
+        trip.setOptimizedPlaces(optimized)
+        trips[tripIdx] = trip
+    }
+
+    // Optimize only one day's places
+    func optimizeDayInTrip(tripId: UUID, dayId: UUID) {
+        guard let tripIdx = trips.firstIndex(where: { $0.id == tripId }) else { return }
+        var trip = trips[tripIdx]
+        guard let dayIdx = trip.itinerary.firstIndex(where: { $0.id == dayId }) else { return }
+        let places = trip.itinerary[dayIdx].places
+        let optimized = ItineraryOptimizer.optimizeRoute(places: places)
+        trip.itinerary[dayIdx].places = optimized
+        trips[tripIdx] = trip
+    }
+
+    // MARK: - Map Helpers
+    // For trip-level map (all places)
+    func coordinatesForTrip(_ trip: PlannedTrip) -> [CLLocationCoordinate2D] {
+        trip.allPlaces.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+    }
+    // For day-level map
+    func coordinatesForDay(_ day: ItineraryDay) -> [CLLocationCoordinate2D] {
+        day.places.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
     }
 }
