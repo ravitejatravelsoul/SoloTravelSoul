@@ -1,6 +1,9 @@
 import SwiftUI
 
 struct ProfileView: View {
+    // Use EnvironmentObject for authentication state
+    @EnvironmentObject var authViewModel: AuthViewModel
+
     @AppStorage("name") var name: String = ""
     @AppStorage("email") var email: String = ""
     @AppStorage("phone") var phone: String = ""
@@ -16,7 +19,6 @@ struct ProfileView: View {
     @AppStorage("emergencyContact") var emergencyContact: String = ""
     @AppStorage("privacyEnabled") var privacyEnabled: Bool = false
     @AppStorage("profileImageData") var profileImageData: Data = Data()
-    @AppStorage("isLoggedIn") private var isLoggedIn: Bool = false
 
     @State private var showEdit = false
     @State private var showLogoutConfirm = false
@@ -111,7 +113,7 @@ struct ProfileView: View {
                     titleVisibility: .visible
                 ) {
                     Button("Log Out", role: .destructive) {
-                        isLoggedIn = false
+                        authViewModel.signOut()
                     }
                     Button("Cancel", role: .cancel) { }
                 }

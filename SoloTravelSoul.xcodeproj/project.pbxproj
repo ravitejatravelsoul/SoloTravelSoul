@@ -15,6 +15,13 @@
 		8C3993792E2DC46300739CF8 /* TripViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C3993782E2DC46300739CF8 /* TripViewModel.swift */; };
 		8C3993802E2DCE4500739CF8 /* ItineraryPlace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C39937F2E2DCE4500739CF8 /* ItineraryPlace.swift */; };
 		8C3993B12E2DEC8A00739CF8 /* GooglePlacesAutocompleteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C3993B02E2DEC8A00739CF8 /* GooglePlacesAutocompleteView.swift */; };
+		8C60EAAC2E3725D0002D7E74 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 8C60EAAB2E3725D0002D7E74 /* GoogleService-Info.plist */; };
+		8C60EAAF2E372A3E002D7E74 /* FirebaseAI in Frameworks */ = {isa = PBXBuildFile; productRef = 8C60EAAE2E372A3E002D7E74 /* FirebaseAI */; };
+		8C60EAB12E372A3E002D7E74 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 8C60EAB02E372A3E002D7E74 /* FirebaseAuth */; };
+		8C60EAB32E372A3E002D7E74 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 8C60EAB22E372A3E002D7E74 /* FirebaseFirestore */; };
+		8C60EAB52E372A3E002D7E74 /* FirebaseInAppMessaging-Beta in Frameworks */ = {isa = PBXBuildFile; productRef = 8C60EAB42E372A3E002D7E74 /* FirebaseInAppMessaging-Beta */; };
+		8C60EAB72E372A3E002D7E74 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 8C60EAB62E372A3E002D7E74 /* FirebaseStorage */; };
+		8C60EAB92E372C54002D7E74 /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C60EAB82E372C54002D7E74 /* AuthViewModel.swift */; };
 		8C75F1392E32E9A5001D915E /* HomeGreetingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F1382E32E9A5001D915E /* HomeGreetingView.swift */; };
 		8C75F13B2E32EAE9001D915E /* NextTripOverviewCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F13A2E32EAE9001D915E /* NextTripOverviewCard.swift */; };
 		8C75F13D2E32F15F001D915E /* QuickActionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F13C2E32F15F001D915E /* QuickActionView.swift */; };
@@ -68,6 +75,8 @@
 		8C3993782E2DC46300739CF8 /* TripViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripViewModel.swift; sourceTree = SOURCE_ROOT; };
 		8C39937F2E2DCE4500739CF8 /* ItineraryPlace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItineraryPlace.swift; sourceTree = "<group>"; };
 		8C3993B02E2DEC8A00739CF8 /* GooglePlacesAutocompleteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GooglePlacesAutocompleteView.swift; sourceTree = "<group>"; };
+		8C60EAAB2E3725D0002D7E74 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		8C60EAB82E372C54002D7E74 /* AuthViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthViewModel.swift; sourceTree = "<group>"; };
 		8C714BE82E25EB480002CDCD /* SoloTravelSoul.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SoloTravelSoul.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8C714BF52E25EB4C0002CDCD /* SoloTravelSoulTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SoloTravelSoulTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8C714BFF2E25EB4D0002CDCD /* SoloTravelSoulUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SoloTravelSoulUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -141,6 +150,11 @@
 			files = (
 				8CAA0E172E2DFD6E0015B571 /* GooglePlaces in Frameworks */,
 				8CAA0E192E2DFD6E0015B571 /* GooglePlacesSwift in Frameworks */,
+				8C60EAAF2E372A3E002D7E74 /* FirebaseAI in Frameworks */,
+				8C60EAB32E372A3E002D7E74 /* FirebaseFirestore in Frameworks */,
+				8C60EAB72E372A3E002D7E74 /* FirebaseStorage in Frameworks */,
+				8C60EAB12E372A3E002D7E74 /* FirebaseAuth in Frameworks */,
+				8C60EAB52E372A3E002D7E74 /* FirebaseInAppMessaging-Beta in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -177,6 +191,7 @@
 				8C714BF82E25EB4D0002CDCD /* SoloTravelSoulTests */,
 				8C714C022E25EB4D0002CDCD /* SoloTravelSoulUITests */,
 				8C714BE92E25EB480002CDCD /* Products */,
+				8C60EAAB2E3725D0002D7E74 /* GoogleService-Info.plist */,
 			);
 			sourceTree = "<group>";
 		};
@@ -209,6 +224,7 @@
 		8C714C132E25EB970002CDCD /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				8C60EAB82E372C54002D7E74 /* AuthViewModel.swift */,
 				8C75F1522E344149001D915E /* ItineraryOptimizer.swift */,
 				8C39937F2E2DCE4500739CF8 /* ItineraryPlace.swift */,
 				8C3993762E2DC3EA00739CF8 /* ItineraryDay.swift */,
@@ -367,6 +383,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				8CAA0E152E2DFD6E0015B571 /* XCRemoteSwiftPackageReference "ios-places-sdk" */,
+				8C60EAAD2E372A3E002D7E74 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8C714BE92E25EB480002CDCD /* Products */;
@@ -385,6 +402,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8C60EAAC2E3725D0002D7E74 /* GoogleService-Info.plist in Resources */,
 				8C9D1B982E27677B00858387 /* Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -425,6 +443,7 @@
 				8C75F13B2E32EAE9001D915E /* NextTripOverviewCard.swift in Sources */,
 				8C75F1412E32F25A001D915E /* TravelJournalPreview.swift in Sources */,
 				8C2EC34A2E31E4500094CCDB /* PlaceSearchViewModel.swift in Sources */,
+				8C60EAB92E372C54002D7E74 /* AuthViewModel.swift in Sources */,
 				8C9D1B742E260BDF00858387 /* ContentView.swift in Sources */,
 				8CAA0E1C2E2F31EF0015B571 /* AppDelegate.swift in Sources */,
 				8C02E0FD2E29BE8E000C4AA9 /* GooglePlacesService.swift in Sources */,
@@ -775,6 +794,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		8C60EAAD2E372A3E002D7E74 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.0.0;
+			};
+		};
 		8CAA0E152E2DFD6E0015B571 /* XCRemoteSwiftPackageReference "ios-places-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/googlemaps/ios-places-sdk";
@@ -786,6 +813,31 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		8C60EAAE2E372A3E002D7E74 /* FirebaseAI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C60EAAD2E372A3E002D7E74 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAI;
+		};
+		8C60EAB02E372A3E002D7E74 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C60EAAD2E372A3E002D7E74 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		8C60EAB22E372A3E002D7E74 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C60EAAD2E372A3E002D7E74 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		8C60EAB42E372A3E002D7E74 /* FirebaseInAppMessaging-Beta */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C60EAAD2E372A3E002D7E74 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = "FirebaseInAppMessaging-Beta";
+		};
+		8C60EAB62E372A3E002D7E74 /* FirebaseStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C60EAAD2E372A3E002D7E74 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseStorage;
+		};
 		8CAA0E162E2DFD6E0015B571 /* GooglePlaces */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 8CAA0E152E2DFD6E0015B571 /* XCRemoteSwiftPackageReference "ios-places-sdk" */;

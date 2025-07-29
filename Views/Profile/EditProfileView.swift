@@ -2,7 +2,8 @@ import SwiftUI
 import PhotosUI
 
 struct EditProfileView: View {
-    // Use AppStorage for persistence. No bindings needed!
+    @EnvironmentObject var authViewModel: AuthViewModel
+
     @AppStorage("name") var name: String = ""
     @AppStorage("email") var email: String = ""
     @AppStorage("phone") var phone: String = ""
@@ -22,6 +23,7 @@ struct EditProfileView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showValidationError = false
     @State private var validationError: String = ""
+    @State private var saving = false
 
     // Profile Image Picker
     @State private var showImagePicker = false
@@ -194,22 +196,56 @@ struct EditProfileView: View {
                             preferences = selectedPreferences.sorted().joined(separator: ", ")
                             favoriteDestinations = selectedDestinations.sorted().joined(separator: ", ")
                             languages = selectedLanguages.sorted().joined(separator: ", ")
-                            dismiss()
+                            guard let user = authViewModel.user else {
+                                validationError = "Not logged in."; showValidationError = true; return
+                            }
+                            saving = true
+                            authViewModel.updateProfile(
+                                userID: user.uid,
+                                name: name,
+                                phone: phone,
+                                birthday: birthday,
+                                gender: gender,
+                                country: country,
+                                city: city,
+                                bio: bio,
+                                preferences: preferences,
+                                socialLinks: socialLinks,
+                                favoriteDestinations: favoriteDestinations,
+                                languages: languages,
+                                emergencyContact: emergencyContact,
+                                privacyEnabled: privacyEnabled
+                            ) { success in
+                                saving = false
+                                if success {
+                                    dismiss()
+                                } else {
+                                    validationError = authViewModel.errorMessage ?? "Failed to save profile."
+                                    showValidationError = true
+                                }
+                            }
                         }) {
-                            Text("Save")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(LinearGradient(
-                                    gradient: Gradient(colors: [Color.blue, Color.purple]),
-                                    startPoint: .leading,
-                                    endPoint: .trailing)
-                                )
-                                .foregroundColor(.white)
-                                .cornerRadius(14)
-                                .shadow(radius: 3)
+                            if saving {
+                                ProgressView()
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                            } else {
+                                Text("Save")
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(LinearGradient(
+                                        gradient: Gradient(colors: [Color.blue, Color.purple]),
+                                        startPoint: .leading,
+                                        endPoint: .trailing)
+                                    )
+                                    .foregroundColor(.white)
+                                    .cornerRadius(14)
+                                    .shadow(radius: 3)
+                            }
                         }
                         .padding(.top, 10)
+                        .disabled(saving)
                     }
                     .padding(.vertical, 10)
                 }

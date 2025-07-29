@@ -1,14 +1,17 @@
 import Foundation
 import Combine
-import CoreLocation
 
 class PlaceSearchViewModel: ObservableObject {
     @Published var searchText: String = ""
-    @Published var results: [Place] = [] // Uses your unified Place model
+    @Published var results: [Place] = []
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     @Published var showAddToItinerarySheet: Bool = false
     @Published var selectedPlace: Place? = nil
+
+    var trips: [PlannedTrip] {
+        tripViewModel.trips
+    }
 
     private var cancellables = Set<AnyCancellable>()
     private var tripViewModel: TripViewModel
@@ -48,7 +51,6 @@ class PlaceSearchViewModel: ObservableObject {
         isLoading = false
     }
 
-    /// Fetch top places for a city or country (returns top 15 results)
     @MainActor
     func fetchTopPlaces(for location: String) async {
         guard !location.trimmingCharacters(in: .whitespaces).isEmpty else {
@@ -59,7 +61,6 @@ class PlaceSearchViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         do {
-            // Use smart query for Google Places (no geocode/location bias!)
             let places = try await GooglePlacesService.shared.fetchTopPlaces(for: location)
             self.results = Array(places.prefix(15))
         } catch {
@@ -67,5 +68,32 @@ class PlaceSearchViewModel: ObservableObject {
             results = []
         }
         isLoading = false
+    }
+
+    func fetchPlaceDetails(placeID: String, completion: @escaping (Place?, String?) -> Void) {
+        Task {
+            do {
+                let place = try await GooglePlacesService.shared.fetchPlaceDetails(placeID: placeID)
+                completion(place, nil)
+            } catch {
+                completion(nil, error.localizedDescription)
+            }
+        }
+    }
+
+    func addPlaceToTrip(tripId: UUID, date: Date, place: Place) {
+        tripViewModel.addPlaceToTrip(tripId: tripId, date: date, place: place)
+    }
+
+    func createTripAndAddPlace(name: String, notes: String, date: Date, place: Place) {
+        let newTrip = PlannedTrip(
+            id: UUID(),
+            destination: name,
+            startDate: date,
+            endDate: date,
+            notes: notes,
+            itinerary: [ItineraryDay(date: date, places: [place])]
+        )
+        tripViewModel.addTrip(newTrip)
     }
 }

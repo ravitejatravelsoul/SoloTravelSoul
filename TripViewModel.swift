@@ -27,8 +27,36 @@ class TripViewModel: ObservableObject {
     func searchPlaces(keyword: String) {
         // Replace with your real API logic!
         discoveredPlaces = [
-            Place(id: "1", name: "Louvre Museum", address: "Paris, France", latitude: 48.8606, longitude: 2.3376, types: ["museum"], rating: 4.7, userRatingsTotal: 100000, photoReference: nil),
-            Place(id: "2", name: "Eiffel Tower", address: "Paris, France", latitude: 48.8584, longitude: 2.2945, types: ["tourist_attraction"], rating: 4.6, userRatingsTotal: 85000, photoReference: nil)
+            Place(
+                id: "1",
+                name: "Louvre Museum",
+                address: "Paris, France",
+                latitude: 48.8606,
+                longitude: 2.3376,
+                types: ["museum"],
+                rating: 4.7,
+                userRatingsTotal: 100000,
+                photoReferences: nil,    // <- Updated: plural and array or nil
+                reviews: nil,
+                openingHours: nil,
+                phoneNumber: nil,
+                website: nil
+            ),
+            Place(
+                id: "2",
+                name: "Eiffel Tower",
+                address: "Paris, France",
+                latitude: 48.8584,
+                longitude: 2.2945,
+                types: ["tourist_attraction"],
+                rating: 4.6,
+                userRatingsTotal: 85000,
+                photoReferences: nil,
+                reviews: nil,
+                openingHours: nil,
+                phoneNumber: nil,
+                website: nil
+            )
         ]
     }
 
@@ -55,13 +83,11 @@ class TripViewModel: ObservableObject {
     }
 
     func updateTrip(_ updatedTrip: PlannedTrip) {
-        // Only update if exists, else ignore (or optionally add)
         if let idx = trips.firstIndex(where: { $0.id == updatedTrip.id }) {
             trips[idx] = updatedTrip
         }
     }
 
-    // Optimize all places in a trip (across all days)
     func optimizeTripItinerary(tripId: UUID) {
         guard let tripIdx = trips.firstIndex(where: { $0.id == tripId }) else { return }
         var trip = trips[tripIdx]
@@ -70,7 +96,6 @@ class TripViewModel: ObservableObject {
         trips[tripIdx] = trip
     }
 
-    // Optimize only one day's places
     func optimizeDayInTrip(tripId: UUID, dayId: UUID) {
         guard let tripIdx = trips.firstIndex(where: { $0.id == tripId }) else { return }
         var trip = trips[tripIdx]
@@ -82,11 +107,9 @@ class TripViewModel: ObservableObject {
     }
 
     // MARK: - Map Helpers
-    // For trip-level map (all places)
     func coordinatesForTrip(_ trip: PlannedTrip) -> [CLLocationCoordinate2D] {
         trip.allPlaces.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
     }
-    // For day-level map
     func coordinatesForDay(_ day: ItineraryDay) -> [CLLocationCoordinate2D] {
         day.places.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
     }

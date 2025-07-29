@@ -1,11 +1,3 @@
-//
-//  SuggestPlaceSearchSection.swift
-//  SoloTravelSoul
-//
-//  Created by Raviteja Vemulapelli on 7/25/25.
-//
-
-
 import SwiftUI
 
 struct SuggestPlaceSearchSection: View {
@@ -51,9 +43,7 @@ struct SuggestPlaceSearchSection: View {
         }
         .sheet(item: $selectedPlace) { place in
             NavigationStack {
-                PlaceDetailView(place: place, onAddToItinerary: {
-                    onAdd(place)
-                })
+                PlaceDetailView(place: place)
             }
         }
     }

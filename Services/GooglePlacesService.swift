@@ -1,11 +1,10 @@
 import Foundation
 import CoreLocation
 
-// MARK: - Google Places API Response Models
+// Only use these PRIVATE response-mapping structs for JSON parsing!
 private struct PlacesSearchResponse: Codable {
     let places: [PlaceResult]?
 }
-
 private struct PlaceResult: Codable {
     let id: String
     let displayName: DisplayName?
@@ -16,29 +15,36 @@ private struct PlaceResult: Codable {
     let userRatingCount: Int?
     let photos: [Photo]?
 }
+private struct DisplayName: Codable { let text: String? }
+private struct LatLng: Codable { let latitude: Double; let longitude: Double }
+private struct Photo: Codable { let name: String? }
 
-private struct DisplayName: Codable {
-    let text: String?
+private struct PlaceDetailsResponse: Codable {
+    let result: PlaceDetailsResult?
 }
-
-private struct LatLng: Codable {
-    let latitude: Double
-    let longitude: Double
+private struct PlaceDetailsResult: Codable {
+    let name: String
+    let formatted_address: String?
+    let geometry: PlaceGeometry
+    let types: [String]?
+    let rating: Double?
+    let user_ratings_total: Int?
+    let photos: [PlacePhoto]?
+    let reviews: [PlaceReview]? // Uses your shared PlaceReview
+    let opening_hours: PlaceOpeningHours? // Uses your shared PlaceOpeningHours
+    let formatted_phone_number: String?
+    let website: String?
 }
-
-private struct Photo: Codable {
-    let name: String?
-}
-
-// MARK: - GooglePlacesService
+private struct PlaceGeometry: Codable { let location: PlaceLocation }
+private struct PlaceLocation: Codable { let lat: Double; let lng: Double }
+private struct PlacePhoto: Codable { let photo_reference: String }
 
 final class GooglePlacesService {
     static let shared = GooglePlacesService()
     private init() {}
 
-    private let apiKey = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU" // <-- Replace with your real API key
+    private let apiKey = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU"
 
-    /// Main entry: Searches Google Places and returns [Place] using async/await.
     func searchPlaces(
         query: String,
         locationBias: (latitude: Double, longitude: Double)? = nil,
@@ -47,19 +53,15 @@ final class GooglePlacesService {
         guard let url = URL(string: "https://places.googleapis.com/v1/places:searchText?key=\(apiKey)") else {
             throw PlacesServiceError.invalidURL
         }
-
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue("places.displayName,places.id,places.formattedAddress,places.location,places.types,places.rating,places.userRatingCount,places.photos", forHTTPHeaderField: "X-Goog-FieldMask")
-
         var requestBody: [String: Any] = [
             "textQuery": query,
             "pageSize": pageSize,
             "languageCode": "en"
         ]
-
-        // Only include locationBias if explicitly provided
         if let locationBias = locationBias {
             requestBody["locationBias"] = [
                 "circle": [
@@ -67,31 +69,17 @@ final class GooglePlacesService {
                         "latitude": locationBias.latitude,
                         "longitude": locationBias.longitude
                     ],
-                    "radius": 25000 // 25km, returns broader/top results
+                    "radius": 25000
                 ]
             ]
         }
-
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody, options: [])
-
         let (data, response) = try await URLSession.shared.data(for: request)
-
-        if let httpResponse = response as? HTTPURLResponse {
-            print("Status code: \(httpResponse.statusCode)")
-        }
-
-        if let rawString = String(data: data, encoding: .utf8) {
-            print("RAW JSON RESPONSE: \(rawString)")
-        }
-
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw PlacesServiceError.invalidResponse
         }
-
         let decoded = try JSONDecoder().decode(PlacesSearchResponse.self, from: data)
         let results = decoded.places ?? []
-        print("Decoded results: \(results.count)")
-        // Map PlaceResult to Place (imported model)
         return results.map { result in
             Place(
                 id: result.id,
@@ -102,37 +90,48 @@ final class GooglePlacesService {
                 types: result.types,
                 rating: result.rating,
                 userRatingsTotal: result.userRatingCount,
-                photoReference: result.photos?.first?.name
+                photoReferences: result.photos?.compactMap { $0.name },
+                reviews: nil,
+                openingHours: nil,
+                phoneNumber: nil,
+                website: nil
             )
         }
     }
 
-    /// Returns the top 15 famous attractions for a city or country (NO radius, just smart query)
     func fetchTopPlaces(for locationName: String) async throws -> [Place] {
-        // This will use a smart text query to get the most famous places in the area, not just those within a radius.
         let query = "top attractions in \(locationName)"
-        // Do NOT send locationBias, only text query!
-        return try await searchPlaces(
-            query: query,
-            locationBias: nil,
-            pageSize: 15
-        )
+        return try await searchPlaces(query: query, locationBias: nil, pageSize: 15)
     }
 
-    /// Geocode city/country to coordinates (not used in fetchTopPlaces anymore, but kept for compatibility)
-    private func geocode(location: String) async throws -> CLLocationCoordinate2D {
-        return try await withCheckedThrowingContinuation { continuation in
-            let geocoder = CLGeocoder()
-            geocoder.geocodeAddressString(location) { placemarks, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                } else if let coord = placemarks?.first?.location?.coordinate {
-                    continuation.resume(returning: coord)
-                } else {
-                    continuation.resume(throwing: PlacesServiceError.invalidResponse)
-                }
-            }
+    func fetchPlaceDetails(placeID: String) async throws -> Place {
+        let urlString = "https://maps.googleapis.com/maps/api/place/details/json?place_id=\(placeID)&fields=name,rating,formatted_address,geometry,types,photos,user_ratings_total,reviews,opening_hours,formatted_phone_number,website&key=\(apiKey)"
+        guard let url = URL(string: urlString) else {
+            throw PlacesServiceError.invalidURL
         }
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw PlacesServiceError.invalidResponse
+        }
+        let decoded = try JSONDecoder().decode(PlaceDetailsResponse.self, from: data)
+        guard let details = decoded.result else {
+            throw NSError(domain: "GooglePlacesService", code: 0, userInfo: [NSLocalizedDescriptionKey: "No details found"])
+        }
+        return Place(
+            id: placeID,
+            name: details.name,
+            address: details.formatted_address,
+            latitude: details.geometry.location.lat,
+            longitude: details.geometry.location.lng,
+            types: details.types,
+            rating: details.rating,
+            userRatingsTotal: details.user_ratings_total,
+            photoReferences: details.photos?.compactMap { $0.photo_reference },
+            reviews: details.reviews,
+            openingHours: details.opening_hours,
+            phoneNumber: details.formatted_phone_number,
+            website: details.website
+        )
     }
 }
 
@@ -142,10 +141,8 @@ enum PlacesServiceError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidURL:
-            return "Invalid URL for Google Places API."
-        case .invalidResponse:
-            return "Received invalid response from Google Places API."
+        case .invalidURL: return "Invalid URL for Google Places API."
+        case .invalidResponse: return "Received invalid response from Google Places API."
         }
     }
 }

@@ -1,10 +1,10 @@
 import SwiftUI
 
 struct ContentView: View {
-    @AppStorage("isLoggedIn") private var isLoggedIn = false
+    @EnvironmentObject var authViewModel: AuthViewModel
 
     var body: some View {
-        if isLoggedIn {
+        if authViewModel.user != nil {
             RootTabView()
         } else {
             AuthHomeView()
