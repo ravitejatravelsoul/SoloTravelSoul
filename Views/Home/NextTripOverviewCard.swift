@@ -82,7 +82,12 @@ struct NextTripOverviewCard_Previews: PreviewProvider {
                 startDate: Date(),
                 endDate: Calendar.current.date(byAdding: .day, value: 4, to: Date())!,
                 notes: "Sample Paris trip",
-                itinerary: []
+                itinerary: [],
+                photoData: nil,
+                latitude: nil,
+                longitude: nil,
+                placeName: nil,
+                members: [] // <-- Added members argument
             ),
             onEdit: { print("Edit pressed") }
         )

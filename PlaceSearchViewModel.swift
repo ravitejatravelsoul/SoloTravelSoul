@@ -92,7 +92,12 @@ class PlaceSearchViewModel: ObservableObject {
             startDate: date,
             endDate: date,
             notes: notes,
-            itinerary: [ItineraryDay(date: date, places: [place])]
+            itinerary: [ItineraryDay(date: date, places: [place])],
+            photoData: nil,
+            latitude: place.latitude,
+            longitude: place.longitude,
+            placeName: place.name,
+            members: [] // <-- Added members argument
         )
         tripViewModel.addTrip(newTrip)
     }

@@ -40,7 +40,12 @@ struct ItineraryView_Previews: PreviewProvider {
                 startDate: Date(),
                 endDate: Calendar.current.date(byAdding: .day, value: 4, to: Date())!,
                 notes: "Sample Paris trip",
-                itinerary: []
+                itinerary: [],
+                photoData: nil,
+                latitude: nil,
+                longitude: nil,
+                placeName: nil,
+                members: [] // <-- Added members argument
             ),
             PlannedTrip(
                 id: UUID(),
@@ -48,7 +53,12 @@ struct ItineraryView_Previews: PreviewProvider {
                 startDate: Date(),
                 endDate: Calendar.current.date(byAdding: .day, value: 7, to: Date())!,
                 notes: "Sample London trip",
-                itinerary: []
+                itinerary: [],
+                photoData: nil,
+                latitude: nil,
+                longitude: nil,
+                placeName: nil,
+                members: [] // <-- Added members argument
             )
         ])
     }

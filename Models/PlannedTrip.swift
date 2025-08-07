@@ -1,25 +1,26 @@
 import Foundation
 
-struct PlannedTrip: Identifiable, Codable, Hashable {
-    let id: UUID
-    var destination: String
-    var startDate: Date
-    var endDate: Date
-    var notes: String
-    var itinerary: [ItineraryDay]
-    var photoData: Data?
-    var latitude: Double?
-    var longitude: Double?
-    var placeName: String?
-    var isPlanned: Bool { true }
+public struct PlannedTrip: Identifiable, Codable, Hashable {
+    public let id: UUID
+    public var destination: String
+    public var startDate: Date
+    public var endDate: Date
+    public var notes: String
+    public var itinerary: [ItineraryDay]
+    public var photoData: Data?
+    public var latitude: Double?
+    public var longitude: Double?
+    public var placeName: String?
+    public var members: [String]
+    public var isPlanned: Bool { true }
 
-    // Returns all places across all days for optimization
-    var allPlaces: [Place] {
+    /// Returns all places across all days for optimization
+    public var allPlaces: [Place] {
         itinerary.flatMap { $0.places }
     }
 
     // Replace all places in the itinerary with new optimized order, distributing by day
-    mutating func setOptimizedPlaces(_ places: [Place]) {
+    public mutating func setOptimizedPlaces(_ places: [Place]) {
         guard !itinerary.isEmpty else { return }
         let days = itinerary.count
         let perDay = max(1, places.count / days)
@@ -34,8 +35,9 @@ struct PlannedTrip: Identifiable, Codable, Hashable {
         }
     }
 
-    // --- Your sample data methods follow, unchanged ---
-    static func samplePlannedTrips() -> [PlannedTrip] {
+    // MARK: - Sample Data
+
+    public static func samplePlannedTrips() -> [PlannedTrip] {
         [
             PlannedTrip(
                 id: UUID(),
@@ -47,7 +49,8 @@ struct PlannedTrip: Identifiable, Codable, Hashable {
                 photoData: nil,
                 latitude: nil,
                 longitude: nil,
-                placeName: "Eiffel Tower"
+                placeName: "Eiffel Tower",
+                members: ["Alice", "Bob", "Charlie"]
             ),
             PlannedTrip(
                 id: UUID(),
@@ -59,12 +62,13 @@ struct PlannedTrip: Identifiable, Codable, Hashable {
                 photoData: nil,
                 latitude: nil,
                 longitude: nil,
-                placeName: nil
+                placeName: nil,
+                members: ["Diana", "Eve"]
             )
         ]
     }
 
-    static func sampleHistoryTrips() -> [PlannedTrip] {
+    public static func sampleHistoryTrips() -> [PlannedTrip] {
         [
             PlannedTrip(
                 id: UUID(),
@@ -76,12 +80,13 @@ struct PlannedTrip: Identifiable, Codable, Hashable {
                 photoData: nil,
                 latitude: nil,
                 longitude: nil,
-                placeName: "Central Park"
+                placeName: "Central Park",
+                members: ["Sam", "Jane"]
             )
         ]
     }
 
-    static func sampleNewPlanned() -> PlannedTrip {
+    public static func sampleNewPlanned() -> PlannedTrip {
         PlannedTrip(
             id: UUID(),
             destination: "New Trip",
@@ -92,7 +97,8 @@ struct PlannedTrip: Identifiable, Codable, Hashable {
             photoData: nil,
             latitude: nil,
             longitude: nil,
-            placeName: nil
+            placeName: nil,
+            members: []
         )
     }
 }

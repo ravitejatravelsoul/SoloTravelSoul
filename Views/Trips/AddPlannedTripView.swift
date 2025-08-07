@@ -86,7 +86,12 @@ struct AddPlannedTripView: View {
                             startDate: startDate,
                             endDate: endDate,
                             notes: notes,
-                            itinerary: []
+                            itinerary: [],
+                            photoData: photoData,
+                            latitude: selectedCoordinate?.latitude,
+                            longitude: selectedCoordinate?.longitude,
+                            placeName: nil,
+                            members: [] // <-- Added members argument
                         )
                         onAdd(trip)
                         dismiss()

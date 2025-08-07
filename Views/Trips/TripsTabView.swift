@@ -8,6 +8,7 @@ struct TripsTabView: View {
         let id: UUID
     }
     @State private var sheetTrip: SheetTrip? = nil
+    @State private var showCreateTrip = false      // <-- Added
 
     var body: some View {
         NavigationView {
@@ -29,6 +30,15 @@ struct TripsTabView: View {
             }
             .listStyle(PlainListStyle())
             .navigationTitle("My Trips")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { showCreateTrip = true }) {
+                        Image(systemName: "plus")
+                            .imageScale(.large)
+                    }
+                    .accessibilityLabel("Add Trip")
+                }
+            }
             .sheet(item: $sheetTrip) { sheet in
                 if let trip = tripViewModel.trips.first(where: { $0.id == sheet.id }) {
                     TripDetailView(tripViewModel: tripViewModel, trip: trip)
@@ -38,6 +48,10 @@ struct TripsTabView: View {
                         Button("Close") { sheetTrip = nil }
                     }
                 }
+            }
+            .sheet(isPresented: $showCreateTrip) {
+                CreateTripView()
+                    .environmentObject(tripViewModel)
             }
         }
         .onChange(of: editTripID) { old, new in

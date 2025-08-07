@@ -1,34 +1,52 @@
-//
-//  TripListView.swift
-//  SoloTravelSoul
-//
-//  Created by Raviteja Vemulapelli on 7/25/25.
-//
-
-
 import SwiftUI
 
 struct TripListView: View {
     @ObservedObject var tripViewModel: TripViewModel
-    @State private var selectedTrip: PlannedTrip? = nil
 
     var body: some View {
         NavigationStack {
-            List(tripViewModel.trips) { trip in
-                Button(action: {
-                    selectedTrip = trip
-                }) {
-                    VStack(alignment: .leading) {
-                        Text(trip.destination).bold()
-                        Text("\(trip.startDate, style: .date) - \(trip.endDate, style: .date)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+            List {
+                if tripViewModel.trips.isEmpty {
+                    Text("No trips yet. Tap + to add your first trip!")
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                } else {
+                    ForEach(tripViewModel.trips) { trip in
+                        NavigationLink(destination: TripDetailView(tripViewModel: tripViewModel, trip: trip)) {
+                            VStack(alignment: .leading) {
+                                Text(trip.destination)
+                                    .font(.headline)
+                                    .bold()
+                                Text("\(trip.startDate, style: .date) - \(trip.endDate, style: .date)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     }
                 }
             }
             .navigationTitle("Your Trips")
-            .sheet(item: $selectedTrip) { trip in
-                TripDetailView(tripViewModel: tripViewModel, trip: trip)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        let newTrip = PlannedTrip(
+                            id: UUID(),
+                            destination: "New Destination",
+                            startDate: Date(),
+                            endDate: Date(),
+                            notes: "",
+                            itinerary: [],
+                            photoData: nil,
+                            latitude: nil,
+                            longitude: nil,
+                            placeName: nil,
+                            members: [] // <-- Added members argument
+                        )
+                        tripViewModel.trips.append(newTrip)
+                    }) {
+                        Image(systemName: "plus")
+                    }
+                }
             }
         }
     }

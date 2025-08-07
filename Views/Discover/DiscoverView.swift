@@ -1,63 +1,39 @@
 import SwiftUI
 
-// Helper for Google Place Photo
 fileprivate func googlePlacePhotoURL(photoReference: String, maxWidth: Int = 400) -> URL? {
-    let apiKey = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU" // <-- Replace with your actual API key!
+    let apiKey = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU"
     let urlString = "https://maps.googleapis.com/maps/api/place/photo?maxwidth=\(maxWidth)&photoreference=\(photoReference)&key=\(apiKey)"
     return URL(string: urlString)
 }
 
-// Example with a real working photo reference for Eiffel Tower.
-// Add more places with real photoReferences for full grid experience.
-let worldTopAttractions: [Place] = [
-    Place(
-        id: "ChIJD7fiBh9u5kcRYJSMaMOCCwQ",
-        name: "Eiffel Tower",
-        address: "Champ de Mars, 5 Avenue Anatole France, 75007 Paris, France",
-        latitude: 48.8584,
-        longitude: 2.2945,
-        types: ["tourist_attraction", "point_of_interest", "establishment"],
-        rating: 4.7,
-        userRatingsTotal: 349761,
-        photoReferences: [
-            "AWU5eFiR2BOkdQH1yt8w1I_nB1kNjnNfS4p3j4f1VcWm3mWQ2D0O7xqTWjVbKMJXZ6qQaNwR6c1w5X2vKkqK4CRW0hUybvZr2j3w6AXtQmLq3p8e9V5x"
-        ],
-        reviews: nil,
-        openingHours: nil,
-        phoneNumber: "+33 892 70 12 39",
-        website: "https://www.toureiffel.paris/en"
-    ),
-    // Add more Place objects with real photoReferences as needed!
-]
+fileprivate extension View {
+    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
+        clipShape(RoundedCorner(radius: radius, corners: corners))
+    }
+}
 
-struct PlaceRow: View {
-    let place: Place
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(place.name)
-                .font(.headline)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
-            if let address = place.address {
-                Text(address)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-            }
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 4)
+fileprivate struct RoundedCorner: Shape {
+    var radius: CGFloat = 12.0
+    var corners: UIRectCorner = .allCorners
+
+    func path(in rect: CGRect) -> Path {
+        let path = UIBezierPath(
+            roundedRect: rect,
+            byRoundingCorners: corners,
+            cornerRadii: CGSize(width: radius, height: radius)
+        )
+        return Path(path.cgPath)
     }
 }
 
 struct DiscoverView: View {
     @EnvironmentObject var tripViewModel: TripViewModel
     @ObservedObject var searchViewModel: PlaceSearchViewModel
-    @State private var selectedTrip: PlannedTrip?
+    @State private var selectedTrip: PlannedTrip? = nil
     @State private var selectedDate: Date = Date()
     @State private var selectedPlace: Place? = nil
     @State private var showPlaceDetail: Bool = false
+    @State private var showTripDetail: Bool = false
     @State private var loadingDetail: Bool = false
     @State private var detailError: String? = nil
 
@@ -83,10 +59,36 @@ struct DiscoverView: View {
         }
     }
 
+    var upcomingTripsSection: some View {
+        VStack(alignment: .leading) {
+            if !tripViewModel.trips.isEmpty {
+                Text("Upcoming Group Trips")
+                    .font(.title3)
+                    .bold()
+                    .padding(.horizontal)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        ForEach(tripViewModel.trips) { trip in
+                            Button {
+                                selectedTrip = trip
+                                showTripDetail = true
+                            } label: {
+                                PlannedTripCardView(trip: trip)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+                .padding(.bottom, 8)
+            }
+        }
+    }
+
     var placesGrid: some View {
         ScrollView {
             LazyVGrid(columns: gridColumns, spacing: 12) {
-                let places = searchViewModel.searchText.isEmpty ? worldTopAttractions : searchViewModel.results
+                let places = searchViewModel.results
                 ForEach(places) { place in
                     Button(action: {
                         handlePlaceTap(place: place)
@@ -178,6 +180,7 @@ struct DiscoverView: View {
                         .padding(.top)
                 }
 
+                upcomingTripsSection
                 placesGrid
             }
             .navigationTitle("Discover")
@@ -186,6 +189,13 @@ struct DiscoverView: View {
             }) {
                 if let place = selectedPlace {
                     PlaceDetailView(place: place)
+                }
+            }
+            .sheet(isPresented: $showTripDetail, onDismiss: {
+                self.selectedTrip = nil
+            }) {
+                if let trip = selectedTrip {
+                    TripDetailView(tripViewModel: tripViewModel, trip: trip)
                 }
             }
             .alert(isPresented: .constant(detailError != nil)) {
@@ -212,27 +222,11 @@ struct DiscoverView: View {
                     )
                 }
             }
+            .onAppear {
+                if searchViewModel.results.isEmpty && searchViewModel.searchText.isEmpty {
+                    Task { await searchViewModel.fetchTopPlaces(for: "tourist attractions in Paris") }
+                }
+            }
         }
-    }
-}
-
-// Helper for custom corner radius
-fileprivate extension View {
-    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
-        clipShape(RoundedCorner(radius: radius, corners: corners))
-    }
-}
-
-fileprivate struct RoundedCorner: Shape {
-    var radius: CGFloat = 12.0
-    var corners: UIRectCorner = .allCorners
-
-    func path(in rect: CGRect) -> Path {
-        let path = UIBezierPath(
-            roundedRect: rect,
-            byRoundingCorners: corners,
-            cornerRadii: CGSize(width: radius, height: radius)
-        )
-        return Path(path.cgPath)
     }
 }

@@ -40,7 +40,9 @@ struct AddTripView: View {
                         itinerary: [],
                         photoData: nil,
                         latitude: nil,
-                        longitude: nil
+                        longitude: nil,
+                        placeName: nil,
+                        members: [] // <-- Added members argument
                     )
                     onSave(newTrip)
                     presentationMode.wrappedValue.dismiss()

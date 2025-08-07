@@ -8,38 +8,10 @@ struct EditingPlace: Identifiable, Equatable {
 }
 
 fileprivate func googlePlacePhotoURL(photoReference: String, maxWidth: Int = 400) -> URL? {
+    // Use your API key safely in production!
     let apiKey = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU"
     let urlString = "https://maps.googleapis.com/maps/api/place/photo?maxwidth=\(maxWidth)&photoreference=\(photoReference)&key=\(apiKey)"
     return URL(string: urlString)
-}
-
-fileprivate extension Date {
-    func days(until end: Date) -> [Date] {
-        var days: [Date] = []
-        var current = self
-        let calendar = Calendar.current
-        while current <= end {
-            days.append(current)
-            guard let next = calendar.date(byAdding: .day, value: 1, to: current) else { break }
-            current = next
-        }
-        return days
-    }
-}
-
-fileprivate func estimateDuration(for place: Place) -> Double {
-    let name = place.name.lowercased()
-    if name.contains("universal studios") || name.contains("disney") || name.contains("theme park") || name.contains("sea world") || name.contains("legoland") {
-        return 1.2
-    } else if name.contains("zoo") || name.contains("aquarium") || name.contains("gatorland") || name.contains("water park") {
-        return 0.7
-    } else if name.contains("museum") || name.contains("gallery") || name.contains("exhibit") || name.contains("center") {
-        return 0.35
-    } else if name.contains("show") || name.contains("cinema") || name.contains("3d") {
-        return 0.15
-    } else {
-        return 0.1
-    }
 }
 
 struct TripDetailView: View {
@@ -65,6 +37,8 @@ struct TripDetailView: View {
     @State private var autoPlanErrorMessage: String = ""
     @State private var showStartDatePicker: Bool = false
     @State private var showEndDatePicker: Bool = false
+
+    @State private var selectedJournalDay: ItineraryDay? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -94,6 +68,9 @@ struct TripDetailView: View {
                         editingPlace = nil
                     }
                 )
+            }
+            .sheet(item: $selectedJournalDay) { day in
+                TripJournalView(tripViewModel: tripViewModel, trip: trip, day: day)
             }
             .alert("Auto-Plan Failed", isPresented: $showAutoPlanError) {
                 Button("OK", role: .cancel) { }
@@ -299,8 +276,19 @@ struct TripDetailView: View {
             } else {
                 ForEach(Array(trip.itinerary.enumerated()), id: \.element.id) { (dayIdx, day) in
                     VStack(alignment: .leading) {
-                        Text(day.date, style: .date)
-                            .font(.headline)
+                        HStack {
+                            Text(day.date, style: .date)
+                                .font(.headline)
+                            Spacer()
+                            Button(action: {
+                                selectedJournalDay = day
+                            }) {
+                                Image(systemName: "book.closed.fill")
+                                Text("Journal")
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.blue)
+                        }
                         ForEach(Array(day.places.enumerated()), id: \.element.id) { (placeIdx, place) in
                             HStack {
                                 VStack(alignment: .leading) {
@@ -358,7 +346,75 @@ struct TripDetailView: View {
         }
     }
 
-    // MARK: - Logic
+    // MARK: - Helper Methods
+
+    private func triggerLocationSuggestions() {
+        guard !mainLocation.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        Task {
+            await placeSearchViewModel.fetchTopPlaces(for: mainLocation)
+        }
+    }
+
+    private func formattedDuration(_ duration: Double) -> String {
+        if duration >= 1.0 { return "Full Day" }
+        if duration >= 0.7 { return "3/4 Day" }
+        if duration >= 0.35 { return "Half Day" }
+        if duration >= 0.2 { return "2-3 hrs" }
+        if duration >= 0.15 { return "1-1.5 hrs" }
+        return "Quick Stop"
+    }
+
+    private func estimateDuration(for place: Place) -> Double {
+        let name = place.name.lowercased()
+        if name.contains("universal studios") || name.contains("disney") || name.contains("theme park") || name.contains("sea world") || name.contains("legoland") {
+            return 1.2
+        } else if name.contains("zoo") || name.contains("aquarium") || name.contains("gatorland") || name.contains("water park") {
+            return 0.7
+        } else if name.contains("museum") || name.contains("gallery") || name.contains("exhibit") || name.contains("center") {
+            return 0.35
+        } else if name.contains("show") || name.contains("cinema") || name.contains("3d") {
+            return 0.15
+        } else {
+            return 0.1
+        }
+    }
+
+    private func itineraryContains(_ place: Place) -> Bool {
+        trip.itinerary.flatMap { $0.places }
+            .contains(where: { $0.id == place.id && $0.name == place.name })
+    }
+
+    private func addPlaceToItinerary(_ place: Place) {
+        let date = trip.itinerary.first?.date ?? trip.startDate
+        addPlaceToDay(date: date, place: place)
+    }
+
+    private func addPlaceToDay(date: Date, place: Place) {
+        if let dayIdx = trip.itinerary.firstIndex(where: { Calendar.current.isDate($0.date, inSameDayAs: date) }) {
+            if !trip.itinerary[dayIdx].places.contains(where: { $0.id == place.id && $0.name == place.name }) {
+                trip.itinerary[dayIdx].places.append(place)
+            }
+        } else {
+            let newDay = ItineraryDay(date: date, places: [place])
+            trip.itinerary.append(newDay)
+        }
+        tripViewModel.updateTrip(trip)
+    }
+
+    private func removePlaceFromItinerary(_ place: Place) {
+        for (dayIdx, day) in trip.itinerary.enumerated() {
+            if let placeIdx = day.places.firstIndex(where: { $0.id == place.id && $0.name == place.name }) {
+                trip.itinerary[dayIdx].places.remove(at: placeIdx)
+                tripViewModel.updateTrip(trip)
+                break
+            }
+        }
+    }
+
+    private func removePlaceFromDay(dayIdx: Int, placeIdx: Int) {
+        trip.itinerary[dayIdx].places.remove(at: placeIdx)
+        tripViewModel.updateTrip(trip)
+    }
 
     private func autoPlanItinerary() {
         if mainLocation.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -413,59 +469,6 @@ struct TripDetailView: View {
             tripViewModel.updateTrip(trip)
         }
     }
-
-    private func triggerLocationSuggestions() {
-        guard !mainLocation.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        Task {
-            await placeSearchViewModel.fetchTopPlaces(for: mainLocation)
-        }
-    }
-
-    private func itineraryContains(_ place: Place) -> Bool {
-        trip.itinerary.flatMap { $0.places }
-            .contains(where: { $0.id == place.id && $0.name == place.name })
-    }
-
-    private func addPlaceToItinerary(_ place: Place) {
-        let date = trip.itinerary.first?.date ?? trip.startDate
-        addPlaceToDay(date: date, place: place)
-    }
-
-    private func addPlaceToDay(date: Date, place: Place) {
-        if let dayIdx = trip.itinerary.firstIndex(where: { Calendar.current.isDate($0.date, inSameDayAs: date) }) {
-            if !trip.itinerary[dayIdx].places.contains(where: { $0.id == place.id && $0.name == place.name }) {
-                trip.itinerary[dayIdx].places.append(place)
-            }
-        } else {
-            let newDay = ItineraryDay(date: date, places: [place])
-            trip.itinerary.append(newDay)
-        }
-        tripViewModel.updateTrip(trip)
-    }
-
-    private func removePlaceFromItinerary(_ place: Place) {
-        for (dayIdx, day) in trip.itinerary.enumerated() {
-            if let placeIdx = day.places.firstIndex(where: { $0.id == place.id && $0.name == place.name }) {
-                trip.itinerary[dayIdx].places.remove(at: placeIdx)
-                tripViewModel.updateTrip(trip)
-                break
-            }
-        }
-    }
-
-    private func removePlaceFromDay(dayIdx: Int, placeIdx: Int) {
-        trip.itinerary[dayIdx].places.remove(at: placeIdx)
-        tripViewModel.updateTrip(trip)
-    }
-
-    private func formattedDuration(_ duration: Double) -> String {
-        if duration >= 1.0 { return "Full Day" }
-        if duration >= 0.7 { return "3/4 Day" }
-        if duration >= 0.35 { return "Half Day" }
-        if duration >= 0.2 { return "2-3 hrs" }
-        if duration >= 0.15 { return "1-1.5 hrs" }
-        return "Quick Stop"
-    }
 }
 
 // MARK: - EditPlaceSheet
@@ -512,7 +515,9 @@ struct EditPlaceSheet: View {
                         reviews: place.reviews,
                         openingHours: place.openingHours,
                         phoneNumber: place.phoneNumber,
-                        website: place.website
+                        website: place.website,
+                        journalEntries: place.journalEntries
+                        // add notes property if you have it in Place
                     )
                     onUpdate(updated)
                     presentationMode.wrappedValue.dismiss()
@@ -528,5 +533,20 @@ struct EditPlaceSheet: View {
                 notes = "" // If you store notes in Place in future, use them here
             }
         }
+    }
+}
+
+// Date helper for autoPlanItinerary
+extension Date {
+    func days(until endDate: Date) -> [Date] {
+        guard self <= endDate else { return [] }
+        var dates: [Date] = []
+        var current = self
+        let calendar = Calendar.current
+        repeat {
+            dates.append(current)
+            current = calendar.date(byAdding: .day, value: 1, to: current)!
+        } while current <= endDate
+        return dates
     }
 }

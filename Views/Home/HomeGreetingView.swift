@@ -1,16 +1,19 @@
-//
-//  HomeGreetingView.swift
-//  SoloTravelSoul
-//
-//  Created by Raviteja Vemulapelli on 7/24/25.
-//
-
-
 import SwiftUI
 
 struct HomeGreetingView: View {
-    var userName: String
-    var avatarImage: Image = Image("defaultAvatar") // Replace with user's image asset
+    @AppStorage("name") private var name: String = ""
+    @AppStorage("profileImageData") private var profileImageData: Data = Data()
+    @EnvironmentObject var authViewModel: AuthViewModel
+
+    @State private var showEditProfile = false
+
+    var avatarImage: Image {
+        if let uiImage = UIImage(data: profileImageData), !profileImageData.isEmpty {
+            return Image(uiImage: uiImage)
+        } else {
+            return Image("defaultAvatar")
+        }
+    }
 
     var body: some View {
         HStack(spacing: 16) {
@@ -23,7 +26,7 @@ struct HomeGreetingView: View {
                 .shadow(radius: 4)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Welcome back, \(userName)!")
+                Text("Welcome back, \(name.isEmpty ? "Traveler" : name)!")
                     .font(.title2)
                     .fontWeight(.bold)
                     .foregroundColor(.primary)
@@ -33,13 +36,15 @@ struct HomeGreetingView: View {
                     .foregroundColor(.secondary)
 
                 HStack(spacing: 12) {
-                    Button(action: {
-                        // Edit profile action
-                    }) {
+                    Button(action: { showEditProfile = true }) {
                         Label("Edit Profile", systemImage: "pencil")
                     }
                     .font(.caption)
                     .buttonStyle(.bordered)
+                    .sheet(isPresented: $showEditProfile) {
+                        EditProfileView()
+                            .environmentObject(authViewModel)
+                    }
 
                     Button(action: {
                         // Settings action
@@ -59,10 +64,8 @@ struct HomeGreetingView: View {
 
 struct HomeGreetingView_Previews: PreviewProvider {
     static var previews: some View {
-        HomeGreetingView(
-            userName: "Raviteja",
-            avatarImage: Image(systemName: "person.crop.circle")
-        )
-        .previewLayout(.sizeThatFits)
+        HomeGreetingView()
+            .environmentObject(AuthViewModel())
+            .previewLayout(.sizeThatFits)
     }
 }

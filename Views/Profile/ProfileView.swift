@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct ProfileView: View {
-    // Use EnvironmentObject for authentication state
     @EnvironmentObject var authViewModel: AuthViewModel
 
     @AppStorage("name") var name: String = ""
@@ -27,22 +26,23 @@ struct ProfileView: View {
         value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: ", ")
     }
 
+    var avatarImage: Image {
+        if let uiImage = UIImage(data: profileImageData), !profileImageData.isEmpty {
+            return Image(uiImage: uiImage)
+        } else {
+            return Image(systemName: "person.crop.circle.fill")
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                Group {
-                    if let uiImage = UIImage(data: profileImageData), !profileImageData.isEmpty {
-                        Image(uiImage: uiImage).resizable()
-                    } else {
-                        Image(systemName: "person.crop.circle.fill")
-                            .resizable()
-                            .foregroundColor(.blue)
-                    }
-                }
-                .aspectRatio(contentMode: .fill)
-                .frame(width: 110, height: 110)
-                .clipShape(Circle())
-                .shadow(radius: 6)
+                avatarImage
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 110, height: 110)
+                    .clipShape(Circle())
+                    .shadow(radius: 6)
 
                 Text(name.isEmpty ? "Your Name" : name)
                     .font(.title2)
@@ -94,6 +94,7 @@ struct ProfileView: View {
                 }
                 .sheet(isPresented: $showEdit) {
                     EditProfileView()
+                        .environmentObject(authViewModel)
                 }
 
                 Button(action: {

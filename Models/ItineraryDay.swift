@@ -1,13 +1,15 @@
 import Foundation
 
-struct ItineraryDay: Identifiable, Codable, Hashable {
-    let id: UUID
-    var date: Date
-    var places: [Place]
+public struct ItineraryDay: Identifiable, Codable, Hashable {
+    public let id: UUID
+    public var date: Date
+    public var places: [Place]
+    public var journalEntries: [JournalEntry] // Use your main JournalEntry struct
 
-    init(id: UUID = UUID(), date: Date, places: [Place] = []) {
+    public init(id: UUID = UUID(), date: Date, places: [Place], journalEntries: [JournalEntry] = []) {
         self.id = id
         self.date = date
         self.places = places
+        self.journalEntries = journalEntries
     }
 }

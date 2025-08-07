@@ -52,7 +52,12 @@ struct RecentTripsView_Previews: PreviewProvider {
                     startDate: Date(),
                     endDate: Calendar.current.date(byAdding: .day, value: 4, to: Date())!,
                     notes: "Sample Paris trip",
-                    itinerary: []
+                    itinerary: [],
+                    photoData: nil,
+                    latitude: nil,
+                    longitude: nil,
+                    placeName: "Eiffel Tower",
+                    members: ["Alice", "Bob", "Charlie"]
                 ),
                 PlannedTrip(
                     id: UUID(),
@@ -60,7 +65,12 @@ struct RecentTripsView_Previews: PreviewProvider {
                     startDate: Date(),
                     endDate: Calendar.current.date(byAdding: .day, value: 7, to: Date())!,
                     notes: "Sample London trip",
-                    itinerary: []
+                    itinerary: [],
+                    photoData: nil,
+                    latitude: nil,
+                    longitude: nil,
+                    placeName: "Big Ben",
+                    members: ["Diana", "Eve"]
                 )
             ],
             onEditTrip: { _ in print("Edit trip pressed") }
