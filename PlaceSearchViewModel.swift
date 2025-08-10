@@ -117,8 +117,9 @@ class PlaceSearchViewModel: ObservableObject {
         }
     }
 
-    func addPlaceToTrip(tripId: UUID, date: Date, place: Place) {
-        tripViewModel.addPlaceToTrip(tripId: tripId, date: date, place: place)
+    // Updated: match TripViewModel API (trip: PlannedTrip, not id)
+    func addPlaceToTrip(trip: PlannedTrip, date: Date, place: Place) {
+        tripViewModel.addPlaceToTrip(place: place, to: trip)
     }
 
     func createTripAndAddPlace(name: String, notes: String, date: Date, place: Place) {

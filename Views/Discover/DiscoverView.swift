@@ -233,7 +233,7 @@ struct DiscoverView: View {
                         selectedTrip: $selectedTrip,
                         selectedDate: $selectedDate,
                         onAddExisting: { trip, date, place in
-                            searchViewModel.addPlaceToTrip(tripId: trip.id, date: date, place: place)
+                            searchViewModel.addPlaceToTrip(trip: trip, date: date, place: place)
                             searchViewModel.showAddToItinerarySheet = false
                         },
                         onAddNew: { name, notes, date, place in

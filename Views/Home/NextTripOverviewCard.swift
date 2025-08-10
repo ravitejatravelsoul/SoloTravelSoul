@@ -23,7 +23,7 @@ struct NextTripOverviewCard: View {
                 .resizable()
                 .aspectRatio(contentMode: .fill)
                 .frame(width: 80, height: 80)
-                .cornerRadius(12, corners: [UIRectCorner.topLeft, UIRectCorner.topRight])
+                .cornerRadius(12)
                 .shadow(radius: 3)
 
             VStack(alignment: .leading, spacing: 6) {
@@ -49,9 +49,12 @@ struct NextTripOverviewCard: View {
                         .foregroundColor(.green)
                 }
 
-                Text(trip.notes)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                // FIX: Only show notes if not empty
+                if !trip.notes.isEmpty {
+                    Text(trip.notes)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
 
                 HStack(spacing: 10) {
                     Button("View Details") { }
@@ -70,27 +73,5 @@ struct NextTripOverviewCard: View {
         .cornerRadius(16)
         .shadow(radius: 2)
         .padding(.horizontal)
-    }
-}
-
-struct NextTripOverviewCard_Previews: PreviewProvider {
-    static var previews: some View {
-        NextTripOverviewCard(
-            trip: PlannedTrip(
-                id: UUID(),
-                destination: "Paris",
-                startDate: Date(),
-                endDate: Calendar.current.date(byAdding: .day, value: 4, to: Date())!,
-                notes: "Sample Paris trip",
-                itinerary: [],
-                photoData: nil,
-                latitude: nil,
-                longitude: nil,
-                placeName: nil,
-                members: [] // <-- Added members argument
-            ),
-            onEdit: { print("Edit pressed") }
-        )
-        .previewLayout(.sizeThatFits)
     }
 }

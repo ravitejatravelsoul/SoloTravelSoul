@@ -28,7 +28,7 @@ struct UpcomingTripsView: View {
                     .onDelete { indices in
                         indices.forEach { idx in
                             let trip = plannedTrips[idx]
-                            tripViewModel.deleteTrip(withId: trip.id)
+                            tripViewModel.deleteTrip(trip) // FIX: Pass the trip, not trip.id or withId
                             if editingTrip?.id == trip.id {
                                 editingTrip = nil
                             }

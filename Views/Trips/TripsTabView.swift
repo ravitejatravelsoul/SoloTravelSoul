@@ -21,7 +21,7 @@ struct TripsTabView: View {
                 .onDelete { indexSet in
                     for index in indexSet {
                         let trip = tripViewModel.trips[index]
-                        tripViewModel.deleteTrip(withId: trip.id)
+                        tripViewModel.deleteTrip(trip) // <--- FIXED
                         if sheetTrip?.id == trip.id {
                             sheetTrip = nil
                         }

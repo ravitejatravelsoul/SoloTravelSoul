@@ -60,7 +60,7 @@ struct HomeView: View {
             .navigationTitle("Solo Travel Soul")
             .sheet(isPresented: $showAddTrip) {
                 AddTripView { newTrip in
-                    tripViewModel.addTrip(newTrip)
+                    tripViewModel.addTrip(newTrip) // ✅ CORRECT
                 }
             }
             .sheet(isPresented: $showDiscover) {

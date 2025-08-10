@@ -10,6 +10,8 @@
 		8C02E0FD2E29BE8E000C4AA9 /* GooglePlacesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C02E0FC2E29BE8E000C4AA9 /* GooglePlacesService.swift */; };
 		8C02E0FF2E29C36B000C4AA9 /* PlaceSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C02E0FE2E29C36B000C4AA9 /* PlaceSearchView.swift */; };
 		8C0B260F2E45C4D100E195FA /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 8C0B260E2E45C4D100E195FA /* FirebaseFirestore */; };
+		8C0FE9352E483FCE00FA651C /* FirestoreService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C0FE9342E483FCE00FA651C /* FirestoreService.swift */; };
+		8C0FE9372E48448700FA651C /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 8C0FE9362E48448700FA651C /* FirebaseAuth */; };
 		8C2EC34A2E31E4500094CCDB /* PlaceSearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C2EC3492E31E4500094CCDB /* PlaceSearchViewModel.swift */; };
 		8C3993752E2DC3D300739CF8 /* Models.Place.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C3993742E2DC3D300739CF8 /* Models.Place.swift */; };
 		8C3993772E2DC3EA00739CF8 /* ItineraryDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C3993762E2DC3EA00739CF8 /* ItineraryDay.swift */; };
@@ -81,6 +83,7 @@
 /* Begin PBXFileReference section */
 		8C02E0FC2E29BE8E000C4AA9 /* GooglePlacesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GooglePlacesService.swift; sourceTree = "<group>"; };
 		8C02E0FE2E29C36B000C4AA9 /* PlaceSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceSearchView.swift; sourceTree = "<group>"; };
+		8C0FE9342E483FCE00FA651C /* FirestoreService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirestoreService.swift; sourceTree = "<group>"; };
 		8C2EC3492E31E4500094CCDB /* PlaceSearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceSearchViewModel.swift; sourceTree = SOURCE_ROOT; };
 		8C3993742E2DC3D300739CF8 /* Models.Place.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.Place.swift; sourceTree = "<group>"; };
 		8C3993762E2DC3EA00739CF8 /* ItineraryDay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItineraryDay.swift; sourceTree = "<group>"; };
@@ -176,6 +179,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8CAA0E172E2DFD6E0015B571 /* GooglePlaces in Frameworks */,
+				8C0FE9372E48448700FA651C /* FirebaseAuth in Frameworks */,
 				8C0B260F2E45C4D100E195FA /* FirebaseFirestore in Frameworks */,
 				8C8BC4882E45B7A600EE8F4C /* FirebaseFirestore in Frameworks */,
 				8C60EAB12E372A3E002D7E74 /* FirebaseAuth in Frameworks */,
@@ -293,6 +297,7 @@
 		8C714C162E25EBEB0002CDCD /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				8C0FE9342E483FCE00FA651C /* FirestoreService.swift */,
 				8C02E0FC2E29BE8E000C4AA9 /* GooglePlacesService.swift */,
 				8C9D1B9E2E27707500858387 /* PlacesService.swift */,
 			);
@@ -478,6 +483,7 @@
 				8CB474392E4698EC001F4D78 /* BiometricAuthManager.swift in Sources */,
 				8CD88C6B2E45783E0028CDF7 /* RoundedCorner+CornerRadius.swift in Sources */,
 				8C75F1512E3333E3001D915E /* PlacePickerView.swift in Sources */,
+				8C0FE9352E483FCE00FA651C /* FirestoreService.swift in Sources */,
 				8CB474372E469113001F4D78 /* NotificationsListView.swift in Sources */,
 				8C75F13F2E32F244001D915E /* RecentTripsView.swift in Sources */,
 				8C75F14B2E32F867001D915E /* JournalView.swift in Sources */,
@@ -879,6 +885,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8C0B260D2E45C4D100E195FA /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseFirestore;
+		};
+		8C0FE9362E48448700FA651C /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C0B260D2E45C4D100E195FA /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
 		};
 		8C60EAB02E372A3E002D7E74 /* FirebaseAuth */ = {
 			isa = XCSwiftPackageProductDependency;

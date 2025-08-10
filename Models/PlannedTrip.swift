@@ -1,4 +1,5 @@
 import Foundation
+import FirebaseFirestore
 
 public struct PlannedTrip: Identifiable, Codable, Hashable {
     public let id: UUID
@@ -32,6 +33,61 @@ public struct PlannedTrip: Identifiable, Codable, Hashable {
             itinerary[days-1].places += placesCopy
         }
     }
+
+    // MARK: - Firestore Serialization
+
+    public static func fromDict(_ dict: [String: Any]) -> PlannedTrip? {
+        guard
+            let idString = dict["id"] as? String,
+            let id = UUID(uuidString: idString),
+            let destination = dict["destination"] as? String,
+            let startTimestamp = dict["startDate"] as? Timestamp,
+            let endTimestamp = dict["endDate"] as? Timestamp,
+            let notes = dict["notes"] as? String,
+            let itineraryArray = dict["itinerary"] as? [[String: Any]],
+            let members = dict["members"] as? [String]
+        else {
+            return nil
+        }
+
+        let itinerary = itineraryArray.compactMap { ItineraryDay.fromDict($0) }
+        let photoData = (dict["photoData"] as? String).flatMap { Data(base64Encoded: $0) }
+        let latitude = dict["latitude"] as? Double
+        let longitude = dict["longitude"] as? Double
+        let placeName = dict["placeName"] as? String
+
+        return PlannedTrip(
+            id: id,
+            destination: destination,
+            startDate: startTimestamp.dateValue(),
+            endDate: endTimestamp.dateValue(),
+            notes: notes,
+            itinerary: itinerary,
+            photoData: photoData,
+            latitude: latitude,
+            longitude: longitude,
+            placeName: placeName,
+            members: members
+        )
+    }
+
+    public func toDict() -> [String: Any] {
+        return [
+            "id": id.uuidString,
+            "destination": destination,
+            "startDate": Timestamp(date: startDate),
+            "endDate": Timestamp(date: endDate),
+            "notes": notes,
+            "itinerary": itinerary.map { $0.toDict() },
+            "photoData": photoData?.base64EncodedString() as Any,
+            "latitude": latitude as Any,
+            "longitude": longitude as Any,
+            "placeName": placeName as Any,
+            "members": members
+        ]
+    }
+
+    // MARK: - Sample Data
 
     public static func samplePlannedTrips() -> [PlannedTrip] {
         [
