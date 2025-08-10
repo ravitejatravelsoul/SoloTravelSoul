@@ -1,11 +1,3 @@
-//
-//  LoginForm.swift
-//  SoloTravelSoul
-//
-//  Created by Raviteja Vemulapelli on 7/27/25.
-//
-
-
 import SwiftUI
 
 struct LoginForm: View {

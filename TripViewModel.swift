@@ -5,9 +5,7 @@ private let tripsKey = "SoloTravelSoul_Trips"
 
 class TripViewModel: ObservableObject {
     @Published var trips: [PlannedTrip] = [] {
-        didSet {
-            saveTrips()
-        }
+        didSet { saveTrips() }
     }
     @Published var discoveredPlaces: [Place] = []
     @Published var selectedPlace: Place? = nil
@@ -103,7 +101,7 @@ class TripViewModel: ObservableObject {
         if let dayIdx = trip.itinerary.firstIndex(where: { Calendar.current.isDate($0.date, inSameDayAs: date) }) {
             trip.itinerary[dayIdx].places.append(place)
         } else {
-            let newDay = ItineraryDay(date: date, places: [place])
+            let newDay = ItineraryDay(date: date, places: [place], journalEntries: [])
             trip.itinerary.append(newDay)
         }
         trips[tripIdx] = trip

@@ -2,8 +2,22 @@ import SwiftUI
 
 fileprivate func googlePlacePhotoURL(photoReference: String, maxWidth: Int = 400) -> URL? {
     let apiKey = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU"
-    let urlString = "https://maps.googleapis.com/maps/api/place/photo?maxwidth=\(maxWidth)&photoreference=\(photoReference)&key=\(apiKey)"
-    return URL(string: urlString)
+    if photoReference.starts(with: "places/") {
+        var components = URLComponents(string: "https://places.googleapis.com/v1/\(photoReference)/media")
+        components?.queryItems = [
+            URLQueryItem(name: "key", value: apiKey),
+            URLQueryItem(name: "maxWidthPx", value: "\(maxWidth)")
+        ]
+        return components?.url
+    } else {
+        var components = URLComponents(string: "https://maps.googleapis.com/maps/api/place/photo")
+        components?.queryItems = [
+            URLQueryItem(name: "maxwidth", value: "\(maxWidth)"),
+            URLQueryItem(name: "photoreference", value: photoReference),
+            URLQueryItem(name: "key", value: apiKey)
+        ]
+        return components?.url
+    }
 }
 
 struct PlannedTripDetailView: View {
@@ -18,7 +32,7 @@ struct PlannedTripDetailView: View {
         _notes = State(initialValue: plannedTrip.notes)
     }
 
-    var imageURL: URL? {
+    private var imageURL: URL? {
         if let firstPlace = plannedTrip.itinerary.first?.places.first,
            let photoRef = firstPlace.photoReferences?.first,
            !photoRef.isEmpty
@@ -28,17 +42,22 @@ struct PlannedTripDetailView: View {
         return nil
     }
 
+    private var plannedPlaces: [Place] {
+        plannedTrip.itinerary.flatMap { $0.places }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                // Trip image
                 if let url = imageURL {
                     AsyncImage(url: url) { phase in
                         if let image = phase.image {
                             image.resizable().scaledToFill()
+                                .onAppear { print("Loaded trip image with url: \(url.absoluteString)") }
                         } else if phase.error != nil {
                             Color.gray.opacity(0.2)
-                                .overlay(Image(systemName: "photo").foregroundColor(.red))
+                                .overlay(Image(systemName: "exclamationmark.triangle").foregroundColor(.red))
+                                .onAppear { print("AsyncImage error for url: \(url.absoluteString)") }
                         } else {
                             Color.gray.opacity(0.2)
                                 .overlay(ProgressView())
@@ -65,7 +84,7 @@ struct PlannedTripDetailView: View {
 
                 Divider()
                 Text("Planned Places:").font(.headline)
-                ForEach(plannedTrip.itinerary.flatMap { $0.places }) { place in
+                ForEach(plannedPlaces) { place in
                     VStack(alignment: .leading) {
                         Text(place.name)
                             .font(.body)
@@ -78,7 +97,6 @@ struct PlannedTripDetailView: View {
                     Divider()
                 }
 
-                // Show notes in read-only mode, but allow editing if you want
                 Text("Notes").font(.headline)
                 TextField("Notes", text: $notes)
                     .textFieldStyle(RoundedBorderTextFieldStyle())

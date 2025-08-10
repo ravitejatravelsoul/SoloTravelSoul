@@ -50,7 +50,7 @@ struct AddJournalEntryView: View {
                         let entry = JournalEntry(
                             date: entryDate,
                             text: text,
-                            photoData: photoData // <-- This works now
+                            photoData: photoData
                         )
                         onSave(entry)
                         dismiss()

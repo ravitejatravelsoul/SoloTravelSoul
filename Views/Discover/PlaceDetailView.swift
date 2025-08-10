@@ -2,9 +2,13 @@ import SwiftUI
 import MapKit
 
 fileprivate func googlePlacePhotoURL(photoReference: String, maxWidth: Int = 400) -> URL? {
-    let apiKey = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU" // use your key or a constant here
-    let urlString = "https://maps.googleapis.com/maps/api/place/photo?maxwidth=\(maxWidth)&photoreference=\(photoReference)&key=\(apiKey)"
-    return URL(string: urlString)
+    let apiKey = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU"
+    var components = URLComponents(string: "https://places.googleapis.com/v1/\(photoReference)/media")
+    components?.queryItems = [
+        URLQueryItem(name: "key", value: apiKey),
+        URLQueryItem(name: "maxWidthPx", value: "\(maxWidth)")
+    ]
+    return components?.url
 }
 
 struct PlaceDetailView: View {
@@ -22,20 +26,42 @@ struct PlaceDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                // --- Fix: Use .background and .clipped for proper image display & fallback ---
                 if let photos = place.photoReferences, !photos.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack {
-                            ForEach(photos, id: \.self) { ref in
-                                AsyncImage(url: googlePlacePhotoURL(photoReference: ref, maxWidth: 400)) { image in
-                                    image.resizable().aspectRatio(contentMode: .fill)
-                                } placeholder: {
-                                    Color.gray.opacity(0.2)
+                    TabView {
+                        ForEach(photos, id: \.self) { ref in
+                            if let url = googlePlacePhotoURL(photoReference: ref, maxWidth: 600) {
+                                AsyncImage(url: url) { phase in
+                                    if let image = phase.image {
+                                        image
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fill)
+                                            .frame(width: UIScreen.main.bounds.width - 40, height: 220)
+                                            .clipped()
+                                    } else if phase.error != nil {
+                                        Color.gray.opacity(0.2)
+                                            .overlay(Image(systemName: "exclamationmark.triangle").foregroundColor(.red))
+                                            .frame(width: UIScreen.main.bounds.width - 40, height: 220)
+                                    } else {
+                                        ZStack {
+                                            Color.gray.opacity(0.2)
+                                            ProgressView()
+                                        }
+                                        .frame(width: UIScreen.main.bounds.width - 40, height: 220)
+                                    }
                                 }
-                                .frame(width: 200, height: 140)
-                                .cornerRadius(12)
+                                .cornerRadius(14)
+                                .padding(.vertical, 4)
                             }
                         }
                     }
+                    .tabViewStyle(PageTabViewStyle())
+                    .frame(height: 230)
+                } else {
+                    Color.gray.opacity(0.15)
+                        .frame(height: 220)
+                        .cornerRadius(14)
+                        .overlay(Image(systemName: "photo").font(.largeTitle).foregroundColor(.gray))
                 }
 
                 Text(place.name).font(.title2).bold()
@@ -53,12 +79,11 @@ struct PlaceDetailView: View {
                     }
                 }
 
-                // Updated for iOS 17+ Map API
                 Map(initialPosition: .region(region)) {
                     Marker(place.name, coordinate: CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude))
                 }
                 .frame(height: 180)
-                .cornerRadius(12)
+                .cornerRadius(12, corners: [.topLeft, .topRight])
 
                 if let phone = place.phoneNumber {
                     HStack { Image(systemName: "phone"); Text(phone) }

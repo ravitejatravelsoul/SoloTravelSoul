@@ -4,7 +4,7 @@ public struct ItineraryDay: Identifiable, Codable, Hashable {
     public let id: UUID
     public var date: Date
     public var places: [Place]
-    public var journalEntries: [JournalEntry] // Use your main JournalEntry struct
+    public var journalEntries: [JournalEntry]
 
     public init(id: UUID = UUID(), date: Date, places: [Place], journalEntries: [JournalEntry] = []) {
         self.id = id

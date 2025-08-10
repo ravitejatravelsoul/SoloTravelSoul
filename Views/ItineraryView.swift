@@ -45,7 +45,7 @@ struct ItineraryView_Previews: PreviewProvider {
                 latitude: nil,
                 longitude: nil,
                 placeName: nil,
-                members: [] // <-- Added members argument
+                members: []
             ),
             PlannedTrip(
                 id: UUID(),
@@ -58,7 +58,7 @@ struct ItineraryView_Previews: PreviewProvider {
                 latitude: nil,
                 longitude: nil,
                 placeName: nil,
-                members: [] // <-- Added members argument
+                members: []
             )
         ])
     }

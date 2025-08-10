@@ -80,23 +80,42 @@ final class GooglePlacesService {
         }
         let decoded = try JSONDecoder().decode(PlacesSearchResponse.self, from: data)
         let results = decoded.places ?? []
-        return results.map { result in
-            Place(
-                id: result.id,
-                name: result.displayName?.text ?? "",
-                address: result.formattedAddress,
-                latitude: result.location?.latitude ?? 0.0,
-                longitude: result.location?.longitude ?? 0.0,
-                types: result.types,
-                rating: result.rating,
-                userRatingsTotal: result.userRatingCount,
-                photoReferences: result.photos?.compactMap { $0.name },
+        // --- Debugger: Print photoReferences for each place being mapped for grid ---
+        for result in results {
+            let refs = result.photos?.compactMap { $0.name }
+            print("Grid Debug - Place: \(result.displayName?.text ?? "NO_NAME"), photoReferences: \(String(describing: refs))")
+        }
+        // ---
+        // Fix: Break up the Place mapping for better compile-time performance
+        var places: [Place] = []
+        for result in results {
+            let id = result.id
+            let name = result.displayName?.text ?? ""
+            let address = result.formattedAddress
+            let latitude = result.location?.latitude ?? 0.0
+            let longitude = result.location?.longitude ?? 0.0
+            let types = result.types
+            let rating = result.rating
+            let userRatingsTotal = result.userRatingCount
+            let photoReferences = result.photos?.compactMap { $0.name }
+            let place = Place(
+                id: id,
+                name: name,
+                address: address,
+                latitude: latitude,
+                longitude: longitude,
+                types: types,
+                rating: rating,
+                userRatingsTotal: userRatingsTotal,
+                photoReferences: photoReferences,
                 reviews: nil,
                 openingHours: nil,
                 phoneNumber: nil,
                 website: nil
             )
+            places.append(place)
         }
+        return places
     }
 
     func fetchTopPlaces(for locationName: String) async throws -> [Place] {

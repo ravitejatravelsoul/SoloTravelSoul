@@ -1,5 +1,4 @@
 import SwiftUI
-import PhotosUI
 
 struct TripJournalView: View {
     @ObservedObject var tripViewModel: TripViewModel
@@ -10,7 +9,7 @@ struct TripJournalView: View {
     @State private var editingEntry: JournalEntry?
 
     var sortedEntries: [JournalEntry] {
-        (day.journalEntries ?? []).sorted { $0.date > $1.date }
+        day.journalEntries.sorted { $0.date > $1.date }
     }
 
     var body: some View {

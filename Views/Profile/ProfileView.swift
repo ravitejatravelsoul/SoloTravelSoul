@@ -3,6 +3,8 @@ import SwiftUI
 struct ProfileView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
 
+    // Fallback to AppStorage if profile is nil (optional, for backward compatibility)
+    @AppStorage("profileImageData") var profileImageData: Data = Data()
     @AppStorage("name") var name: String = ""
     @AppStorage("email") var email: String = ""
     @AppStorage("phone") var phone: String = ""
@@ -12,12 +14,11 @@ struct ProfileView: View {
     @AppStorage("city") var city: String = ""
     @AppStorage("bio") var bio: String = ""
     @AppStorage("preferences") var preferences: String = ""
-    @AppStorage("socialLinks") var socialLinks: String = ""
     @AppStorage("favoriteDestinations") var favoriteDestinations: String = ""
     @AppStorage("languages") var languages: String = ""
     @AppStorage("emergencyContact") var emergencyContact: String = ""
+    @AppStorage("socialLinks") var socialLinks: String = ""
     @AppStorage("privacyEnabled") var privacyEnabled: Bool = false
-    @AppStorage("profileImageData") var profileImageData: Data = Data()
 
     @State private var showEdit = false
     @State private var showLogoutConfirm = false
@@ -37,6 +38,7 @@ struct ProfileView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
+                // Profile Picture
                 avatarImage
                     .resizable()
                     .aspectRatio(contentMode: .fill)
@@ -44,47 +46,71 @@ struct ProfileView: View {
                     .clipShape(Circle())
                     .shadow(radius: 6)
 
-                Text(name.isEmpty ? "Your Name" : name)
-                    .font(.title2)
-                    .bold()
-                Text(email.isEmpty ? "your@email.com" : email)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-
-                Group {
-                    HStack { Text("Phone:"); Spacer(); Text(phone) }
-                    HStack { Text("Birthday:"); Spacer(); Text(birthday) }
-                    HStack { Text("Gender:"); Spacer(); Text(gender) }
-                    HStack { Text("Country:"); Spacer(); Text(country) }
-                    HStack { Text("City:"); Spacer(); Text(city) }
-                }.padding(.horizontal)
-
-                Text("Bio: \(bio)")
+                if let profile = authViewModel.profile {
+                    // Name & Email
+                    Text(profile.name.isEmpty ? "Your Name" : profile.name)
+                        .font(.title2)
+                        .bold()
+                    Text(profile.email.isEmpty ? "your@email.com" : profile.email)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    // All Editable Fields
+                    Group {
+                        ProfileRow(title: "Phone", value: profile.phone)
+                        ProfileRow(title: "Birthday", value: profile.birthday)
+                        ProfileRow(title: "Gender", value: profile.gender)
+                        ProfileRow(title: "Country", value: profile.country)
+                        ProfileRow(title: "City", value: profile.city)
+                        ProfileRow(title: "Bio", value: profile.bio)
+                        ProfileRow(title: "Preferences", value: listString(profile.preferences))
+                        ProfileRow(title: "Favorite Destinations", value: listString(profile.favoriteDestinations))
+                        ProfileRow(title: "Languages", value: listString(profile.languages))
+                        ProfileRow(title: "Emergency Contact", value: profile.emergencyContact)
+                        ProfileRow(title: "Social Links", value: profile.socialLinks)
+                    }
                     .padding(.horizontal)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text("Preferences: \(listString(preferences))")
+                    // Privacy Indicator
+                    HStack {
+                        Image(systemName: profile.privacyEnabled ? "lock.shield.fill" : "lock.open")
+                            .foregroundColor(profile.privacyEnabled ? .green : .gray)
+                        Text(profile.privacyEnabled ? "Privacy Enabled" : "Privacy Disabled")
+                            .foregroundColor(profile.privacyEnabled ? .green : .gray)
+                    }
                     .padding(.horizontal)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text("Favorite Destinations: \(listString(favoriteDestinations))")
+                    .padding(.top, 8)
+                } else {
+                    // Fallback to AppStorage values if profile is nil
+                    Text(name.isEmpty ? "Your Name" : name)
+                        .font(.title2)
+                        .bold()
+                    Text(email.isEmpty ? "your@email.com" : email)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Group {
+                        ProfileRow(title: "Phone", value: phone)
+                        ProfileRow(title: "Birthday", value: birthday)
+                        ProfileRow(title: "Gender", value: gender)
+                        ProfileRow(title: "Country", value: country)
+                        ProfileRow(title: "City", value: city)
+                        ProfileRow(title: "Bio", value: bio)
+                        ProfileRow(title: "Preferences", value: listString(preferences))
+                        ProfileRow(title: "Favorite Destinations", value: listString(favoriteDestinations))
+                        ProfileRow(title: "Languages", value: listString(languages))
+                        ProfileRow(title: "Emergency Contact", value: emergencyContact)
+                        ProfileRow(title: "Social Links", value: socialLinks)
+                    }
                     .padding(.horizontal)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text("Languages: \(listString(languages))")
+                    HStack {
+                        Image(systemName: privacyEnabled ? "lock.shield.fill" : "lock.open")
+                            .foregroundColor(privacyEnabled ? .green : .gray)
+                        Text(privacyEnabled ? "Privacy Enabled" : "Privacy Disabled")
+                            .foregroundColor(privacyEnabled ? .green : .gray)
+                    }
                     .padding(.horizontal)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text("Emergency Contact: \(emergencyContact)")
-                    .padding(.horizontal)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text("Social Links: \(socialLinks)")
-                    .padding(.horizontal)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                HStack {
-                    Image(systemName: privacyEnabled ? "lock.shield.fill" : "lock.open")
-                        .foregroundColor(privacyEnabled ? .green : .gray)
-                    Text(privacyEnabled ? "Privacy Enabled" : "Privacy Disabled")
-                        .foregroundColor(privacyEnabled ? .green : .gray)
+                    .padding(.top, 8)
                 }
-                .padding(.horizontal)
 
+                // Edit Profile Button
                 Button(action: { showEdit = true }) {
                     Label("Edit Profile", systemImage: "pencil")
                         .font(.headline)
@@ -97,6 +123,7 @@ struct ProfileView: View {
                         .environmentObject(authViewModel)
                 }
 
+                // Logout Button
                 Button(action: {
                     showLogoutConfirm = true
                 }) {
@@ -121,5 +148,22 @@ struct ProfileView: View {
             }
             .padding()
         }
+    }
+}
+
+struct ProfileRow: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .top) {
+            Text(title)
+                .fontWeight(.semibold)
+            Spacer()
+            Text(value.isEmpty ? "Not Set" : value)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.vertical, 2)
     }
 }

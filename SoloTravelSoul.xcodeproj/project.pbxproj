@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		8C02E0FD2E29BE8E000C4AA9 /* GooglePlacesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C02E0FC2E29BE8E000C4AA9 /* GooglePlacesService.swift */; };
 		8C02E0FF2E29C36B000C4AA9 /* PlaceSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C02E0FE2E29C36B000C4AA9 /* PlaceSearchView.swift */; };
+		8C0B260F2E45C4D100E195FA /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 8C0B260E2E45C4D100E195FA /* FirebaseFirestore */; };
 		8C2EC34A2E31E4500094CCDB /* PlaceSearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C2EC3492E31E4500094CCDB /* PlaceSearchViewModel.swift */; };
 		8C3993752E2DC3D300739CF8 /* Models.Place.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C3993742E2DC3D300739CF8 /* Models.Place.swift */; };
 		8C3993772E2DC3EA00739CF8 /* ItineraryDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C3993762E2DC3EA00739CF8 /* ItineraryDay.swift */; };
@@ -17,7 +18,6 @@
 		8C3993B12E2DEC8A00739CF8 /* GooglePlacesAutocompleteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C3993B02E2DEC8A00739CF8 /* GooglePlacesAutocompleteView.swift */; };
 		8C60EAAC2E3725D0002D7E74 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 8C60EAAB2E3725D0002D7E74 /* GoogleService-Info.plist */; };
 		8C60EAB12E372A3E002D7E74 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 8C60EAB02E372A3E002D7E74 /* FirebaseAuth */; };
-		8C60EAB32E372A3E002D7E74 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 8C60EAB22E372A3E002D7E74 /* FirebaseFirestore */; };
 		8C60EAB92E372C54002D7E74 /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C60EAB82E372C54002D7E74 /* AuthViewModel.swift */; };
 		8C60EAC12E39B380002D7E74 /* JournalEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C60EAC02E39B380002D7E74 /* JournalEntry.swift */; };
 		8C60EAC32E39B46F002D7E74 /* TripJournalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C60EAC22E39B46F002D7E74 /* TripJournalView.swift */; };
@@ -34,6 +34,12 @@
 		8C75F1512E3333E3001D915E /* PlacePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F1502E3333E3001D915E /* PlacePickerView.swift */; };
 		8C75F1532E344149001D915E /* ItineraryOptimizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F1522E344149001D915E /* ItineraryOptimizer.swift */; };
 		8C75F1592E35AC88001D915E /* AccessibleCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F1582E35AC88001D915E /* AccessibleCardView.swift */; };
+		8C8BC4742E45A91E00EE8F4C /* GroupViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C8BC4732E45A91E00EE8F4C /* GroupViewModel.swift */; };
+		8C8BC4782E45A9A600EE8F4C /* GroupListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C8BC4772E45A9A600EE8F4C /* GroupListView.swift */; };
+		8C8BC47D2E45AA0D00EE8F4C /* GroupDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C8BC47C2E45AA0D00EE8F4C /* GroupDetailView.swift */; };
+		8C8BC47F2E45AB3000EE8F4C /* CreateGroupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C8BC47E2E45AB3000EE8F4C /* CreateGroupView.swift */; };
+		8C8BC4812E45AB9000EE8F4C /* UserProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C8BC4802E45AB9000EE8F4C /* UserProfile.swift */; };
+		8C8BC4882E45B7A600EE8F4C /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 8C8BC4872E45B7A600EE8F4C /* FirebaseFirestore */; };
 		8C9D1B742E260BDF00858387 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C714C1A2E25F09D0002CDCD /* ContentView.swift */; };
 		8C9D1B7A2E273E1A00858387 /* AuthHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9D1B792E273E1A00858387 /* AuthHomeView.swift */; };
 		8C9D1B852E27492C00858387 /* PlannedTrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9D1B842E27492C00858387 /* PlannedTrip.swift */; };
@@ -44,7 +50,12 @@
 		8C9D1BAA2E277DC700858387 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9D1BA92E277DC700858387 /* HomeView.swift */; };
 		8CAA0E172E2DFD6E0015B571 /* GooglePlaces in Frameworks */ = {isa = PBXBuildFile; productRef = 8CAA0E162E2DFD6E0015B571 /* GooglePlaces */; };
 		8CAA0E1C2E2F31EF0015B571 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CAA0E1B2E2F31EF0015B571 /* AppDelegate.swift */; };
+		8CB474332E468FE2001F4D78 /* NotificationItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CB474322E468FE2001F4D78 /* NotificationItem.swift */; };
+		8CB474352E4690D4001F4D78 /* NotificationsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CB474342E4690D4001F4D78 /* NotificationsViewModel.swift */; };
+		8CB474372E469113001F4D78 /* NotificationsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CB474362E469112001F4D78 /* NotificationsListView.swift */; };
+		8CB474392E4698EC001F4D78 /* BiometricAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CB474382E4698EC001F4D78 /* BiometricAuthManager.swift */; };
 		8CBCD0ED2E42FCD100D216BA /* GroupTrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CBCD0EC2E42FCD100D216BA /* GroupTrip.swift */; };
+		8CD88C6B2E45783E0028CDF7 /* RoundedCorner+CornerRadius.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CD88C6A2E45783E0028CDF7 /* RoundedCorner+CornerRadius.swift */; };
 		8CDB23192E28AF5500949D00 /* ExploreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CDB23182E28AF5500949D00 /* ExploreView.swift */; };
 		8CDB231B2E28B0CD00949D00 /* TripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CDB231A2E28B0CD00949D00 /* TripsView.swift */; };
 		8CDB231D2E28BADA00949D00 /* CarouselView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CDB231C2E28BADA00949D00 /* CarouselView.swift */; };
@@ -97,6 +108,11 @@
 		8C75F1502E3333E3001D915E /* PlacePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacePickerView.swift; sourceTree = "<group>"; };
 		8C75F1522E344149001D915E /* ItineraryOptimizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItineraryOptimizer.swift; sourceTree = "<group>"; };
 		8C75F1582E35AC88001D915E /* AccessibleCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibleCardView.swift; sourceTree = "<group>"; };
+		8C8BC4732E45A91E00EE8F4C /* GroupViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupViewModel.swift; sourceTree = "<group>"; };
+		8C8BC4772E45A9A600EE8F4C /* GroupListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupListView.swift; sourceTree = "<group>"; };
+		8C8BC47C2E45AA0D00EE8F4C /* GroupDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupDetailView.swift; sourceTree = "<group>"; };
+		8C8BC47E2E45AB3000EE8F4C /* CreateGroupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateGroupView.swift; sourceTree = "<group>"; };
+		8C8BC4802E45AB9000EE8F4C /* UserProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserProfile.swift; sourceTree = "<group>"; };
 		8C9D1B792E273E1A00858387 /* AuthHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthHomeView.swift; sourceTree = "<group>"; };
 		8C9D1B842E27492C00858387 /* PlannedTrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannedTrip.swift; sourceTree = "<group>"; };
 		8C9D1B8C2E274ADE00858387 /* RootTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabView.swift; sourceTree = "<group>"; };
@@ -105,7 +121,12 @@
 		8C9D1B9E2E27707500858387 /* PlacesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacesService.swift; sourceTree = "<group>"; };
 		8C9D1BA92E277DC700858387 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		8CAA0E1B2E2F31EF0015B571 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		8CB474322E468FE2001F4D78 /* NotificationItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationItem.swift; sourceTree = "<group>"; };
+		8CB474342E4690D4001F4D78 /* NotificationsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsViewModel.swift; sourceTree = "<group>"; };
+		8CB474362E469112001F4D78 /* NotificationsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsListView.swift; sourceTree = "<group>"; };
+		8CB474382E4698EC001F4D78 /* BiometricAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricAuthManager.swift; sourceTree = SOURCE_ROOT; };
 		8CBCD0EC2E42FCD100D216BA /* GroupTrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupTrip.swift; sourceTree = "<group>"; };
+		8CD88C6A2E45783E0028CDF7 /* RoundedCorner+CornerRadius.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RoundedCorner+CornerRadius.swift"; sourceTree = SOURCE_ROOT; };
 		8CDB23182E28AF5500949D00 /* ExploreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExploreView.swift; sourceTree = "<group>"; };
 		8CDB231A2E28B0CD00949D00 /* TripsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsView.swift; sourceTree = "<group>"; };
 		8CDB231C2E28BADA00949D00 /* CarouselView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarouselView.swift; sourceTree = "<group>"; };
@@ -155,7 +176,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				8CAA0E172E2DFD6E0015B571 /* GooglePlaces in Frameworks */,
-				8C60EAB32E372A3E002D7E74 /* FirebaseFirestore in Frameworks */,
+				8C0B260F2E45C4D100E195FA /* FirebaseFirestore in Frameworks */,
+				8C8BC4882E45B7A600EE8F4C /* FirebaseFirestore in Frameworks */,
 				8C60EAB12E372A3E002D7E74 /* FirebaseAuth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -210,6 +232,9 @@
 		8C714C122E25EB7E0002CDCD /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				8C8BC47E2E45AB3000EE8F4C /* CreateGroupView.swift */,
+				8C8BC47C2E45AA0D00EE8F4C /* GroupDetailView.swift */,
+				8C8BC4772E45A9A600EE8F4C /* GroupListView.swift */,
 				8C60EAC82E39B5C3002D7E74 /* EditJournalEntryView.swift */,
 				8C60EAC42E39B48C002D7E74 /* AddJournalEntryView.swift */,
 				8C60EAC22E39B46F002D7E74 /* TripJournalView.swift */,
@@ -229,6 +254,11 @@
 		8C714C132E25EB970002CDCD /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				8CB474362E469112001F4D78 /* NotificationsListView.swift */,
+				8CB474342E4690D4001F4D78 /* NotificationsViewModel.swift */,
+				8CB474322E468FE2001F4D78 /* NotificationItem.swift */,
+				8C8BC4802E45AB9000EE8F4C /* UserProfile.swift */,
+				8C8BC4732E45A91E00EE8F4C /* GroupViewModel.swift */,
 				8CBCD0EC2E42FCD100D216BA /* GroupTrip.swift */,
 				8C60EAC02E39B380002D7E74 /* JournalEntry.swift */,
 				8C60EAB82E372C54002D7E74 /* AuthViewModel.swift */,
@@ -254,6 +284,8 @@
 		8C714C152E25EBDC0002CDCD /* Helpers */ = {
 			isa = PBXGroup;
 			children = (
+				8CD88C6A2E45783E0028CDF7 /* RoundedCorner+CornerRadius.swift */,
+				8CB474382E4698EC001F4D78 /* BiometricAuthManager.swift */,
 			);
 			path = Helpers;
 			sourceTree = "<group>";
@@ -390,7 +422,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				8CAA0E152E2DFD6E0015B571 /* XCRemoteSwiftPackageReference "ios-places-sdk" */,
-				8C60EAAD2E372A3E002D7E74 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				8C0B260D2E45C4D100E195FA /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8C714BE92E25EB480002CDCD /* Products */;
@@ -442,17 +474,25 @@
 				8C9D1B9A2E276ECD00858387 /* Attraction.swift in Sources */,
 				8C75F13D2E32F15F001D915E /* QuickActionView.swift in Sources */,
 				8CBCD0ED2E42FCD100D216BA /* GroupTrip.swift in Sources */,
+				8C8BC4742E45A91E00EE8F4C /* GroupViewModel.swift in Sources */,
+				8CB474392E4698EC001F4D78 /* BiometricAuthManager.swift in Sources */,
+				8CD88C6B2E45783E0028CDF7 /* RoundedCorner+CornerRadius.swift in Sources */,
 				8C75F1512E3333E3001D915E /* PlacePickerView.swift in Sources */,
+				8CB474372E469113001F4D78 /* NotificationsListView.swift in Sources */,
 				8C75F13F2E32F244001D915E /* RecentTripsView.swift in Sources */,
 				8C75F14B2E32F867001D915E /* JournalView.swift in Sources */,
 				8C60EAC32E39B46F002D7E74 /* TripJournalView.swift in Sources */,
 				8C9D1B7A2E273E1A00858387 /* AuthHomeView.swift in Sources */,
+				8C8BC4812E45AB9000EE8F4C /* UserProfile.swift in Sources */,
 				8C3993752E2DC3D300739CF8 /* Models.Place.swift in Sources */,
+				8CB474352E4690D4001F4D78 /* NotificationsViewModel.swift in Sources */,
 				8C75F1472E32F64F001D915E /* ItineraryView.swift in Sources */,
 				8C75F13B2E32EAE9001D915E /* NextTripOverviewCard.swift in Sources */,
 				8C75F1412E32F25A001D915E /* TravelJournalPreview.swift in Sources */,
 				8C2EC34A2E31E4500094CCDB /* PlaceSearchViewModel.swift in Sources */,
+				8C8BC47D2E45AA0D00EE8F4C /* GroupDetailView.swift in Sources */,
 				8C60EAC12E39B380002D7E74 /* JournalEntry.swift in Sources */,
+				8C8BC47F2E45AB3000EE8F4C /* CreateGroupView.swift in Sources */,
 				8C60EAB92E372C54002D7E74 /* AuthViewModel.swift in Sources */,
 				8C9D1B742E260BDF00858387 /* ContentView.swift in Sources */,
 				8CAA0E1C2E2F31EF0015B571 /* AppDelegate.swift in Sources */,
@@ -463,6 +503,7 @@
 				8C60EAC52E39B48C002D7E74 /* AddJournalEntryView.swift in Sources */,
 				8C3993802E2DCE4500739CF8 /* ItineraryPlace.swift in Sources */,
 				8C3993772E2DC3EA00739CF8 /* ItineraryDay.swift in Sources */,
+				8CB474332E468FE2001F4D78 /* NotificationItem.swift in Sources */,
 				8CDB231D2E28BADA00949D00 /* CarouselView.swift in Sources */,
 				8CDB23192E28AF5500949D00 /* ExploreView.swift in Sources */,
 				8C3993792E2DC46300739CF8 /* TripViewModel.swift in Sources */,
@@ -471,6 +512,7 @@
 				8C75F1532E344149001D915E /* ItineraryOptimizer.swift in Sources */,
 				8C02E0FF2E29C36B000C4AA9 /* PlaceSearchView.swift in Sources */,
 				8C3993B12E2DEC8A00739CF8 /* GooglePlacesAutocompleteView.swift in Sources */,
+				8C8BC4782E45A9A600EE8F4C /* GroupListView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -806,6 +848,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		8C0B260D2E45C4D100E195FA /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.1.0;
+			};
+		};
 		8C60EAAD2E372A3E002D7E74 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
@@ -825,12 +875,17 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		8C0B260E2E45C4D100E195FA /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C0B260D2E45C4D100E195FA /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
 		8C60EAB02E372A3E002D7E74 /* FirebaseAuth */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 8C60EAAD2E372A3E002D7E74 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseAuth;
 		};
-		8C60EAB22E372A3E002D7E74 /* FirebaseFirestore */ = {
+		8C8BC4872E45B7A600EE8F4C /* FirebaseFirestore */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 8C60EAAD2E372A3E002D7E74 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseFirestore;

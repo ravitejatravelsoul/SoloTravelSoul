@@ -8,10 +8,23 @@ struct EditingPlace: Identifiable, Equatable {
 }
 
 fileprivate func googlePlacePhotoURL(photoReference: String, maxWidth: Int = 400) -> URL? {
-    // Use your API key safely in production!
     let apiKey = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU"
-    let urlString = "https://maps.googleapis.com/maps/api/place/photo?maxwidth=\(maxWidth)&photoreference=\(photoReference)&key=\(apiKey)"
-    return URL(string: urlString)
+    if photoReference.starts(with: "places/") {
+        var components = URLComponents(string: "https://places.googleapis.com/v1/\(photoReference)/media")
+        components?.queryItems = [
+            URLQueryItem(name: "key", value: apiKey),
+            URLQueryItem(name: "maxWidthPx", value: "\(maxWidth)")
+        ]
+        return components?.url
+    } else {
+        var components = URLComponents(string: "https://maps.googleapis.com/maps/api/place/photo")
+        components?.queryItems = [
+            URLQueryItem(name: "maxwidth", value: "\(maxWidth)"),
+            URLQueryItem(name: "photoreference", value: photoReference),
+            URLQueryItem(name: "key", value: apiKey)
+        ]
+        return components?.url
+    }
 }
 
 struct TripDetailView: View {
@@ -186,7 +199,8 @@ struct TripDetailView: View {
                                 Color.gray.opacity(0.2)
                                     .frame(width: 60, height: 60)
                                     .cornerRadius(8)
-                                    .overlay(Image(systemName: "photo"))
+                                    .overlay(Image(systemName: "exclamationmark.triangle").foregroundColor(.red))
+                                    .onAppear { print("DEBUG: AsyncImage error for suggestion url: \(url.absoluteString)") }
                             } else {
                                 ProgressView()
                                     .frame(width: 60, height: 60)
@@ -254,7 +268,7 @@ struct TripDetailView: View {
                 }
             }
             .frame(height: 200)
-            .cornerRadius(12)
+            .cornerRadius(12, corners: [.topLeft, .topRight])
             .onAppear {
                 if let first = trip.allPlaces.first {
                     tripMapPosition = MapCameraPosition.region(
@@ -339,7 +353,7 @@ struct TripDetailView: View {
             .buttonStyle(.borderedProminent)
             .tint(.green)
             .controlSize(.large)
-            .cornerRadius(12)
+            .cornerRadius(12, corners: [.topLeft, .topRight])
             .alert("Trip Saved!", isPresented: $showSavedAlert) {
                 Button("OK", role: .cancel) { dismiss() }
             }
@@ -517,7 +531,6 @@ struct EditPlaceSheet: View {
                         phoneNumber: place.phoneNumber,
                         website: place.website,
                         journalEntries: place.journalEntries
-                        // add notes property if you have it in Place
                     )
                     onUpdate(updated)
                     presentationMode.wrappedValue.dismiss()

@@ -9,6 +9,10 @@ class PlaceSearchViewModel: ObservableObject {
     @Published var showAddToItinerarySheet: Bool = false
     @Published var selectedPlace: Place? = nil
 
+    // Activity filter and filtered results
+    @Published var filterActivity: String? = nil
+    @Published var filteredResults: [Place] = []
+
     var trips: [PlannedTrip] {
         tripViewModel.trips
     }
@@ -16,9 +20,29 @@ class PlaceSearchViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var tripViewModel: TripViewModel
 
+    // NEW: Dynamic activity types from current results
+    var availableActivities: [String] {
+        let allTypes = results.compactMap { $0.types }.flatMap { $0 }
+        let uniqueTypes = Set(allTypes.map { $0.capitalized })
+        let mappedTypes = uniqueTypes.map { type -> String in
+            // Simple mapping for better display, expand as needed
+            switch type.lowercased() {
+            case "museum": return "Museum"
+            case "park": return "Park"
+            case "restaurant": return "Food"
+            case "shopping_mall", "store": return "Shopping"
+            case "natural_feature": return "Nature"
+            default: return type.replacingOccurrences(of: "_", with: " ")
+            }
+        }
+        let activities = Array(Set(mappedTypes)).sorted()
+        return ["All"] + activities
+    }
+
     init(tripViewModel: TripViewModel) {
         self.tripViewModel = tripViewModel
 
+        // Search text debounce
         $searchText
             .debounce(for: .milliseconds(350), scheduler: RunLoop.main)
             .removeDuplicates()
@@ -26,6 +50,18 @@ class PlaceSearchViewModel: ObservableObject {
                 Task { await self?.searchPlaces(query: text) }
             }
             .store(in: &cancellables)
+
+        // Update filtered results when results or filterActivity change
+        Publishers.CombineLatest($results, $filterActivity)
+            .map { places, activity in
+                guard let activity = activity, !activity.isEmpty, activity != "All" else { return places }
+                // Filter by place types (case-insensitive)
+                return places.filter { place in
+                    guard let types = place.types else { return false }
+                    return types.contains(where: { $0.localizedCaseInsensitiveContains(activity) })
+                }
+            }
+            .assign(to: &$filteredResults)
     }
 
     func setTripViewModel(_ vm: TripViewModel) {
@@ -97,8 +133,14 @@ class PlaceSearchViewModel: ObservableObject {
             latitude: place.latitude,
             longitude: place.longitude,
             placeName: place.name,
-            members: [] // <-- Added members argument
+            members: []
         )
         tripViewModel.addTrip(newTrip)
+    }
+
+    // Apply the activity filter (called from UI)
+    func applyActivityFilter() {
+        // Triggers Combine pipeline with new filterActivity
+        self.filterActivity = self.filterActivity // Force update for UI call
     }
 }

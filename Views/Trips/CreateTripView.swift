@@ -148,7 +148,7 @@ struct CreateTripView: View {
                             }
                         }
                         .frame(height: 200)
-                        .cornerRadius(12)
+                        .cornerRadius(12, corners: [.topLeft, .topRight])
                         .onAppear {
                             if let first = selectedPlaces.first {
                                 tripMapPosition = MapCameraPosition.region(

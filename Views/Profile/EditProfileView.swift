@@ -1,6 +1,33 @@
 import SwiftUI
 import PhotosUI
 
+// Dummy AuthViewModel for compilation
+// Replace this with your actual AuthViewModel implementation
+
+
+    func updateProfile(
+        userID: String,
+        name: String,
+        phone: String,
+        birthday: String,
+        gender: String,
+        country: String,
+        city: String,
+        bio: String,
+        preferences: String,
+        favoriteDestinations: String,
+        languages: String,
+        emergencyContact: String,
+        socialLinks: String,
+        privacyEnabled: Bool,
+        completion: @escaping (Bool) -> Void
+    ) {
+        // Replace this with your actual update logic
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            completion(true)
+        }
+    }
+
 struct EditProfileView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
 
@@ -180,51 +207,7 @@ struct EditProfileView: View {
                             .toggleStyle(SwitchToggleStyle(tint: Color.blue))
                             .padding(.horizontal, 16)
 
-                        Button(action: {
-                            if name.trimmingCharacters(in: .whitespaces).isEmpty {
-                                validationError = "Name cannot be empty."; showValidationError = true; return
-                            }
-                            if !isValidEmail(email) {
-                                validationError = "Please enter a valid email address."; showValidationError = true; return
-                            }
-                            if !isValidPhone(phone) {
-                                validationError = "Please enter a valid phone number."; showValidationError = true; return
-                            }
-                            if birthday.isEmpty {
-                                validationError = "Birthday must be selected."; showValidationError = true; return
-                            }
-                            preferences = selectedPreferences.sorted().joined(separator: ", ")
-                            favoriteDestinations = selectedDestinations.sorted().joined(separator: ", ")
-                            languages = selectedLanguages.sorted().joined(separator: ", ")
-                            guard let user = authViewModel.user else {
-                                validationError = "Not logged in."; showValidationError = true; return
-                            }
-                            saving = true
-                            authViewModel.updateProfile(
-                                userID: user.uid,
-                                name: name,
-                                phone: phone,
-                                birthday: birthday,
-                                gender: gender,
-                                country: country,
-                                city: city,
-                                bio: bio,
-                                preferences: preferences,
-                                socialLinks: socialLinks,
-                                favoriteDestinations: favoriteDestinations,
-                                languages: languages,
-                                emergencyContact: emergencyContact,
-                                privacyEnabled: privacyEnabled
-                            ) { success in
-                                saving = false
-                                if success {
-                                    dismiss()
-                                } else {
-                                    validationError = authViewModel.errorMessage ?? "Failed to save profile."
-                                    showValidationError = true
-                                }
-                            }
-                        }) {
+                        Button(action: saveProfile) {
                             if saving {
                                 ProgressView()
                                     .frame(maxWidth: .infinity)
@@ -255,7 +238,6 @@ struct EditProfileView: View {
             }
             .navigationTitle("Edit Profile")
             .navigationBarTitleDisplayMode(.inline)
-
             .sheet(isPresented: $showBirthdaySheet) {
                 VStack(spacing: 24) {
                     Text("Select Your Birthday")
@@ -352,6 +334,53 @@ struct EditProfileView: View {
                         profileImageData = data
                     }
                 }
+            }
+        }
+    }
+
+    private func saveProfile() {
+        if name.trimmingCharacters(in: .whitespaces).isEmpty {
+            validationError = "Name cannot be empty."; showValidationError = true; return
+        }
+        if !isValidEmail(email) {
+            validationError = "Please enter a valid email address."; showValidationError = true; return
+        }
+        if !isValidPhone(phone) {
+            validationError = "Please enter a valid phone number."; showValidationError = true; return
+        }
+        if birthday.isEmpty {
+            validationError = "Birthday must be selected."; showValidationError = true; return
+        }
+        preferences = selectedPreferences.sorted().joined(separator: ", ")
+        favoriteDestinations = selectedDestinations.sorted().joined(separator: ", ")
+        languages = selectedLanguages.sorted().joined(separator: ", ")
+        guard let user = authViewModel.user else {
+            validationError = "Not logged in."; showValidationError = true; return
+        }
+        saving = true
+        // FIXED ARGUMENT ORDER
+        authViewModel.updateProfile(
+            userID: user.uid,
+            name: name,
+            phone: phone,
+            birthday: birthday,
+            gender: gender,
+            country: country,
+            city: city,
+            bio: bio,
+            preferences: preferences,
+            favoriteDestinations: favoriteDestinations,
+            languages: languages,
+            emergencyContact: emergencyContact,
+            socialLinks: socialLinks,
+            privacyEnabled: privacyEnabled
+        ) { success in
+            saving = false
+            if success {
+                dismiss()
+            } else {
+                validationError = authViewModel.errorMessage ?? "Failed to save profile."
+                showValidationError = true
             }
         }
     }
@@ -546,5 +575,35 @@ struct MultiSheetPicker: View {
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
         }
+    }
+}
+
+struct SectionHeader: View {
+    let title: String
+    let systemImage: String
+    var body: some View {
+        HStack {
+            Image(systemName: systemImage)
+                .foregroundColor(.blue)
+            Text(title)
+                .font(.headline)
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+    }
+}
+
+struct FieldDisplay: View {
+    let text: String
+    var body: some View {
+        HStack {
+            Text(text)
+                .foregroundColor(text.contains("Select") ? .gray : .primary)
+            Spacer()
+        }
+        .padding(12)
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+        .padding(.horizontal, 8)
     }
 }

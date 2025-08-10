@@ -1,0 +1,14 @@
+import Foundation
+
+extension AuthViewModel {
+    var currentUserProfile: UserProfile? {
+        guard let user = user else { return nil }
+        let name = UserDefaults.standard.string(forKey: "name") ?? ""
+        let email = UserDefaults.standard.string(forKey: "email") ?? ""
+        return UserProfile(
+            id: user.uid,
+            name: name.isEmpty ? (email.isEmpty ? "Unknown" : email) : name,
+            email: email
+        )
+    }
+}

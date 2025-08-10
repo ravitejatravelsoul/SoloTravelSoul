@@ -14,8 +14,6 @@ public struct Place: Identifiable, Codable, Hashable, Equatable {
     public let openingHours: PlaceOpeningHours?
     public let phoneNumber: String?
     public let website: String?
-    
-    // Per-place journal entries
     public var journalEntries: [JournalEntry]?
 }
 

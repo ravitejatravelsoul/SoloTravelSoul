@@ -2,20 +2,46 @@ import Foundation
 import FirebaseAuth
 import FirebaseFirestore
 
-class AuthViewModel: ObservableObject {
+public class AuthViewModel: ObservableObject {
     @Published var user: User?
+    @Published var profile: UserProfile?
     @Published var isLoading = false
     @Published var errorMessage: String?
 
     private var db = Firestore.firestore()
     private var authHandle: AuthStateDidChangeListenerHandle?
 
-    init() {
+    var currentUserProfile: UserProfile? {
+        if let profile = profile { return profile }
+        guard let user = user else { return nil }
+        let name = UserDefaults.standard.string(forKey: "name") ?? ""
+        let email = UserDefaults.standard.string(forKey: "email") ?? ""
+        return UserProfile(
+            id: user.uid,
+            name: name.isEmpty ? (email.isEmpty ? "Unknown" : email) : name,
+            email: email,
+            phone: "",
+            birthday: "",
+            gender: "",
+            country: "",
+            city: "",
+            bio: "",
+            preferences: "",
+            favoriteDestinations: "",
+            languages: "",
+            emergencyContact: "",
+            socialLinks: "",
+            privacyEnabled: false
+        )
+    }
+
+    public init() {
         authHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             self?.user = user
             if let user = user {
                 self?.fetchProfileFromFirestore(userID: user.uid)
             } else {
+                self?.profile = nil
                 self?.clearProfileFromAppStorage()
             }
         }
@@ -38,10 +64,10 @@ class AuthViewModel: ObservableObject {
         city: String,
         bio: String,
         preferences: String,
-        socialLinks: String,
         favoriteDestinations: String,
         languages: String,
         emergencyContact: String,
+        socialLinks: String,
         privacyEnabled: Bool,
         completion: @escaping (Bool) -> Void
     ) {
@@ -55,31 +81,33 @@ class AuthViewModel: ObservableObject {
                     self?.errorMessage = error.localizedDescription
                     completion(false)
                 } else if let user = result?.user {
-                    let data: [String: Any] = [
-                        "email": email,
-                        "name": name,
-                        "phone": phone,
-                        "birthday": birthday,
-                        "gender": gender,
-                        "country": country,
-                        "city": city,
-                        "bio": bio,
-                        "preferences": preferences,
-                        "socialLinks": socialLinks,
-                        "favoriteDestinations": favoriteDestinations,
-                        "languages": languages,
-                        "emergencyContact": emergencyContact,
-                        "privacyEnabled": privacyEnabled,
-                        "createdAt": FieldValue.serverTimestamp()
-                    ]
-                    self?.db.collection("users").document(user.uid).setData(data) { err in
+                    let profile = UserProfile(
+                        id: user.uid,
+                        name: name,
+                        email: email,
+                        phone: phone,
+                        birthday: birthday,
+                        gender: gender,
+                        country: country,
+                        city: city,
+                        bio: bio,
+                        preferences: preferences,
+                        favoriteDestinations: favoriteDestinations,
+                        languages: languages,
+                        emergencyContact: emergencyContact,
+                        socialLinks: socialLinks,
+                        privacyEnabled: privacyEnabled
+                    )
+                    print("[signUp] Saving profile to Firestore: \(profile.toDict())")
+                    self?.db.collection("users").document(user.uid).setData(profile.toDict()) { err in
                         if let err = err {
+                            print("Profile save failed: \(err.localizedDescription)")
                             self?.errorMessage = "Profile save failed: \(err.localizedDescription)"
                             completion(false)
                         } else {
-                            self?.fetchProfileFromFirestore(userID: user.uid) {
-                                completion(true)
-                            }
+                            print("Profile saved successfully.")
+                            self?.setProfile(profile)
+                            completion(true)
                         }
                     }
                 }
@@ -112,6 +140,7 @@ class AuthViewModel: ObservableObject {
         do {
             try Auth.auth().signOut()
             self.user = nil
+            self.profile = nil
             clearProfileFromAppStorage()
             print("User signed out successfully.")
         } catch {
@@ -132,43 +161,18 @@ class AuthViewModel: ObservableObject {
     }
 
     func fetchProfileFromFirestore(userID: String, completion: @escaping () -> Void = {}) {
-        db.collection("users").document(userID).getDocument { snapshot, error in
-            if let data = snapshot?.data() {
-                self.saveProfileToAppStorage(data)
+        db.collection("users").document(userID).getDocument { [weak self] snapshot, error in
+            if let error = error {
+                print("[fetchProfileFromFirestore] Failed: \(error.localizedDescription)")
+            }
+            if let data = snapshot?.data(), let profile = UserProfile.fromDict(data) {
+                print("[fetchProfileFromFirestore] Got profile: \(profile.toDict())")
+                self?.setProfile(profile)
             }
             completion()
         }
     }
 
-    func saveProfileToAppStorage(_ data: [String: Any]) {
-        UserDefaults.standard.setValue(data["name"] as? String ?? "", forKey: "name")
-        UserDefaults.standard.setValue(data["email"] as? String ?? "", forKey: "email")
-        UserDefaults.standard.setValue(data["phone"] as? String ?? "", forKey: "phone")
-        UserDefaults.standard.setValue(data["birthday"] as? String ?? "", forKey: "birthday")
-        UserDefaults.standard.setValue(data["gender"] as? String ?? "", forKey: "gender")
-        UserDefaults.standard.setValue(data["country"] as? String ?? "", forKey: "country")
-        UserDefaults.standard.setValue(data["city"] as? String ?? "", forKey: "city")
-        UserDefaults.standard.setValue(data["bio"] as? String ?? "", forKey: "bio")
-        UserDefaults.standard.setValue(data["preferences"] as? String ?? "", forKey: "preferences")
-        UserDefaults.standard.setValue(data["socialLinks"] as? String ?? "", forKey: "socialLinks")
-        UserDefaults.standard.setValue(data["favoriteDestinations"] as? String ?? "", forKey: "favoriteDestinations")
-        UserDefaults.standard.setValue(data["languages"] as? String ?? "", forKey: "languages")
-        UserDefaults.standard.setValue(data["emergencyContact"] as? String ?? "", forKey: "emergencyContact")
-        UserDefaults.standard.setValue(data["privacyEnabled"] as? Bool ?? false, forKey: "privacyEnabled")
-    }
-
-    func clearProfileFromAppStorage() {
-        let keys = [
-            "name", "email", "phone", "birthday", "gender", "country", "city", "bio",
-            "preferences", "socialLinks", "favoriteDestinations", "languages",
-            "emergencyContact", "privacyEnabled"
-        ]
-        for key in keys {
-            UserDefaults.standard.removeObject(forKey: key)
-        }
-    }
-
-    /// Update profile fields in Firestore and AppStorage
     func updateProfile(
         userID: String,
         name: String,
@@ -179,41 +183,76 @@ class AuthViewModel: ObservableObject {
         city: String,
         bio: String,
         preferences: String,
-        socialLinks: String,
         favoriteDestinations: String,
         languages: String,
         emergencyContact: String,
+        socialLinks: String,
         privacyEnabled: Bool,
         completion: @escaping (Bool) -> Void
     ) {
-        let data: [String: Any] = [
-            "name": name,
-            "phone": phone,
-            "birthday": birthday,
-            "gender": gender,
-            "country": country,
-            "city": city,
-            "bio": bio,
-            "preferences": preferences,
-            "socialLinks": socialLinks,
-            "favoriteDestinations": favoriteDestinations,
-            "languages": languages,
-            "emergencyContact": emergencyContact,
-            "privacyEnabled": privacyEnabled
-        ]
-        // Use setData(merge: true) to create or update the document safely
-        db.collection("users").document(userID).setData(data, merge: true) { error in
+        guard let profile = self.profile else {
+            print("updateProfile: No profile in memory.")
+            completion(false)
+            return
+        }
+        let newProfile = UserProfile(
+            id: profile.id,
+            name: name,
+            email: profile.email,
+            phone: phone,
+            birthday: birthday,
+            gender: gender,
+            country: country,
+            city: city,
+            bio: bio,
+            preferences: preferences,
+            favoriteDestinations: favoriteDestinations,
+            languages: languages,
+            emergencyContact: emergencyContact,
+            socialLinks: socialLinks,
+            privacyEnabled: privacyEnabled
+        )
+        print("[updateProfile] Attempting to update Firestore for userID: \(userID)")
+        print("[updateProfile] Data: \(newProfile.toDict())")
+        db.collection("users").document(userID).setData(newProfile.toDict(), merge: true) { [weak self] error in
             DispatchQueue.main.async {
                 if let error = error {
-                    print("Failed to update profile: \(error.localizedDescription)")
-                    self.errorMessage = error.localizedDescription
+                    print("❌ Failed to update profile: \(error.localizedDescription)")
+                    print("Profile dict: \(newProfile.toDict())")
+                    print("UserID: \(userID)")
+                    self?.errorMessage = error.localizedDescription
                     completion(false)
                 } else {
-                    print("Profile updated successfully.")
-                    self.saveProfileToAppStorage(data)
+                    print("✅ Profile updated successfully.")
+                    self?.setProfile(newProfile)
                     completion(true)
                 }
             }
+        }
+    }
+
+    // MARK: - AppStorage helpers
+
+    private func setProfile(_ profile: UserProfile) {
+        self.profile = profile
+        saveProfileToAppStorage(profile)
+    }
+
+    private func saveProfileToAppStorage(_ profile: UserProfile) {
+        let data = profile.toDict()
+        for (key, value) in data {
+            UserDefaults.standard.setValue(value, forKey: key)
+        }
+    }
+
+    private func clearProfileFromAppStorage() {
+        let keys = [
+            "id", "name", "email", "phone", "birthday", "gender", "country", "city", "bio",
+            "preferences", "favoriteDestinations", "languages",
+            "emergencyContact", "socialLinks", "privacyEnabled"
+        ]
+        for key in keys {
+            UserDefaults.standard.removeObject(forKey: key)
         }
     }
 }

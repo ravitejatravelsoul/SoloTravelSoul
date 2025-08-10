@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct CarouselView: View {
-    let images = ["travel1", "travel2", "travel3"] // Ensure these images exist in Assets.xcassets
+    let images = ["travel1", "travel2", "travel3"] // add these to Assets.xcassets
     @State private var index = 0
 
     var body: some View {

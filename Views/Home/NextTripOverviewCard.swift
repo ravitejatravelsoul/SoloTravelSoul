@@ -23,7 +23,7 @@ struct NextTripOverviewCard: View {
                 .resizable()
                 .aspectRatio(contentMode: .fill)
                 .frame(width: 80, height: 80)
-                .cornerRadius(12)
+                .cornerRadius(12, corners: [UIRectCorner.topLeft, UIRectCorner.topRight])
                 .shadow(radius: 3)
 
             VStack(alignment: .leading, spacing: 6) {
