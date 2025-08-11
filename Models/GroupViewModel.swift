@@ -1,5 +1,6 @@
 import Foundation
 import FirebaseFirestore
+import SwiftUI
 
 class GroupViewModel: ObservableObject {
     @Published var groups: [GroupTrip] = []

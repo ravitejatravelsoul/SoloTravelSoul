@@ -1,11 +1,3 @@
-//
-//  TravelJournalPreview.swift
-//  SoloTravelSoul
-//
-//  Created by Raviteja Vemulapelli on 7/24/25.
-//
-
-
 import SwiftUI
 
 struct TravelJournalPreview: View {

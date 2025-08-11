@@ -7,6 +7,10 @@ struct HomeView: View {
     @Binding var selectedTab: Int
     @Binding var editTripID: UUID?
 
+    // Add these properties:
+    @ObservedObject var groupViewModel: GroupViewModel
+    let currentUser: UserProfile
+
     @State private var showAddTrip = false
     @State private var showDiscover = false
     @State private var showItinerary = false
@@ -60,12 +64,17 @@ struct HomeView: View {
             .navigationTitle("Solo Travel Soul")
             .sheet(isPresented: $showAddTrip) {
                 AddTripView { newTrip in
-                    tripViewModel.addTrip(newTrip) // ✅ CORRECT
+                    tripViewModel.addTrip(newTrip)
                 }
             }
             .sheet(isPresented: $showDiscover) {
-                DiscoverView(tripViewModel: tripViewModel)
-                    .environmentObject(tripViewModel)
+                // Pass groupViewModel and currentUser here!
+                DiscoverView(
+                    tripViewModel: tripViewModel,
+                    groupViewModel: groupViewModel,
+                    currentUser: currentUser
+                )
+                .environmentObject(tripViewModel)
             }
             .sheet(isPresented: $showItinerary) {
                 ItineraryView(trips: tripViewModel.trips)

@@ -9,25 +9,37 @@ struct RootTabView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            HomeView(selectedTab: $selectedTab, editTripID: $editTripID)
+            if let userProfile = authViewModel.currentUserProfile {
+                HomeView(
+                    selectedTab: $selectedTab,
+                    editTripID: $editTripID,
+                    groupViewModel: groupViewModel,
+                    currentUser: userProfile
+                )
                 .environmentObject(tripViewModel)
                 .tabItem { Label("Home", systemImage: "house") }
                 .tag(0)
 
-            TripsTabView(editTripID: $editTripID)
-                .environmentObject(tripViewModel)
-                .tabItem { Label("Trips", systemImage: "airplane") }
-                .tag(1)
+                TripsTabView(editTripID: $editTripID)
+                    .environmentObject(tripViewModel)
+                    .tabItem { Label("Trips", systemImage: "airplane") }
+                    .tag(1)
 
-            DiscoverView(tripViewModel: tripViewModel)
+                DiscoverView(
+                    tripViewModel: tripViewModel,
+                    groupViewModel: groupViewModel,
+                    currentUser: userProfile
+                )
                 .environmentObject(tripViewModel)
                 .tabItem { Label("Discover", systemImage: "magnifyingglass") }
                 .tag(2)
 
-            if let userProfile = authViewModel.currentUserProfile {
-                GroupListView(groupViewModel: groupViewModel, currentUser: userProfile)
-                    .tabItem { Label("Groups", systemImage: "person.3.fill") }
-                    .tag(3)
+                GroupListView(
+                    groupViewModel: groupViewModel,
+                    currentUser: userProfile
+                )
+                .tabItem { Label("Groups", systemImage: "person.3.fill") }
+                .tag(3)
             }
 
             ProfileView()

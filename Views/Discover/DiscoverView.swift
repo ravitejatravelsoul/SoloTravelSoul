@@ -1,12 +1,15 @@
 import SwiftUI
+import MapKit
 
 struct DiscoverView: View {
     @EnvironmentObject var tripViewModel: TripViewModel
     @ObservedObject var searchViewModel: PlaceSearchViewModel
+    @ObservedObject var groupViewModel: GroupViewModel // <-- Add this line!
+    let currentUser: UserProfile // <-- Add this line!
+
     @State private var selectedTrip: PlannedTrip? = nil
     @State private var selectedDate: Date = Date()
     @State private var selectedPlace: Place? = nil
-    @State private var showPlaceDetail: Bool = false
     @State private var showTripDetail: Bool = false
     @State private var loadingDetail: Bool = false
     @State private var detailError: String? = nil
@@ -21,8 +24,10 @@ struct DiscoverView: View {
     // Date filter for trips and places
     @State private var filterDate: Date = Date()
 
-    init(tripViewModel: TripViewModel) {
+    init(tripViewModel: TripViewModel, groupViewModel: GroupViewModel, currentUser: UserProfile) {
         self._searchViewModel = ObservedObject(wrappedValue: PlaceSearchViewModel(tripViewModel: tripViewModel))
+        self._groupViewModel = ObservedObject(wrappedValue: groupViewModel)
+        self.currentUser = currentUser
     }
 
     private func handlePlaceTap(place: Place) {
@@ -33,7 +38,6 @@ struct DiscoverView: View {
                 loadingDetail = false
                 if let detailedPlace = detailedPlace {
                     self.selectedPlace = detailedPlace
-                    self.showPlaceDetail = true
                 } else {
                     self.detailError = error ?? "Failed to load details"
                 }
@@ -205,12 +209,12 @@ struct DiscoverView: View {
                 placesGrid
             }
             .navigationTitle("Discover")
-            .sheet(isPresented: $showPlaceDetail, onDismiss: {
-                self.selectedPlace = nil
-            }) {
-                if let place = selectedPlace {
-                    PlaceDetailView(place: place)
-                }
+            .sheet(item: $selectedPlace) { place in
+                DestinationDetailView(
+                    place: place,
+                    groupViewModel: groupViewModel,
+                    currentUser: currentUser
+                )
             }
             .sheet(isPresented: $showTripDetail, onDismiss: {
                 self.selectedTrip = nil

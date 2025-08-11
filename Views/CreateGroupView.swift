@@ -11,6 +11,9 @@ struct CreateGroupView: View {
     @State private var description = ""
     @State private var activities = ""
 
+    // New: Accept prefillDestination (optional)
+    var prefillDestination: String?
+
     var body: some View {
         NavigationView {
             Form {
@@ -41,6 +44,12 @@ struct CreateGroupView: View {
                     }
                     .disabled(name.isEmpty || destination.isEmpty)
                 }
+            }
+        }
+        .onAppear {
+            // Prefill the destination if provided and not already set
+            if let prefill = prefillDestination, destination.isEmpty {
+                destination = prefill
             }
         }
     }
