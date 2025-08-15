@@ -10,20 +10,20 @@ struct EditingPlace: Identifiable, Equatable {
 fileprivate func googlePlacePhotoURL(photoReference: String, maxWidth: Int = 400) -> URL? {
     let apiKey = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU"
     if photoReference.starts(with: "places/") {
-        var components = URLComponents(string: "https://places.googleapis.com/v1/\(photoReference)/media")
-        components?.queryItems = [
+        var c = URLComponents(string: "https://places.googleapis.com/v1/\(photoReference)/media")
+        c?.queryItems = [
             URLQueryItem(name: "key", value: apiKey),
             URLQueryItem(name: "maxWidthPx", value: "\(maxWidth)")
         ]
-        return components?.url
+        return c?.url
     } else {
-        var components = URLComponents(string: "https://maps.googleapis.com/maps/api/place/photo")
-        components?.queryItems = [
+        var c = URLComponents(string: "https://maps.googleapis.com/maps/api/place/photo")
+        c?.queryItems = [
             URLQueryItem(name: "maxwidth", value: "\(maxWidth)"),
             URLQueryItem(name: "photoreference", value: photoReference),
             URLQueryItem(name: "key", value: apiKey)
         ]
-        return components?.url
+        return c?.url
     }
 }
 
@@ -31,35 +31,31 @@ struct TripDetailView: View {
     @ObservedObject var tripViewModel: TripViewModel
     @State var trip: PlannedTrip
 
-    @State private var mainLocation: String = ""
+    @State private var mainLocation: String
     @StateObject private var placeSearchViewModel: PlaceSearchViewModel
 
-    @State private var showAddPlaceSheet: Bool = false
-    @State private var addPlaceDate: Date = Date()
     @State private var editingPlace: EditingPlace? = nil
+    @State private var showStartDatePicker = false
+    @State private var showEndDatePicker = false
+    @State private var showSavedAlert = false
+    @State private var showAutoPlanError = false
+    @State private var autoPlanErrorMessage = ""
+    @State private var selectedJournalDay: ItineraryDay? = nil
 
     @State private var tripMapPosition = MapCameraPosition.region(
         MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 48.8584, longitude: 2.2945),
-            span: MKCoordinateSpan(latitudeDelta: 1.0, longitudeDelta: 1.0)
+            span: MKCoordinateSpan(latitudeDelta: 1, longitudeDelta: 1)
         )
     )
-
-    @State private var showSavedAlert: Bool = false
-    @State private var showAutoPlanError: Bool = false
-    @State private var autoPlanErrorMessage: String = ""
-    @State private var showStartDatePicker: Bool = false
-    @State private var showEndDatePicker: Bool = false
-
-    @State private var selectedJournalDay: ItineraryDay? = nil
 
     @Environment(\.dismiss) private var dismiss
 
     init(tripViewModel: TripViewModel, trip: PlannedTrip) {
-        self._tripViewModel = ObservedObject(wrappedValue: tripViewModel)
-        self._trip = State(initialValue: trip)
-        self._mainLocation = State(initialValue: trip.destination)
-        self._placeSearchViewModel = StateObject(wrappedValue: PlaceSearchViewModel(tripViewModel: tripViewModel))
+        _tripViewModel = ObservedObject(wrappedValue: tripViewModel)
+        _trip = State(initialValue: trip)
+        _mainLocation = State(initialValue: trip.destination)
+        _placeSearchViewModel = StateObject(wrappedValue: PlaceSearchViewModel(tripViewModel: tripViewModel))
     }
 
     var body: some View {
@@ -74,12 +70,14 @@ struct TripDetailView: View {
             }
             .sheet(item: $editingPlace) { edit in
                 EditPlaceSheet(
-                    place: $trip.itinerary[edit.dayIdx].places[edit.placeIdx],
-                    onUpdate: { updatedPlace in
-                        trip.itinerary[edit.dayIdx].places[edit.placeIdx] = updatedPlace
-                        tripViewModel.updateTrip(trip)
-                        editingPlace = nil
-                    }
+                    place: Binding(
+                        get: { trip.itinerary[edit.dayIdx].places[edit.placeIdx] },
+                        set: { updated in
+                            trip.itinerary[edit.dayIdx].places[edit.placeIdx] = updated
+                            tripViewModel.updateTrip(trip)
+                        }
+                    ),
+                    onUpdate: { _ in } // Binding already handles update
                 )
             }
             .sheet(item: $selectedJournalDay) { day in
@@ -90,11 +88,15 @@ struct TripDetailView: View {
             } message: {
                 Text(autoPlanErrorMessage)
             }
+            .alert("Trip Saved!", isPresented: $showSavedAlert) {
+                Button("OK", role: .cancel) { dismiss() }
+            }
             .navigationTitle("Edit Trip")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 
-    // MARK: - Sections
+    // MARK: Sections
 
     var tripInfoSection: some View {
         Section(header: Text("Trip Info")) {
@@ -102,9 +104,9 @@ struct TripDetailView: View {
                 .font(.title2)
                 .autocapitalization(.words)
 
-            Button(action: {
+            Button {
                 showStartDatePicker = true
-            }) {
+            } label: {
                 HStack {
                     Text("Start Date")
                     Spacer()
@@ -113,16 +115,11 @@ struct TripDetailView: View {
             }
             .sheet(isPresented: $showStartDatePicker) {
                 VStack {
-                    DatePicker(
-                        "Select Start Date",
-                        selection: $trip.startDate,
-                        displayedComponents: .date
-                    )
-                    .datePickerStyle(.graphical)
-                    .labelsHidden()
+                    DatePicker("Select Start Date", selection: $trip.startDate, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .labelsHidden()
                     Button("Done") {
                         showStartDatePicker = false
-                        showEndDatePicker = true
                         if trip.endDate < trip.startDate {
                             trip.endDate = trip.startDate
                         }
@@ -132,9 +129,9 @@ struct TripDetailView: View {
                 .padding()
             }
 
-            Button(action: {
+            Button {
                 showEndDatePicker = true
-            }) {
+            } label: {
                 HStack {
                     Text("End Date")
                     Spacer()
@@ -151,13 +148,14 @@ struct TripDetailView: View {
                     )
                     .datePickerStyle(.graphical)
                     .labelsHidden()
-                    Button("Done") {
-                        showEndDatePicker = false
-                    }
-                    .padding(.top)
+                    Button("Done") { showEndDatePicker = false }
+                        .padding(.top)
                 }
                 .padding()
             }
+
+            TextField("Notes (optional)", text: $trip.notes, axis: .vertical)
+                .lineLimit(3, reservesSpace: true)
         }
     }
 
@@ -167,7 +165,7 @@ struct TripDetailView: View {
                 TextField("City or Country", text: $mainLocation)
                     .autocapitalization(.words)
                     .onSubmit { triggerLocationSuggestions() }
-                Button(action: { triggerLocationSuggestions() }) {
+                Button(action: triggerLocationSuggestions) {
                     Label("Search", systemImage: "magnifyingglass")
                 }
                 .buttonStyle(.bordered)
@@ -186,33 +184,27 @@ struct TripDetailView: View {
             }
             ForEach(placeSearchViewModel.results.prefix(15)) { place in
                 HStack(alignment: .top, spacing: 12) {
-                    if let photoRefs = place.photoReferences, let photoRef = photoRefs.first, let url = googlePlacePhotoURL(photoReference: photoRef) {
+                    if let photoRef = place.photoReferences?.first,
+                       let url = googlePlacePhotoURL(photoReference: photoRef) {
                         AsyncImage(url: url) { phase in
                             if let image = phase.image {
-                                image
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: 60, height: 60)
-                                    .clipped()
-                                    .cornerRadius(8)
+                                image.resizable().aspectRatio(contentMode: .fill)
                             } else if phase.error != nil {
                                 Color.gray.opacity(0.2)
-                                    .frame(width: 60, height: 60)
-                                    .cornerRadius(8)
                                     .overlay(Image(systemName: "exclamationmark.triangle").foregroundColor(.red))
-                                    .onAppear { print("DEBUG: AsyncImage error for suggestion url: \(url.absoluteString)") }
                             } else {
-                                ProgressView()
-                                    .frame(width: 60, height: 60)
+                                Color.gray.opacity(0.2).overlay(ProgressView())
                             }
                         }
+                        .frame(width: 60, height: 60)
+                        .clipped()
+                        .cornerRadius(8)
                     } else {
                         Color.gray.opacity(0.1)
                             .frame(width: 60, height: 60)
                             .cornerRadius(8)
                             .overlay(Image(systemName: "photo"))
                     }
-
                     VStack(alignment: .leading) {
                         Text(place.name)
                             .font(.subheadline)
@@ -264,17 +256,18 @@ struct TripDetailView: View {
         Section(header: Text("Trip Map")) {
             Map(position: $tripMapPosition) {
                 ForEach(trip.allPlaces) { place in
-                    Marker(place.name, coordinate: CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude))
+                    Marker(place.name,
+                           coordinate: CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude))
                 }
             }
             .frame(height: 200)
-            .cornerRadius(12, corners: [.topLeft, .topRight])
+            .cornerRadius(12)
             .onAppear {
                 if let first = trip.allPlaces.first {
-                    tripMapPosition = MapCameraPosition.region(
+                    tripMapPosition = .region(
                         MKCoordinateRegion(
-                            center: CLLocationCoordinate2D(latitude: first.latitude, longitude: first.longitude),
-                            span: MKCoordinateSpan(latitudeDelta: 1.0, longitudeDelta: 1.0)
+                            center: .init(latitude: first.latitude, longitude: first.longitude),
+                            span: .init(latitudeDelta: 1, longitudeDelta: 1)
                         )
                     )
                 }
@@ -294,9 +287,9 @@ struct TripDetailView: View {
                             Text(day.date, style: .date)
                                 .font(.headline)
                             Spacer()
-                            Button(action: {
+                            Button {
                                 selectedJournalDay = day
-                            }) {
+                            } label: {
                                 Image(systemName: "book.closed.fill")
                                 Text("Journal")
                             }
@@ -352,50 +345,35 @@ struct TripDetailView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(.green)
-            .controlSize(.large)
-            .cornerRadius(12, corners: [.topLeft, .topRight])
-            .alert("Trip Saved!", isPresented: $showSavedAlert) {
-                Button("OK", role: .cancel) { dismiss() }
-            }
         }
     }
 
-    // MARK: - Helper Methods
-
+    // MARK: Helpers
     private func triggerLocationSuggestions() {
         guard !mainLocation.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        Task {
-            await placeSearchViewModel.fetchTopPlaces(for: mainLocation)
-        }
+        Task { await placeSearchViewModel.fetchTopPlaces(for: mainLocation) }
     }
 
-    private func formattedDuration(_ duration: Double) -> String {
-        if duration >= 1.0 { return "Full Day" }
-        if duration >= 0.7 { return "3/4 Day" }
-        if duration >= 0.35 { return "Half Day" }
-        if duration >= 0.2 { return "2-3 hrs" }
-        if duration >= 0.15 { return "1-1.5 hrs" }
+    private func formattedDuration(_ d: Double) -> String {
+        if d >= 1.0 { return "Full Day" }
+        if d >= 0.7 { return "3/4 Day" }
+        if d >= 0.35 { return "Half Day" }
+        if d >= 0.2 { return "2-3 hrs" }
+        if d >= 0.15 { return "1-1.5 hrs" }
         return "Quick Stop"
     }
 
     private func estimateDuration(for place: Place) -> Double {
-        let name = place.name.lowercased()
-        if name.contains("universal studios") || name.contains("disney") || name.contains("theme park") || name.contains("sea world") || name.contains("legoland") {
-            return 1.2
-        } else if name.contains("zoo") || name.contains("aquarium") || name.contains("gatorland") || name.contains("water park") {
-            return 0.7
-        } else if name.contains("museum") || name.contains("gallery") || name.contains("exhibit") || name.contains("center") {
-            return 0.35
-        } else if name.contains("show") || name.contains("cinema") || name.contains("3d") {
-            return 0.15
-        } else {
-            return 0.1
-        }
+        let n = place.name.lowercased()
+        if n.contains("universal") || n.contains("disney") || n.contains("theme park") { return 1.2 }
+        if n.contains("zoo") || n.contains("aquarium") || n.contains("water park") { return 0.7 }
+        if n.contains("museum") || n.contains("gallery") || n.contains("exhibit") { return 0.35 }
+        if n.contains("show") || n.contains("cinema") { return 0.15 }
+        return 0.1
     }
 
     private func itineraryContains(_ place: Place) -> Bool {
-        trip.itinerary.flatMap { $0.places }
-            .contains(where: { $0.id == place.id && $0.name == place.name })
+        trip.itinerary.flatMap { $0.places }.contains { $0.id == place.id }
     }
 
     private func addPlaceToItinerary(_ place: Place) {
@@ -404,21 +382,20 @@ struct TripDetailView: View {
     }
 
     private func addPlaceToDay(date: Date, place: Place) {
-        if let dayIdx = trip.itinerary.firstIndex(where: { Calendar.current.isDate($0.date, inSameDayAs: date) }) {
-            if !trip.itinerary[dayIdx].places.contains(where: { $0.id == place.id && $0.name == place.name }) {
-                trip.itinerary[dayIdx].places.append(place)
+        if let idx = trip.itinerary.firstIndex(where: { Calendar.current.isDate($0.date, inSameDayAs: date) }) {
+            if !trip.itinerary[idx].places.contains(where: { $0.id == place.id }) {
+                trip.itinerary[idx].places.append(place)
             }
         } else {
-            let newDay = ItineraryDay(date: date, places: [place])
-            trip.itinerary.append(newDay)
+            trip.itinerary.append(ItineraryDay(date: date, places: [place]))
         }
         tripViewModel.updateTrip(trip)
     }
 
     private func removePlaceFromItinerary(_ place: Place) {
-        for (dayIdx, day) in trip.itinerary.enumerated() {
-            if let placeIdx = day.places.firstIndex(where: { $0.id == place.id && $0.name == place.name }) {
-                trip.itinerary[dayIdx].places.remove(at: placeIdx)
+        for (dIdx, day) in trip.itinerary.enumerated() {
+            if let pIdx = day.places.firstIndex(where: { $0.id == place.id }) {
+                trip.itinerary[dIdx].places.remove(at: pIdx)
                 tripViewModel.updateTrip(trip)
                 break
             }
@@ -438,48 +415,41 @@ struct TripDetailView: View {
         }
         Task {
             await placeSearchViewModel.fetchTopPlaces(for: mainLocation)
-            let places = placeSearchViewModel.results.sorted {
+            let ranked = placeSearchViewModel.results.sorted {
                 ($0.rating ?? 0, $0.userRatingsTotal ?? 0, $0.name) >
                 ($1.rating ?? 0, $1.userRatingsTotal ?? 0, $1.name)
             }
-            if places.isEmpty {
+            if ranked.isEmpty {
                 autoPlanErrorMessage = "No places found for your destination."
                 showAutoPlanError = true
                 return
             }
             let dateList = trip.startDate.days(until: trip.endDate)
             if dateList.isEmpty {
-                autoPlanErrorMessage = "Please select a valid date range."
+                autoPlanErrorMessage = "Select a valid date range."
                 showAutoPlanError = true
                 return
             }
-            let placeTimeBlocks: [(Place, Double)] = places.map { ($0, estimateDuration(for: $0)) }
+            let blocks = ranked.map { ($0, estimateDuration(for: $0)) }
             var dayPlans: [[Place]] = Array(repeating: [], count: dateList.count)
-            var dayTimeAllocated = Array(repeating: 0.0, count: dateList.count)
-            var dayIdx = 0
-            for (place, duration) in placeTimeBlocks {
-                if duration >= 0.9 {
-                    if dayIdx < dateList.count {
-                        dayPlans[dayIdx].append(place)
-                        dayTimeAllocated[dayIdx] += duration
-                        dayIdx += 1
+            var dayTime = Array(repeating: 0.0, count: dateList.count)
+            var di = 0
+            for (place, dur) in blocks {
+                if dur >= 0.9 {
+                    if di < dateList.count {
+                        dayPlans[di].append(place)
+                        dayTime[di] += dur
+                        di += 1
                     }
                 } else {
-                    while dayIdx < dateList.count && (dayTimeAllocated[dayIdx] + duration) > 0.9 {
-                        dayIdx += 1
-                    }
-                    if dayIdx < dateList.count {
-                        dayPlans[dayIdx].append(place)
-                        dayTimeAllocated[dayIdx] += duration
-                    } else {
-                        break
-                    }
+                    while di < dateList.count && (dayTime[di] + dur) > 0.9 { di += 1 }
+                    if di < dateList.count {
+                        dayPlans[di].append(place)
+                        dayTime[di] += dur
+                    } else { break }
                 }
             }
-            trip.itinerary = []
-            for (i, day) in dateList.enumerated() {
-                trip.itinerary.append(ItineraryDay(date: day, places: dayPlans[i]))
-            }
+            trip.itinerary = zip(dateList, dayPlans).map { ItineraryDay(date: $0.0, places: $0.1) }
             tripViewModel.updateTrip(trip)
         }
     }
@@ -490,38 +460,36 @@ struct EditPlaceSheet: View {
     @Binding var place: Place
     var onUpdate: (Place) -> Void
 
-    @State private var name: String = ""
-    @State private var address: String = ""
-    @State private var latitude: String = ""
-    @State private var longitude: String = ""
-    @State private var notes: String = ""
+    @State private var name = ""
+    @State private var address = ""
+    @State private var latitude = ""
+    @State private var longitude = ""
+    @State private var notes = ""
 
     @Environment(\.presentationMode) var presentationMode
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
-                Section(header: Text("Edit Place Details")) {
+                Section("Edit Place Details") {
                     TextField("Name", text: $name)
                     TextField("Address", text: $address)
-                    TextField("Latitude", text: $latitude)
-                        .keyboardType(.decimalPad)
-                    TextField("Longitude", text: $longitude)
-                        .keyboardType(.decimalPad)
-                    TextField("Notes", text: $notes)
+                    TextField("Latitude", text: $latitude).keyboardType(.decimalPad)
+                    TextField("Longitude", text: $longitude).keyboardType(.decimalPad)
+                    TextField("Notes (optional)", text: $notes)
                 }
                 Button("Save Changes") {
                     guard
                         !name.isEmpty,
                         let lat = Double(latitude),
-                        let lng = Double(longitude)
+                        let lon = Double(longitude)
                     else { return }
                     let updated = Place(
                         id: place.id,
                         name: name,
                         address: address.isEmpty ? nil : address,
                         latitude: lat,
-                        longitude: lng,
+                        longitude: lon,
                         types: place.types,
                         rating: place.rating,
                         userRatingsTotal: place.userRatingsTotal,
@@ -543,23 +511,22 @@ struct EditPlaceSheet: View {
                 address = place.address ?? ""
                 latitude = "\(place.latitude)"
                 longitude = "\(place.longitude)"
-                notes = "" // If you store notes in Place in future, use them here
             }
         }
     }
 }
 
-// Date helper for autoPlanItinerary
-extension Date {
-    func days(until endDate: Date) -> [Date] {
-        guard self <= endDate else { return [] }
+// MARK: - Date Helper
+private extension Date {
+    func days(until end: Date) -> [Date] {
+        guard self <= end else { return [] }
         var dates: [Date] = []
         var current = self
-        let calendar = Calendar.current
+        let cal = Calendar.current
         repeat {
             dates.append(current)
-            current = calendar.date(byAdding: .day, value: 1, to: current)!
-        } while current <= endDate
+            current = cal.date(byAdding: .day, value: 1, to: current)!
+        } while current <= end
         return dates
     }
 }

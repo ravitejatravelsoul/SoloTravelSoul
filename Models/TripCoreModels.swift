@@ -1,13 +1,27 @@
+//
+//  JournalEntry 3.swift
+//  SoloTravelSoul
+//
+//  Created by Raviteja on 8/14/25.
+//
+
+
 import Foundation
 import FirebaseFirestore
 
+// MARK: - JournalEntry
 public struct JournalEntry: Identifiable, Codable, Hashable {
     public let id: UUID
     public var date: Date
     public var text: String
     public var photoData: Data?
 
-    public init(id: UUID = UUID(), date: Date, text: String, photoData: Data? = nil) {
+    public init(
+        id: UUID = UUID(),
+        date: Date,
+        text: String,
+        photoData: Data? = nil
+    ) {
         self.id = id
         self.date = date
         self.text = text
@@ -34,23 +48,30 @@ public struct JournalEntry: Identifiable, Codable, Hashable {
             let text = dict["text"] as? String
         else { return nil }
 
-        let photoData: Data?
-        if let encoded = dict["photoData"] as? String {
-            photoData = Data(base64Encoded: encoded)
-        } else {
-            photoData = nil
-        }
-        return JournalEntry(id: uuid, date: ts.dateValue(), text: text, photoData: photoData)
+        let photoData: Data? = (dict["photoData"] as? String).flatMap { Data(base64Encoded: $0) }
+
+        return JournalEntry(
+            id: uuid,
+            date: ts.dateValue(),
+            text: text,
+            photoData: photoData
+        )
     }
 }
 
+// MARK: - ItineraryDay
 public struct ItineraryDay: Identifiable, Codable, Hashable {
     public let id: UUID
     public var date: Date
     public var places: [Place]
     public var journalEntries: [JournalEntry]
 
-    public init(id: UUID = UUID(), date: Date, places: [Place], journalEntries: [JournalEntry] = []) {
+    public init(
+        id: UUID = UUID(),
+        date: Date,
+        places: [Place],
+        journalEntries: [JournalEntry] = []
+    ) {
         self.id = id
         self.date = date
         self.places = places
@@ -58,7 +79,7 @@ public struct ItineraryDay: Identifiable, Codable, Hashable {
     }
 
     public func toDict() -> [String: Any] {
-        [
+        return [
             "id": id.uuidString,
             "date": Timestamp(date: date),
             "places": places.map { $0.toDict() },
@@ -74,12 +95,20 @@ public struct ItineraryDay: Identifiable, Codable, Hashable {
             let placesArray = dict["places"] as? [[String: Any]]
         else { return nil }
 
-        let places = placesArray.compactMap { Place.fromDict($0) }
-        let journals = (dict["journalEntries"] as? [[String: Any]] ?? []).compactMap { JournalEntry.fromDict($0) }
-        return ItineraryDay(id: uuid, date: ts.dateValue(), places: places, journalEntries: journals)
+        let places: [Place] = placesArray.compactMap { Place.fromDict($0) }
+        let journalEntries: [JournalEntry] =
+            (dict["journalEntries"] as? [[String: Any]] ?? []).compactMap { JournalEntry.fromDict($0) }
+
+        return ItineraryDay(
+            id: uuid,
+            date: ts.dateValue(),
+            places: places,
+            journalEntries: journalEntries
+        )
     }
 }
 
+// MARK: - PlannedTrip
 public struct PlannedTrip: Identifiable, Codable, Hashable {
     public let id: UUID
     public var destination: String
@@ -120,6 +149,7 @@ public struct PlannedTrip: Identifiable, Codable, Hashable {
         self.members = members
     }
 
+    // Short convenience initializer (used elsewhere in project)
     public init(id: UUID, destination: String, startDate: Date, endDate: Date) {
         self.init(
             id: id,
@@ -151,17 +181,17 @@ public struct PlannedTrip: Identifiable, Codable, Hashable {
             remaining = Array(remaining.dropFirst(perDay))
         }
         if !remaining.isEmpty, days > 0 {
-            itinerary[days-1].places += remaining
+            itinerary[days - 1].places += remaining
         }
     }
 
-    // Journal helpers if needed externally
+    // Journal convenience
     public mutating func addJournalEntry(_ entry: JournalEntry, toDay dayId: UUID) {
         guard let idx = itinerary.firstIndex(where: { $0.id == dayId }) else { return }
         itinerary[idx].journalEntries.append(entry)
     }
 
-    // Firestore
+    // Firestore Serialization
     public static func fromDict(_ dict: [String: Any]) -> PlannedTrip? {
         guard
             let idString = dict["id"] as? String,
@@ -211,7 +241,7 @@ public struct PlannedTrip: Identifiable, Codable, Hashable {
         ]
     }
 
-    // Sample data
+    // Sample Data (trimmed to essentials)
     public static func samplePlannedTrips() -> [PlannedTrip] {
         [
             PlannedTrip(
@@ -233,7 +263,7 @@ public struct PlannedTrip: Identifiable, Codable, Hashable {
                                 types: ["tourist_attraction"],
                                 rating: 4.7,
                                 userRatingsTotal: 100000,
-                                photoReferences: ["places/ChIJLU7jZClu5kcR4PcOOO6p3I0/photos/ATtYBwKo0cGvQG9cA"],
+                                photoReferences: ["places/ChIJLU7jZClu5kcR4PcOOO6p3I0/photos/ATtY..."],
                                 reviews: nil,
                                 openingHours: nil,
                                 phoneNumber: nil,
@@ -244,7 +274,7 @@ public struct PlannedTrip: Identifiable, Codable, Hashable {
                     )
                 ],
                 placeName: "Eiffel Tower",
-                members: ["Alice", "Bob", "Charlie"]
+                members: ["Alice", "Bob"]
             )
         ]
     }
@@ -259,7 +289,7 @@ public struct PlannedTrip: Identifiable, Codable, Hashable {
                 notes: "Had a great time.",
                 itinerary: [],
                 placeName: "Central Park",
-                members: ["Sam", "Jane"]
+                members: ["Sam"]
             )
         ]
     }
