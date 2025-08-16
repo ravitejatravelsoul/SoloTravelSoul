@@ -5,6 +5,8 @@ struct RootTabView: View {
     @StateObject var groupViewModel = GroupViewModel()
     @EnvironmentObject var authViewModel: AuthViewModel
 
+    @AppStorage("profileImageData") var profileImageData: Data = Data()
+
     @State private var selectedTab = 0
     @State private var editTripID: UUID? = nil
     @State private var showDrawer = false
@@ -82,6 +84,7 @@ struct RootTabView: View {
             if showDrawer, let userProfile = authViewModel.currentUserProfile {
                 AnimatedDrawer(
                     user: userProfile,
+                    profileImageData: profileImageData,
                     onClose: { withAnimation { showDrawer = false } },
                     onSelectNotifications: {
                         drawerDestination = .notifications

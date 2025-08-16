@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AnimatedDrawer: View {
     let user: UserProfile
+    let profileImageData: Data? // Pass from ProfileView/AppStorage or your state
     let onClose: () -> Void
     let onSelectNotifications: () -> Void
     let onSelectApprovals: () -> Void
@@ -17,6 +18,28 @@ struct AnimatedDrawer: View {
         return String(components.prefix(2))
     }
 
+    var avatar: some View {
+        Group {
+            if let data = profileImageData, let uiImage = UIImage(data: data), !data.isEmpty {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                ZStack {
+                    Circle()
+                        .fill(Color.blue.opacity(0.2))
+                    Text(initials)
+                        .font(.title)
+                        .bold()
+                        .foregroundColor(.blue)
+                }
+            }
+        }
+        .frame(width: 56, height: 56)
+        .clipShape(Circle())
+        .shadow(radius: 6)
+    }
+
     var body: some View {
         ZStack(alignment: .leading) {
             Color.black.opacity(0.35)
@@ -24,17 +47,9 @@ struct AnimatedDrawer: View {
                 .onTapGesture(perform: onClose)
 
             VStack(alignment: .leading, spacing: 24) {
-                // Profile Section with initials as avatar
+                // Profile Section with avatar (pic or initials)
                 HStack(spacing: 16) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.blue.opacity(0.2))
-                            .frame(width: 56, height: 56)
-                        Text(initials)
-                            .font(.title)
-                            .bold()
-                            .foregroundColor(.blue)
-                    }
+                    avatar
                     VStack(alignment: .leading) {
                         Text(user.name)
                             .font(.headline)
