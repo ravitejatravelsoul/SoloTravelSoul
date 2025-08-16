@@ -7,6 +7,7 @@ struct AnimatedDrawer: View {
     let onSelectApprovals: () -> Void
     let onSelectChats: () -> Void
     let onSelectProfile: () -> Void
+    let onLogout: () -> Void
 
     // Helper: Get initials from name
     var initials: String {
@@ -80,9 +81,16 @@ struct AnimatedDrawer: View {
                     .font(.title3)
                     .bold()
                 Button(action: onSelectProfile) {
-                    Label("Edit Profile", systemImage: "person.crop.circle")
+                    Label("Profile", systemImage: "person.crop.circle")
                 }
                 .padding(.leading, 8)
+
+                Button(action: onLogout) {
+                    Label("Logout", systemImage: "arrow.backward.circle.fill")
+                        .foregroundColor(.red)
+                }
+                .padding(.leading, 8)
+                .padding(.top, 8)
 
                 Spacer()
             }

@@ -21,7 +21,6 @@ struct ProfileView: View {
     @AppStorage("privacyEnabled") var privacyEnabled: Bool = false
 
     @State private var showEdit = false
-    @State private var showLogoutConfirm = false
 
     func listString(_ value: String) -> String {
         value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: ", ")
@@ -123,28 +122,8 @@ struct ProfileView: View {
                         .environmentObject(authViewModel)
                 }
 
-                // Logout Button
-                Button(action: {
-                    showLogoutConfirm = true
-                }) {
-                    Label("Log Out", systemImage: "arrow.backward.square")
-                        .font(.headline)
-                        .padding()
-                        .background(Color.red.opacity(0.08))
-                        .foregroundColor(.red)
-                        .cornerRadius(8)
-                }
-                .padding(.top, 8)
-                .confirmationDialog(
-                    "Are you sure you want to log out?",
-                    isPresented: $showLogoutConfirm,
-                    titleVisibility: .visible
-                ) {
-                    Button("Log Out", role: .destructive) {
-                        authViewModel.signOut()
-                    }
-                    Button("Cancel", role: .cancel) { }
-                }
+                // Logout Button REMOVED
+                // If you want logout, add it only in a main menu/drawer, not here!
             }
             .padding()
         }
@@ -167,3 +146,4 @@ struct ProfileRow: View {
         .padding(.vertical, 2)
     }
 }
+

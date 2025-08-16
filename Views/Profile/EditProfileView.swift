@@ -1,53 +1,27 @@
 import SwiftUI
 import PhotosUI
 
-// Dummy AuthViewModel for compilation
-// Replace this with your actual AuthViewModel implementation
-
-
-    func updateProfile(
-        userID: String,
-        name: String,
-        phone: String,
-        birthday: String,
-        gender: String,
-        country: String,
-        city: String,
-        bio: String,
-        preferences: String,
-        favoriteDestinations: String,
-        languages: String,
-        emergencyContact: String,
-        socialLinks: String,
-        privacyEnabled: Bool,
-        completion: @escaping (Bool) -> Void
-    ) {
-        // Replace this with your actual update logic
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            completion(true)
-        }
-    }
-
 struct EditProfileView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
-
-    @AppStorage("name") var name: String = ""
-    @AppStorage("email") var email: String = ""
-    @AppStorage("phone") var phone: String = ""
-    @AppStorage("birthday") var birthday: String = ""
-    @AppStorage("gender") var gender: String = ""
-    @AppStorage("country") var country: String = ""
-    @AppStorage("city") var city: String = ""
-    @AppStorage("bio") var bio: String = ""
-    @AppStorage("preferences") var preferences: String = ""
-    @AppStorage("socialLinks") var socialLinks: String = ""
-    @AppStorage("favoriteDestinations") var favoriteDestinations: String = ""
-    @AppStorage("languages") var languages: String = ""
-    @AppStorage("emergencyContact") var emergencyContact: String = ""
-    @AppStorage("privacyEnabled") var privacyEnabled: Bool = false
-    @AppStorage("profileImageData") var profileImageData: Data = Data()
-
     @Environment(\.dismiss) private var dismiss
+
+    @State private var name: String = ""
+    @State private var email: String = ""
+    @State private var phone: String = ""
+    @State private var birthday: String = ""
+    @State private var gender: String = ""
+    @State private var country: String = ""
+    @State private var city: String = ""
+    @State private var bio: String = ""
+    @State private var preferences: String = ""
+    @State private var socialLinks: String = ""
+    @State private var favoriteDestinations: String = ""
+    @State private var languages: String = ""
+    @State private var emergencyContact: String = ""
+    @State private var privacyEnabled: Bool = false
+
+    @State private var profileImageData: Data = Data() // Not persisted to Firestore here
+
     @State private var showValidationError = false
     @State private var validationError: String = ""
     @State private var saving = false
@@ -320,11 +294,29 @@ struct EditProfileView: View {
             .photosPicker(isPresented: $showImagePicker, selection: $selectedPhoto, matching: .images)
         }
         .onAppear {
-            selectedLanguages = Set(languages.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
-            selectedDestinations = Set(favoriteDestinations.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
-            selectedPreferences = Set(preferences.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
-            if let date = calendarFormatter.date(from: birthday) {
-                birthdayDate = date
+            if let profile = authViewModel.currentUserProfile {
+                // Initialize local state from Firestore profile
+                name = profile.name
+                email = profile.email
+                phone = profile.phone
+                birthday = profile.birthday
+                gender = profile.gender
+                country = profile.country
+                city = profile.city
+                bio = profile.bio
+                preferences = profile.preferences
+                socialLinks = profile.socialLinks
+                favoriteDestinations = profile.favoriteDestinations
+                languages = profile.languages
+                emergencyContact = profile.emergencyContact
+                privacyEnabled = profile.privacyEnabled
+
+                selectedLanguages = Set(languages.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+                selectedDestinations = Set(favoriteDestinations.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+                selectedPreferences = Set(preferences.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+                if let date = calendarFormatter.date(from: birthday) {
+                    birthdayDate = date
+                }
             }
         }
         .onChange(of: selectedPhoto) {
@@ -332,6 +324,7 @@ struct EditProfileView: View {
                 Task {
                     if let data = try? await newPhoto.loadTransferable(type: Data.self) {
                         profileImageData = data
+                        // You can upload this to Firebase Storage and save the downloadURL in Firestore as part of the profile if you wish.
                     }
                 }
             }
@@ -358,7 +351,6 @@ struct EditProfileView: View {
             validationError = "Not logged in."; showValidationError = true; return
         }
         saving = true
-        // FIXED ARGUMENT ORDER
         authViewModel.updateProfile(
             userID: user.uid,
             name: name,

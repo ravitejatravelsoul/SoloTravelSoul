@@ -64,7 +64,6 @@ struct RootTabView: View {
                         .tabItem { Label("Home", systemImage: "house") }
                         .tag(0)
                 }
-                // Profile tab REMOVED from here!
             }
             // Only burger menu icon at top left now
             .overlay(alignment: .topLeading) {
@@ -98,6 +97,10 @@ struct RootTabView: View {
                     },
                     onSelectProfile: {
                         showProfileSheet = true
+                        showDrawer = false
+                    },
+                    onLogout: {
+                        authViewModel.signOut()
                         showDrawer = false
                     }
                 )

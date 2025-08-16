@@ -1,7 +1,7 @@
 import Foundation
 
 public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
-    public var id: String                          // Now: Custom incremental UID as string (e.g. "50000")
+    public var id: String                          // Firebase UID string
     public var name: String
     public var email: String
     public var phone: String
@@ -16,8 +16,8 @@ public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
     public var emergencyContact: String
     public var socialLinks: String
     public var privacyEnabled: Bool
-    public var firstName: String?                  // ADDED
-    public var lastName: String?                   // ADDED
+    public var firstName: String?
+    public var lastName: String?
 
     public init(
         id: String,
@@ -80,25 +80,23 @@ public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
         return dict
     }
 
+    /// RELAXED VERSION: Accepts missing fields and sets empty strings or sensible defaults
     public static func fromDict(_ dict: [String: Any]) -> UserProfile? {
-        guard
-            let id = dict["id"] as? String,
-            let name = dict["name"] as? String,
-            let email = dict["email"] as? String,
-            let phone = dict["phone"] as? String,
-            let birthday = dict["birthday"] as? String,
-            let gender = dict["gender"] as? String,
-            let country = dict["country"] as? String,
-            let city = dict["city"] as? String,
-            let bio = dict["bio"] as? String,
-            let preferences = dict["preferences"] as? String,
-            let favoriteDestinations = dict["favoriteDestinations"] as? String,
-            let languages = dict["languages"] as? String,
-            let emergencyContact = dict["emergencyContact"] as? String,
-            let socialLinks = dict["socialLinks"] as? String,
-            let privacyEnabled = dict["privacyEnabled"] as? Bool
-        else { return nil }
-
+        guard let id = dict["id"] as? String else { return nil }
+        let name = dict["name"] as? String ?? ""
+        let email = dict["email"] as? String ?? ""
+        let phone = dict["phone"] as? String ?? ""
+        let birthday = dict["birthday"] as? String ?? ""
+        let gender = dict["gender"] as? String ?? ""
+        let country = dict["country"] as? String ?? ""
+        let city = dict["city"] as? String ?? ""
+        let bio = dict["bio"] as? String ?? ""
+        let preferences = dict["preferences"] as? String ?? ""
+        let favoriteDestinations = dict["favoriteDestinations"] as? String ?? ""
+        let languages = dict["languages"] as? String ?? ""
+        let emergencyContact = dict["emergencyContact"] as? String ?? ""
+        let socialLinks = dict["socialLinks"] as? String ?? ""
+        let privacyEnabled = dict["privacyEnabled"] as? Bool ?? false
         let firstName = dict["firstName"] as? String
         let lastName = dict["lastName"] as? String
 
