@@ -1,7 +1,7 @@
 import Foundation
 
 public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
-    public var id: String
+    public var id: String                          // Now: Custom incremental UID as string (e.g. "50000")
     public var name: String
     public var email: String
     public var phone: String
@@ -16,6 +16,8 @@ public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
     public var emergencyContact: String
     public var socialLinks: String
     public var privacyEnabled: Bool
+    public var firstName: String?                  // ADDED
+    public var lastName: String?                   // ADDED
 
     public init(
         id: String,
@@ -32,7 +34,9 @@ public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
         languages: String,
         emergencyContact: String,
         socialLinks: String,
-        privacyEnabled: Bool
+        privacyEnabled: Bool,
+        firstName: String? = nil,
+        lastName: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -49,10 +53,12 @@ public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
         self.emergencyContact = emergencyContact
         self.socialLinks = socialLinks
         self.privacyEnabled = privacyEnabled
+        self.firstName = firstName
+        self.lastName = lastName
     }
 
     public func toDict() -> [String: Any] {
-        [
+        var dict: [String: Any] = [
             "id": id,
             "name": name,
             "email": email,
@@ -69,6 +75,9 @@ public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
             "socialLinks": socialLinks,
             "privacyEnabled": privacyEnabled
         ]
+        if let firstName = firstName { dict["firstName"] = firstName }
+        if let lastName = lastName { dict["lastName"] = lastName }
+        return dict
     }
 
     public static func fromDict(_ dict: [String: Any]) -> UserProfile? {
@@ -90,6 +99,9 @@ public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
             let privacyEnabled = dict["privacyEnabled"] as? Bool
         else { return nil }
 
+        let firstName = dict["firstName"] as? String
+        let lastName = dict["lastName"] as? String
+
         return UserProfile(
             id: id,
             name: name,
@@ -105,7 +117,9 @@ public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
             languages: languages,
             emergencyContact: emergencyContact,
             socialLinks: socialLinks,
-            privacyEnabled: privacyEnabled
+            privacyEnabled: privacyEnabled,
+            firstName: firstName,
+            lastName: lastName
         )
     }
 }

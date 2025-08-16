@@ -1,38 +1,32 @@
 import Foundation
 import FirebaseFirestore
 
-@MainActor
-class GroupViewModel: ObservableObject {
-    @Published var groups: [GroupTrip] = []
-    @Published var isLoading: Bool = false
-    @Published var errorMessage: String?
+public class GroupViewModel: ObservableObject {
+    @Published public var groups: [GroupTrip] = []
+    @Published public var errorMessage: String?
 
     private let db = Firestore.firestore()
-    private var listener: ListenerRegistration?
+    private let groupsCollection = "groups"
 
-    init() { fetchGroups() }
-
-    deinit { listener?.remove() }
-
-    func fetchGroups() {
-        listener?.remove()
-        listener = db.collection("groups").addSnapshotListener { [weak self] snapshot, error in
-            guard let self else { return }
-            if let error = error {
-                Task { @MainActor in self.errorMessage = error.localizedDescription }
-                return
-            }
-            guard let docs = snapshot?.documents else { return }
-            let parsed = docs.compactMap { doc -> GroupTrip? in
-                var data = doc.data()
-                data["id"] = doc.documentID
-                return GroupTrip.fromDict(data)
-            }
-            Task { @MainActor in self.groups = parsed }
-        }
+    public init() {
+        fetchGroups()
     }
 
-    func createGroup(
+    public func fetchGroups() {
+        db.collection(groupsCollection)
+            .order(by: "startDate", descending: false)
+            .addSnapshotListener { [weak self] snapshot, error in
+                if let error = error {
+                    self?.errorMessage = error.localizedDescription
+                    print("❌ fetchGroups error: \(error)")
+                    return
+                }
+                let docs = snapshot?.documents ?? []
+                self?.groups = docs.compactMap { GroupTrip.fromDict($0.data()) }
+            }
+    }
+
+    public func createGroup(
         name: String,
         destination: String,
         startDate: Date,
@@ -41,107 +35,115 @@ class GroupViewModel: ObservableObject {
         activities: [String],
         creator: UserProfile
     ) {
-        let id = UUID().uuidString
+        // Make sure creator has correct name/id
         let group = GroupTrip(
-            id: id,
             name: name,
             destination: destination,
             startDate: startDate,
             endDate: endDate,
             description: description,
             activities: activities,
-            members: [creator],
-            requests: [],
-            creator: creator
+            creator: creator,
+            members: [creator]
         )
-        db.collection("groups").document(id).setData(group.toDict()) { [weak self] error in
+        db.collection(groupsCollection).document(group.id).setData(group.toDict()) { [weak self] error in
             if let error = error {
-                Task { @MainActor in self?.errorMessage = "Create failed: \(error.localizedDescription)" }
+                self?.errorMessage = error.localizedDescription
+                print("❌ Failed to create group: \(error)")
+            } else {
+                print("✅ Group created: \(group.id)")
+                self?.fetchGroups()
             }
         }
     }
 
-    func group(by id: String?) -> GroupTrip? {
-        guard let id else { return nil }
-        return groups.first { $0.id == id }
-    }
+    // MARK: - Group Membership & Requests Logic
 
-    func requestToJoin(group: GroupTrip, user: UserProfile) {
-        guard let groupId = group.id else { return }
-        if group.members.contains(where: { $0.id == user.id }) ||
-            group.requests.contains(where: { $0.id == user.id }) ||
-            group.joinRequests.contains(user.id) { return }
-
-        db.collection("groups").document(groupId).updateData([
-            "requests": FieldValue.arrayUnion([user.toDict()]),
-            "joinRequests": FieldValue.arrayUnion([user.id])
-        ])
-    }
-
-    func cancelJoinRequest(group: GroupTrip, userId: String) {
-        guard let groupId = group.id else { return }
-        var updates: [String: Any] = [
-            "joinRequests": FieldValue.arrayRemove([userId])
-        ]
-        let reqDicts = group.requests.filter { $0.id == userId }.map { $0.toDict() }
-        if !reqDicts.isEmpty {
-            updates["requests"] = FieldValue.arrayRemove(reqDicts)
+    public func requestToJoin(group: GroupTrip, user: UserProfile) {
+        let ref = db.collection(groupsCollection).document(group.id)
+        ref.updateData([
+            "joinRequests": FieldValue.arrayUnion([user.id]),
+            "requests": FieldValue.arrayUnion([user.toDict()])
+        ]) { error in
+            if let error = error {
+                print("❌ Failed to send join request: \(error)")
+            }
         }
-        db.collection("groups").document(groupId).updateData(updates)
     }
 
-    func approveRequest(group: GroupTrip, user: UserProfile) {
-        guard let groupId = group.id else { return }
-        db.collection("groups").document(groupId).updateData([
+    public func cancelJoinRequest(group: GroupTrip, userId: String) {
+        let ref = db.collection(groupsCollection).document(group.id)
+        if let userProfile = group.requests.first(where: { $0.id == userId }) {
+            ref.updateData([
+                "joinRequests": FieldValue.arrayRemove([userId]),
+                "requests": FieldValue.arrayRemove([userProfile.toDict()])
+            ]) { error in
+                if let error = error {
+                    print("❌ Failed to cancel join request: \(error)")
+                }
+            }
+        } else {
+            ref.updateData([
+                "joinRequests": FieldValue.arrayRemove([userId])
+            ]) { error in
+                if let error = error {
+                    print("❌ Failed to cancel join request: \(error)")
+                }
+            }
+        }
+    }
+
+    public func leaveGroup(group: GroupTrip, userId: String) {
+        let ref = db.collection(groupsCollection).document(group.id)
+        if let userProfile = group.members.first(where: { $0.id == userId }) {
+            ref.updateData([
+                "members": FieldValue.arrayRemove([userProfile.toDict()])
+            ]) { error in
+                if let error = error {
+                    print("❌ Failed to leave group: \(error)")
+                }
+            }
+        }
+    }
+
+    public func approveAll(group: GroupTrip) {
+        let ref = db.collection(groupsCollection).document(group.id)
+        let requestUserDicts = group.requests.map { $0.toDict() }
+        let requestUserIds = group.requests.map { $0.id }
+        ref.updateData([
+            "requests": FieldValue.arrayRemove(requestUserDicts),
+            "joinRequests": FieldValue.arrayRemove(requestUserIds),
+            "members": FieldValue.arrayUnion(requestUserDicts)
+        ]) { error in
+            if let error = error {
+                print("❌ Failed to approve all requests: \(error)")
+            }
+        }
+    }
+
+    public func approveRequest(group: GroupTrip, user: UserProfile) {
+        let ref = db.collection(groupsCollection).document(group.id)
+        ref.updateData([
             "requests": FieldValue.arrayRemove([user.toDict()]),
             "joinRequests": FieldValue.arrayRemove([user.id]),
             "members": FieldValue.arrayUnion([user.toDict()])
-        ])
+        ]) { error in
+            if let error = error {
+                print("❌ Failed to approve request: \(error)")
+            }
+        }
     }
 
-    func declineRequest(group: GroupTrip, user: UserProfile) {
-        guard let groupId = group.id else { return }
-        db.collection("groups").document(groupId).updateData([
+    public func declineRequest(group: GroupTrip, user: UserProfile) {
+        let ref = db.collection(groupsCollection).document(group.id)
+        // FIX: Do NOT add to members here!
+        ref.updateData([
             "requests": FieldValue.arrayRemove([user.toDict()]),
             "joinRequests": FieldValue.arrayRemove([user.id])
-        ])
-    }
-
-    func approveAll(group: GroupTrip) {
-        guard let groupId = group.id else { return }
-        let newMembers = group.requests.map { $0.toDict() }
-        let newIds = group.requests.map { $0.id }
-        db.collection("groups").document(groupId).updateData([
-            "members": FieldValue.arrayUnion(newMembers),
-            "requests": [],
-            "joinRequests": FieldValue.arrayRemove(newIds)
-        ])
-    }
-
-    func leaveGroup(group: GroupTrip, userId: String) {
-        guard let groupId = group.id else { return }
-        if group.creator.id == userId {
-            print("Creator cannot leave without ownership transfer.")
-            return
+        ]) { error in
+            if let error = error {
+                print("❌ Failed to decline request: \(error)")
+            }
         }
-        let removal = group.members.filter { $0.id == userId }.map { $0.toDict() }
-        db.collection("groups").document(groupId).updateData([
-            "members": FieldValue.arrayRemove(removal)
-        ])
-    }
-
-    func linkTrip(group: GroupTrip, tripId: String) {
-        guard let groupId = group.id, !tripId.isEmpty else { return }
-        if group.linkedTripIDs.contains(tripId) { return }
-        db.collection("groups").document(groupId).updateData([
-            "linkedTripIDs": FieldValue.arrayUnion([tripId])
-        ])
-    }
-
-    func unlinkTrip(group: GroupTrip, tripId: String) {
-        guard let groupId = group.id, !tripId.isEmpty else { return }
-        db.collection("groups").document(groupId).updateData([
-            "linkedTripIDs": FieldValue.arrayRemove([tripId])
-        ])
     }
 }

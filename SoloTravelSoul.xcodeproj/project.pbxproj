@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		3AB08F4F2E4EEF16007BD0AA /* TripCoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB08F4E2E4EEF16007BD0AA /* TripCoreModels.swift */; };
+		3AB08F512E4FC320007BD0AA /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB08F502E4FC320007BD0AA /* OnboardingView.swift */; };
+		3AB08F532E50305F007BD0AA /* UserManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB08F522E50305F007BD0AA /* UserManager.swift */; };
 		8C02E0FD2E29BE8E000C4AA9 /* GooglePlacesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C02E0FC2E29BE8E000C4AA9 /* GooglePlacesService.swift */; };
 		8C02E0FF2E29C36B000C4AA9 /* PlaceSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C02E0FE2E29C36B000C4AA9 /* PlaceSearchView.swift */; };
 		8C0B260F2E45C4D100E195FA /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 8C0B260E2E45C4D100E195FA /* FirebaseFirestore */; };
@@ -78,6 +80,8 @@
 
 /* Begin PBXFileReference section */
 		3AB08F4E2E4EEF16007BD0AA /* TripCoreModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripCoreModels.swift; sourceTree = "<group>"; };
+		3AB08F502E4FC320007BD0AA /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		3AB08F522E50305F007BD0AA /* UserManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserManager.swift; sourceTree = "<group>"; };
 		8C02E0FC2E29BE8E000C4AA9 /* GooglePlacesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GooglePlacesService.swift; sourceTree = "<group>"; };
 		8C02E0FE2E29C36B000C4AA9 /* PlaceSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceSearchView.swift; sourceTree = "<group>"; };
 		8C0FE9342E483FCE00FA651C /* FirestoreService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirestoreService.swift; sourceTree = "<group>"; };
@@ -228,6 +232,7 @@
 		8C714C122E25EB7E0002CDCD /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				3AB08F502E4FC320007BD0AA /* OnboardingView.swift */,
 				8C8BC47E2E45AB3000EE8F4C /* CreateGroupView.swift */,
 				8C8BC47C2E45AA0D00EE8F4C /* GroupDetailView.swift */,
 				8C8BC4772E45A9A600EE8F4C /* GroupListView.swift */,
@@ -250,6 +255,7 @@
 		8C714C132E25EB970002CDCD /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				3AB08F522E50305F007BD0AA /* UserManager.swift */,
 				3AB08F4E2E4EEF16007BD0AA /* TripCoreModels.swift */,
 				8CB474362E469112001F4D78 /* NotificationsListView.swift */,
 				8CB474342E4690D4001F4D78 /* NotificationsViewModel.swift */,
@@ -473,6 +479,7 @@
 				8CD88C6B2E45783E0028CDF7 /* RoundedCorner+CornerRadius.swift in Sources */,
 				8C75F1512E3333E3001D915E /* PlacePickerView.swift in Sources */,
 				8C0FE9352E483FCE00FA651C /* FirestoreService.swift in Sources */,
+				3AB08F512E4FC320007BD0AA /* OnboardingView.swift in Sources */,
 				8CB474372E469113001F4D78 /* NotificationsListView.swift in Sources */,
 				8C75F13F2E32F244001D915E /* RecentTripsView.swift in Sources */,
 				8C75F14B2E32F867001D915E /* JournalView.swift in Sources */,
@@ -496,6 +503,7 @@
 				8C9D1BAA2E277DC700858387 /* HomeView.swift in Sources */,
 				8C60EAC52E39B48C002D7E74 /* AddJournalEntryView.swift in Sources */,
 				8C3993802E2DCE4500739CF8 /* ItineraryPlace.swift in Sources */,
+				3AB08F532E50305F007BD0AA /* UserManager.swift in Sources */,
 				8CB474332E468FE2001F4D78 /* NotificationItem.swift in Sources */,
 				8CDB231D2E28BADA00949D00 /* CarouselView.swift in Sources */,
 				8CDB23192E28AF5500949D00 /* ExploreView.swift in Sources */,
