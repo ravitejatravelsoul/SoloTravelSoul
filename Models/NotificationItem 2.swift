@@ -1,3 +1,11 @@
+//
+//  NotificationItem 2.swift
+//  SoloTravelSoul
+//
+//  Created by Raviteja on 8/15/25.
+//
+
+
 import Foundation
 
 public struct NotificationItem: Identifiable, Codable, Hashable {

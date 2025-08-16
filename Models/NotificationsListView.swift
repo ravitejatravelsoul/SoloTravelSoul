@@ -1,25 +1,17 @@
-//
-//  NotificationsListView.swift
-//  SoloTravelSoul
-//
-//  Created by Raviteja Vemulapelli on 8/8/25.
-//
-
-
 import SwiftUI
 
 struct NotificationsListView: View {
-    @ObservedObject var notificationsVM: NotificationsViewModel
+    let notifications: [NotificationItem]
     var body: some View {
-        List(notificationsVM.notifications) { notification in
+        List(notifications) { notification in
             VStack(alignment: .leading) {
+                Text(notification.title).bold()
                 Text(notification.message)
-                    .font(.body)
-                Text(Date(timeIntervalSince1970: notification.timestamp), style: .time)
+                Text(notification.createdAt, style: .date)
                     .font(.caption)
-                    .foregroundColor(.gray)
             }
+            .background(notification.isRead ? Color.clear : Color.yellow.opacity(0.2))
         }
-        .navigationTitle("Notifications")
+        .navigationTitle("Group Requests")
     }
 }
