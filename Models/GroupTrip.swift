@@ -9,9 +9,14 @@ public struct GroupTrip: Codable, Identifiable, Hashable {
     public var description: String?
     public var activities: [String]?
     public var creator: UserProfile
+    public var admins: [String] // user IDs of admins (besides creator)
     public var members: [UserProfile]
     public var requests: [UserProfile]
     public var joinRequests: [String] // user IDs
+
+    public var leaderProfile: UserProfile? {
+        return creator
+    }
 
     public init(
         id: String = UUID().uuidString,
@@ -22,6 +27,7 @@ public struct GroupTrip: Codable, Identifiable, Hashable {
         description: String? = nil,
         activities: [String]? = nil,
         creator: UserProfile,
+        admins: [String] = [],
         members: [UserProfile] = [],
         requests: [UserProfile] = [],
         joinRequests: [String] = []
@@ -34,25 +40,28 @@ public struct GroupTrip: Codable, Identifiable, Hashable {
         self.description = description
         self.activities = activities
         self.creator = creator
+        self.admins = admins
         self.members = members
         self.requests = requests
         self.joinRequests = joinRequests
     }
 
     public func toDict() -> [String: Any] {
-        [
+        var dict: [String: Any] = [
             "id": id,
             "name": name,
             "destination": destination,
             "startDate": startDate.timeIntervalSince1970,
             "endDate": endDate.timeIntervalSince1970,
-            "description": description ?? "",
-            "activities": activities ?? [],
             "creator": creator.toDict(),
+            "admins": admins,
             "members": members.map { $0.toDict() },
             "requests": requests.map { $0.toDict() },
             "joinRequests": joinRequests
         ]
+        dict["description"] = description ?? ""
+        dict["activities"] = activities ?? []
+        return dict
     }
 
     public static func fromDict(_ dict: [String: Any]) -> GroupTrip? {
@@ -68,6 +77,7 @@ public struct GroupTrip: Codable, Identifiable, Hashable {
 
         let description = dict["description"] as? String
         let activities = dict["activities"] as? [String]
+        let admins = dict["admins"] as? [String] ?? []
         let members = (dict["members"] as? [[String: Any]])?.compactMap(UserProfile.fromDict) ?? []
         let requests = (dict["requests"] as? [[String: Any]])?.compactMap(UserProfile.fromDict) ?? []
         let joinRequests = dict["joinRequests"] as? [String] ?? []
@@ -81,6 +91,7 @@ public struct GroupTrip: Codable, Identifiable, Hashable {
             description: description,
             activities: activities,
             creator: creator,
+            admins: admins,
             members: members,
             requests: requests,
             joinRequests: joinRequests

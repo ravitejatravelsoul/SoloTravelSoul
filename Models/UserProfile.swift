@@ -18,6 +18,7 @@ public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
     public var privacyEnabled: Bool
     public var firstName: String?
     public var lastName: String?
+    public var photoURL: String?   // 🔥 NEW FIELD
 
     public init(
         id: String,
@@ -36,7 +37,8 @@ public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
         socialLinks: String,
         privacyEnabled: Bool,
         firstName: String? = nil,
-        lastName: String? = nil
+        lastName: String? = nil,
+        photoURL: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -55,6 +57,7 @@ public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
         self.privacyEnabled = privacyEnabled
         self.firstName = firstName
         self.lastName = lastName
+        self.photoURL = photoURL
     }
 
     public func toDict() -> [String: Any] {
@@ -75,12 +78,13 @@ public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
             "socialLinks": socialLinks,
             "privacyEnabled": privacyEnabled
         ]
+        // Only add firstName, lastName, photoURL if they are not nil
         if let firstName = firstName { dict["firstName"] = firstName }
         if let lastName = lastName { dict["lastName"] = lastName }
+        if let photoURL = photoURL { dict["photoURL"] = photoURL }
         return dict
     }
 
-    /// RELAXED VERSION: Accepts missing fields and sets empty strings or sensible defaults
     public static func fromDict(_ dict: [String: Any]) -> UserProfile? {
         guard let id = dict["id"] as? String else { return nil }
         let name = dict["name"] as? String ?? ""
@@ -99,7 +103,7 @@ public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
         let privacyEnabled = dict["privacyEnabled"] as? Bool ?? false
         let firstName = dict["firstName"] as? String
         let lastName = dict["lastName"] as? String
-
+        let photoURL = dict["photoURL"] as? String
         return UserProfile(
             id: id,
             name: name,
@@ -117,7 +121,8 @@ public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
             socialLinks: socialLinks,
             privacyEnabled: privacyEnabled,
             firstName: firstName,
-            lastName: lastName
+            lastName: lastName,
+            photoURL: photoURL
         )
     }
 }

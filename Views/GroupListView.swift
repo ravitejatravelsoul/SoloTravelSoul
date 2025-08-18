@@ -10,6 +10,9 @@ struct GroupListView: View {
     @State private var joiningGroupID: String? = nil
     @State private var cancellingGroupID: String? = nil
 
+    @State private var showDetail = false
+    @State private var selectedGroup: GroupTrip?
+
     private var filtered: [GroupTrip] {
         let trimmed = search.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return groupViewModel.groups }
@@ -37,9 +40,16 @@ struct GroupListView: View {
                                 requestAction: { requestJoin(group) },
                                 cancelAction: { cancelJoin(group) }
                             )
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                selectedGroup = group
+                                showDetail = true
+                            }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                // REMOVE delete for creator here; handled in detail view
+                                // Only allow join/cancel in list
                                 if isMember(group) {
-                                    // You could add a leave swipe later
+                                    // Optionally add a leave action here
                                 } else if isPending(group) {
                                     Button(role: .destructive) {
                                         cancelJoin(group)
@@ -74,6 +84,19 @@ struct GroupListView: View {
                 CreateGroupSheet(groupViewModel: groupViewModel)
                     .environmentObject(authViewModel)
             }
+            .sheet(isPresented: $showDetail, onDismiss: {
+                selectedGroup = nil
+            }) {
+                if let group = selectedGroup {
+                    NavigationView {
+                        GroupDetailView(groupViewModel: groupViewModel, group: group)
+                            .environmentObject(authViewModel)
+                    }
+                }
+            }
+        }
+        .onAppear {
+            groupViewModel.fetchAllGroups()
         }
     }
 
@@ -126,35 +149,30 @@ private struct GroupRow: View {
     }
 
     var body: some View {
-        NavigationLink {
-            GroupDetailView(groupViewModel: groupViewModel, group: group)
-                .environmentObject(authViewModel)
-        } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text(group.name)
-                        .font(.headline)
-                        .lineLimit(1)
-                    Spacer()
-                    statusBadge
-                }
-                Text(group.destination)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                HStack(spacing: 8) {
-                    Label("\(group.members.count)", systemImage: "person.3.fill")
-                        .font(.caption2)
-                        .foregroundColor(.blue)
-                    Text(dateRangeString(from: group.startDate, to: group.endDate))
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                if !isMember && !isCreator {
-                    actionRow
-                }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(group.name)
+                    .font(.headline)
+                    .lineLimit(1)
+                Spacer()
+                statusBadge
             }
-            .padding(.vertical, 4)
+            Text(group.destination)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            HStack(spacing: 8) {
+                Label("\(group.members.count)", systemImage: "person.3.fill")
+                    .font(.caption2)
+                    .foregroundColor(.blue)
+                Text(dateRangeString(from: group.startDate, to: group.endDate))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            if !isMember && !isCreator {
+                actionRow
+            }
         }
+        .padding(.vertical, 4)
     }
 
     // Status Badge

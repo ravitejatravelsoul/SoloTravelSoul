@@ -62,10 +62,8 @@ class TripViewModel: ObservableObject {
         }
         addOrUpdateTrip(updated)
     }
-}
 
-// MARK: - Journal Entry Mutations
-extension TripViewModel {
+    // MARK: - Journal Entry Mutations
     func deleteJournalEntryFromDay(tripId: UUID, dayId: UUID, entryId: UUID) {
         guard let tripIndex = trips.firstIndex(where: { $0.id == tripId }),
               let dayIndex = trips[tripIndex].itinerary.firstIndex(where: { $0.id == dayId }) else { return }

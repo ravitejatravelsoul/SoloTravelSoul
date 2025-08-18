@@ -7,23 +7,77 @@ public class GroupViewModel: ObservableObject {
 
     private let db = Firestore.firestore()
     private let groupsCollection = "groups"
+    private var groupsListener: ListenerRegistration?
+    private var didFetchGroups = false
 
-    public init() {
-        fetchGroups()
+    public init() { }
+
+    deinit {
+        groupsListener?.remove()
     }
 
-    public func fetchGroups() {
-        db.collection(groupsCollection)
+    /// Call this ONCE (in your main/root view's .onAppear, not repeatedly!)
+    public func fetchAllGroups() {
+        if didFetchGroups {
+            print("⚠️ fetchAllGroups called again; ignoring to prevent duplicate listeners.")
+            return
+        }
+        didFetchGroups = true
+        groupsListener?.remove()
+        groupsListener = db.collection(groupsCollection)
             .order(by: "startDate", descending: false)
             .addSnapshotListener { [weak self] snapshot, error in
                 if let error = error {
-                    self?.errorMessage = error.localizedDescription
+                    DispatchQueue.main.async {
+                        self?.errorMessage = error.localizedDescription
+                    }
                     print("❌ fetchGroups error: \(error)")
                     return
                 }
                 let docs = snapshot?.documents ?? []
-                self?.groups = docs.compactMap { GroupTrip.fromDict($0.data()) }
+                let allGroups = docs.compactMap { GroupTrip.fromDict($0.data()) }
+                if allGroups != self?.groups {
+                    DispatchQueue.main.async {
+                        self?.groups = allGroups
+                    }
+                }
             }
+    }
+
+    public func removeGroupsListener() {
+        groupsListener?.remove()
+        groupsListener = nil
+        didFetchGroups = false
+    }
+
+    public func fetchAllGroupsOnce(completion: @escaping ([GroupTrip]) -> Void) {
+        db.collection(groupsCollection)
+            .order(by: "startDate", descending: false)
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    print("❌ fetchGroupsOnce error: \(error)")
+                    completion([])
+                    return
+                }
+                let docs = snapshot?.documents ?? []
+                let allGroups = docs.compactMap { GroupTrip.fromDict($0.data()) }
+                completion(allGroups)
+            }
+    }
+
+    public func fetchGroup(groupId: String, completion: @escaping (GroupTrip?) -> Void) {
+        db.collection(groupsCollection).document(groupId).getDocument { snapshot, error in
+            if let error = error {
+                print("❌ fetchGroup error: \(error)")
+                completion(nil)
+                return
+            }
+            if let data = snapshot?.data(), let group = GroupTrip.fromDict(data) {
+                completion(group)
+            } else {
+                completion(nil)
+            }
+        }
     }
 
     public func createGroup(
@@ -35,7 +89,6 @@ public class GroupViewModel: ObservableObject {
         activities: [String],
         creator: UserProfile
     ) {
-        // Make sure creator has correct name/id
         let group = GroupTrip(
             name: name,
             destination: destination,
@@ -48,11 +101,12 @@ public class GroupViewModel: ObservableObject {
         )
         db.collection(groupsCollection).document(group.id).setData(group.toDict()) { [weak self] error in
             if let error = error {
-                self?.errorMessage = error.localizedDescription
+                DispatchQueue.main.async {
+                    self?.errorMessage = error.localizedDescription
+                }
                 print("❌ Failed to create group: \(error)")
             } else {
                 print("✅ Group created: \(group.id)")
-                self?.fetchGroups()
             }
         }
     }
@@ -104,6 +158,9 @@ public class GroupViewModel: ObservableObject {
                 }
             }
         }
+        ref.updateData([
+            "admins": FieldValue.arrayRemove([userId])
+        ])
     }
 
     public func approveAll(group: GroupTrip) {
@@ -136,13 +193,85 @@ public class GroupViewModel: ObservableObject {
 
     public func declineRequest(group: GroupTrip, user: UserProfile) {
         let ref = db.collection(groupsCollection).document(group.id)
-        // FIX: Do NOT add to members here!
         ref.updateData([
             "requests": FieldValue.arrayRemove([user.toDict()]),
             "joinRequests": FieldValue.arrayRemove([user.id])
         ]) { error in
             if let error = error {
                 print("❌ Failed to decline request: \(error)")
+            }
+        }
+    }
+
+    // MARK: - Group Member Management (Promote/Demote/Remove Admin/Member)
+
+    public func promoteMember(group: GroupTrip, member: UserProfile) {
+        let groupRef = db.collection(groupsCollection).document(group.id)
+        groupRef.updateData([
+            "admins": FieldValue.arrayUnion([member.id])
+        ]) { error in
+            if let error = error {
+                print("❌ Failed to promote member: \(error)")
+            } else {
+                print("✅ \(member.name) promoted to admin")
+            }
+        }
+    }
+
+    public func demoteMember(group: GroupTrip, member: UserProfile) {
+        let groupRef = db.collection(groupsCollection).document(group.id)
+        groupRef.updateData([
+            "admins": FieldValue.arrayRemove([member.id])
+        ]) { error in
+            if let error = error {
+                print("❌ Failed to demote member: \(error)")
+            } else {
+                print("✅ \(member.name) demoted from admin")
+            }
+        }
+    }
+
+    public func removeMember(group: GroupTrip, member: UserProfile) {
+        let groupRef = db.collection(groupsCollection).document(group.id)
+        groupRef.updateData([
+            "members": FieldValue.arrayRemove([member.toDict()]),
+            "admins": FieldValue.arrayRemove([member.id])
+        ]) { error in
+            if let error = error {
+                print("❌ Failed to remove member: \(error)")
+            } else {
+                print("✅ \(member.name) removed from group")
+            }
+        }
+    }
+
+    // MARK: - Transfer Ownership then Leave (creator only)
+    public func transferOwnershipAndLeave(group: GroupTrip, newCreator: UserProfile, previousCreatorId: String) {
+        let groupRef = db.collection(groupsCollection).document(group.id)
+        groupRef.updateData([
+            "creator": newCreator.toDict(),
+            "admins": FieldValue.arrayUnion([newCreator.id]),
+            "members": FieldValue.arrayRemove([group.creator.toDict()]),
+            "admins": FieldValue.arrayRemove([previousCreatorId])
+        ]) { error in
+            if let error = error {
+                print("❌ Failed to transfer ownership: \(error)")
+            } else {
+                print("✅ Ownership transferred to \(newCreator.name), previous creator removed")
+            }
+        }
+    }
+
+    // MARK: - Delete Group (only for creator)
+    public func deleteGroup(group: GroupTrip) {
+        db.collection(groupsCollection).document(group.id).delete { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.errorMessage = "Failed to delete group: \(error.localizedDescription)"
+                }
+                print("❌ Failed to delete group: \(error.localizedDescription)")
+            } else {
+                print("✅ Group deleted: \(group.id)")
             }
         }
     }

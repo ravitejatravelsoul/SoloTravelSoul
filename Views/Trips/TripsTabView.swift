@@ -8,7 +8,7 @@ struct TripsTabView: View {
         let id: UUID
     }
     @State private var sheetTrip: SheetTrip? = nil
-    @State private var showCreateTrip = false      // <-- Added
+    @State private var showCreateTrip = false
 
     var body: some View {
         NavigationView {
@@ -21,7 +21,7 @@ struct TripsTabView: View {
                 .onDelete { indexSet in
                     for index in indexSet {
                         let trip = tripViewModel.trips[index]
-                        tripViewModel.deleteTrip(trip) // <--- FIXED
+                        tripViewModel.deleteTrip(trip)
                         if sheetTrip?.id == trip.id {
                             sheetTrip = nil
                         }
@@ -53,6 +53,9 @@ struct TripsTabView: View {
                 CreateTripView()
                     .environmentObject(tripViewModel)
             }
+        }
+        .onAppear {
+            tripViewModel.loadTrips()
         }
         .onChange(of: editTripID) { old, new in
             if let id = new {

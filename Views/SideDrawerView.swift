@@ -22,16 +22,30 @@ struct SideDrawerView: View {
                 .onTapGesture(perform: onClose)
 
             VStack(alignment: .leading, spacing: 24) {
-                // Profile Section with initials as avatar
+                // Profile Section with remote photoURL or initials avatar
                 HStack(spacing: 16) {
                     ZStack {
-                        Circle()
-                            .fill(Color.blue.opacity(0.2))
-                            .frame(width: 56, height: 56)
-                        Text(initials)
-                            .font(.title)
-                            .bold()
-                            .foregroundColor(.blue)
+                        if let urlStr = user.photoURL, let url = URL(string: urlStr) {
+                            AsyncImage(url: url) { phase in
+                                switch phase {
+                                case .empty:
+                                    ProgressView()
+                                        .frame(width: 56, height: 56)
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 56, height: 56)
+                                        .clipShape(Circle())
+                                case .failure(_):
+                                    fallbackInitials
+                                @unknown default:
+                                    fallbackInitials
+                                }
+                            }
+                        } else {
+                            fallbackInitials
+                        }
                     }
                     VStack(alignment: .leading) {
                         Text(user.name)
@@ -80,5 +94,18 @@ struct SideDrawerView: View {
             .edgesIgnoringSafeArea(.all)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // Fallback initials view
+    var fallbackInitials: some View {
+        Circle()
+            .fill(Color.blue.opacity(0.2))
+            .frame(width: 56, height: 56)
+            .overlay(
+                Text(initials)
+                    .font(.title)
+                    .bold()
+                    .foregroundColor(.blue)
+            )
     }
 }

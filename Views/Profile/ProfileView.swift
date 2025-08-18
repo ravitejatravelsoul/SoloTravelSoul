@@ -26,24 +26,31 @@ struct ProfileView: View {
         value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: ", ")
     }
 
-    var avatarImage: Image {
-        if let uiImage = UIImage(data: profileImageData), !profileImageData.isEmpty {
-            return Image(uiImage: uiImage)
-        } else {
-            return Image(systemName: "person.crop.circle.fill")
-        }
-    }
-
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
                 // Profile Picture
-                avatarImage
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 110, height: 110)
-                    .clipShape(Circle())
-                    .shadow(radius: 6)
+                if let profile = authViewModel.profile {
+                    UserAvatarView(user: profile, size: 110)
+                        .shadow(radius: 6)
+                } else {
+                    // Fallback to AppStorage-based avatar
+                    if let uiImage = UIImage(data: profileImageData), !profileImageData.isEmpty {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 110, height: 110)
+                            .clipShape(Circle())
+                            .shadow(radius: 6)
+                    } else {
+                        Image(systemName: "person.crop.circle.fill")
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 110, height: 110)
+                            .clipShape(Circle())
+                            .shadow(radius: 6)
+                    }
+                }
 
                 if let profile = authViewModel.profile {
                     // Name & Email
@@ -146,4 +153,3 @@ struct ProfileRow: View {
         .padding(.vertical, 2)
     }
 }
-

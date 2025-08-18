@@ -67,9 +67,12 @@ struct RootTabView: View {
                         .tag(0)
                 }
             }
-            // Only burger menu icon at top left now
+            // Only burger menu icon at top left now, hide if a sheet/drawer is open!
             .overlay(alignment: .topLeading) {
-                if let _ = authViewModel.currentUserProfile {
+                if let _ = authViewModel.currentUserProfile,
+                   drawerDestination == nil,
+                   !showProfileSheet,
+                   !showDrawer {
                     Button(action: { withAnimation { showDrawer = true } }) {
                         Image(systemName: "line.horizontal.3")
                             .imageScale(.large)
@@ -119,7 +122,11 @@ struct RootTabView: View {
             case .approvals:
                 ApprovalsListView(approvals: /* Pass your approvals array or VM here */ [])
             case .chats:
-                GroupChatsListView(groups: /* Pass your chat groups array or VM here */ [])
+                GroupChatsListView(
+                    groups: /* Pass your chat groups array or VM here */ [],
+                    menuOnRight: true,
+                    onMenu: { withAnimation { showDrawer = true } }
+                )
             }
         }
         .sheet(isPresented: $showProfileSheet) {

@@ -22,6 +22,12 @@
 		3AB08F6D2E504129007BD0AA /* GroupChatsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB08F6C2E504129007BD0AA /* GroupChatsListView.swift */; };
 		3AB08F6F2E50415F007BD0AA /* ApprovalsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB08F6E2E50415F007BD0AA /* ApprovalsListView.swift */; };
 		3AB08F712E5042B4007BD0AA /* ApprovalItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB08F702E5042B4007BD0AA /* ApprovalItem.swift */; };
+		3AB08F732E513F8B007BD0AA /* UserAvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB08F722E513F8B007BD0AA /* UserAvatarView.swift */; };
+		3AB08F752E5142BC007BD0AA /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 3AB08F742E5142BC007BD0AA /* FirebaseStorage */; };
+		3AB08F772E514C4B007BD0AA /* GroupMembersListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB08F762E514C4B007BD0AA /* GroupMembersListView.swift */; };
+		3AB08F792E514C60007BD0AA /* GroupJoinRequestsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB08F782E514C60007BD0AA /* GroupJoinRequestsView.swift */; };
+		3AB08F7B2E515333007BD0AA /* ToolbarMenuButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB08F7A2E515333007BD0AA /* ToolbarMenuButton.swift */; };
+		3AB08F7D2E516EEF007BD0AA /* GroupMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB08F7C2E516EEF007BD0AA /* GroupMessage.swift */; };
 		8C02E0FD2E29BE8E000C4AA9 /* GooglePlacesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C02E0FC2E29BE8E000C4AA9 /* GooglePlacesService.swift */; };
 		8C02E0FF2E29C36B000C4AA9 /* PlaceSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C02E0FE2E29C36B000C4AA9 /* PlaceSearchView.swift */; };
 		8C0B260F2E45C4D100E195FA /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 8C0B260E2E45C4D100E195FA /* FirebaseFirestore */; };
@@ -106,6 +112,11 @@
 		3AB08F6C2E504129007BD0AA /* GroupChatsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupChatsListView.swift; sourceTree = "<group>"; };
 		3AB08F6E2E50415F007BD0AA /* ApprovalsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalsListView.swift; sourceTree = "<group>"; };
 		3AB08F702E5042B4007BD0AA /* ApprovalItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalItem.swift; sourceTree = "<group>"; };
+		3AB08F722E513F8B007BD0AA /* UserAvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserAvatarView.swift; sourceTree = "<group>"; };
+		3AB08F762E514C4B007BD0AA /* GroupMembersListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupMembersListView.swift; sourceTree = "<group>"; };
+		3AB08F782E514C60007BD0AA /* GroupJoinRequestsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupJoinRequestsView.swift; sourceTree = "<group>"; };
+		3AB08F7A2E515333007BD0AA /* ToolbarMenuButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarMenuButton.swift; sourceTree = "<group>"; };
+		3AB08F7C2E516EEF007BD0AA /* GroupMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupMessage.swift; sourceTree = "<group>"; };
 		8C02E0FC2E29BE8E000C4AA9 /* GooglePlacesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GooglePlacesService.swift; sourceTree = "<group>"; };
 		8C02E0FE2E29C36B000C4AA9 /* PlaceSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceSearchView.swift; sourceTree = "<group>"; };
 		8C0FE9342E483FCE00FA651C /* FirestoreService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirestoreService.swift; sourceTree = "<group>"; };
@@ -201,6 +212,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8CAA0E172E2DFD6E0015B571 /* GooglePlaces in Frameworks */,
+				3AB08F752E5142BC007BD0AA /* FirebaseStorage in Frameworks */,
 				8C0FE93D2E492C4F00FA651C /* FirebaseAuth in Frameworks */,
 				8C0B260F2E45C4D100E195FA /* FirebaseFirestore in Frameworks */,
 			);
@@ -256,6 +268,10 @@
 		8C714C122E25EB7E0002CDCD /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				3AB08F7A2E515333007BD0AA /* ToolbarMenuButton.swift */,
+				3AB08F782E514C60007BD0AA /* GroupJoinRequestsView.swift */,
+				3AB08F762E514C4B007BD0AA /* GroupMembersListView.swift */,
+				3AB08F722E513F8B007BD0AA /* UserAvatarView.swift */,
 				3AB08F702E5042B4007BD0AA /* ApprovalItem.swift */,
 				3AB08F6E2E50415F007BD0AA /* ApprovalsListView.swift */,
 				3AB08F6C2E504129007BD0AA /* GroupChatsListView.swift */,
@@ -288,6 +304,7 @@
 		8C714C132E25EB970002CDCD /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				3AB08F7C2E516EEF007BD0AA /* GroupMessage.swift */,
 				3AB08F542E5038A7007BD0AA /* Message.swift */,
 				3AB08F522E50305F007BD0AA /* UserManager.swift */,
 				3AB08F4E2E4EEF16007BD0AA /* TripCoreModels.swift */,
@@ -528,14 +545,17 @@
 				3AB08F612E5039C1007BD0AA /* NotificationsView.swift in Sources */,
 				3AB08F552E5038A7007BD0AA /* Message.swift in Sources */,
 				3AB08F6B2E5040E7007BD0AA /* AnimatedDrawer.swift in Sources */,
+				3AB08F7B2E515333007BD0AA /* ToolbarMenuButton.swift in Sources */,
 				8C3993752E2DC3D300739CF8 /* Models.Place.swift in Sources */,
 				8CB474352E4690D4001F4D78 /* NotificationsViewModel.swift in Sources */,
 				3AB08F6F2E50415F007BD0AA /* ApprovalsListView.swift in Sources */,
 				8C75F1472E32F64F001D915E /* ItineraryView.swift in Sources */,
 				8C75F13B2E32EAE9001D915E /* NextTripOverviewCard.swift in Sources */,
+				3AB08F792E514C60007BD0AA /* GroupJoinRequestsView.swift in Sources */,
 				8C75F1412E32F25A001D915E /* TravelJournalPreview.swift in Sources */,
 				8C2EC34A2E31E4500094CCDB /* PlaceSearchViewModel.swift in Sources */,
 				8C8BC47D2E45AA0D00EE8F4C /* GroupDetailView.swift in Sources */,
+				3AB08F7D2E516EEF007BD0AA /* GroupMessage.swift in Sources */,
 				8C8BC47F2E45AB3000EE8F4C /* CreateGroupView.swift in Sources */,
 				8C60EAB92E372C54002D7E74 /* AuthViewModel.swift in Sources */,
 				8C9D1B742E260BDF00858387 /* ContentView.swift in Sources */,
@@ -552,10 +572,12 @@
 				3AB08F532E50305F007BD0AA /* UserManager.swift in Sources */,
 				3AB08F5B2E503931007BD0AA /* CompanionSuggestionViewModel.swift in Sources */,
 				8CB474332E468FE2001F4D78 /* NotificationItem.swift in Sources */,
+				3AB08F772E514C4B007BD0AA /* GroupMembersListView.swift in Sources */,
 				8CDB231D2E28BADA00949D00 /* CarouselView.swift in Sources */,
 				8CDB23192E28AF5500949D00 /* ExploreView.swift in Sources */,
 				3AB08F4F2E4EEF16007BD0AA /* TripCoreModels.swift in Sources */,
 				8C3993792E2DC46300739CF8 /* TripViewModel.swift in Sources */,
+				3AB08F732E513F8B007BD0AA /* UserAvatarView.swift in Sources */,
 				8C75F1392E32E9A5001D915E /* HomeGreetingView.swift in Sources */,
 				8CDB231B2E28B0CD00949D00 /* TripsView.swift in Sources */,
 				8C75F1532E344149001D915E /* ItineraryOptimizer.swift in Sources */,
@@ -917,6 +939,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		3AB08F742E5142BC007BD0AA /* FirebaseStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C0B260D2E45C4D100E195FA /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseStorage;
+		};
 		8C0B260E2E45C4D100E195FA /* FirebaseFirestore */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 8C0B260D2E45C4D100E195FA /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
