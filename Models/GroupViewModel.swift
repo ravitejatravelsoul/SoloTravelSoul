@@ -121,6 +121,18 @@ public class GroupViewModel: ObservableObject {
         ]) { error in
             if let error = error {
                 print("❌ Failed to send join request: \(error)")
+            } else {
+                // Notify group admins (or creator if no admins)
+                let adminIds = group.admins.isEmpty ? [group.creator.id] : group.admins
+                for adminId in adminIds {
+                    NotificationsViewModel.sendNotification(
+                        to: adminId,
+                        type: "join_request",
+                        groupId: group.id,
+                        title: "New Join Request",
+                        message: "\(user.name) requested to join '\(group.name)'"
+                    )
+                }
             }
         }
     }
@@ -176,6 +188,16 @@ public class GroupViewModel: ObservableObject {
                 print("❌ Failed to approve all requests: \(error)")
             }
         }
+        // Optionally send notifications for each user approved here
+        for user in group.requests {
+            NotificationsViewModel.sendNotification(
+                to: user.id,
+                type: "join_approved",
+                groupId: group.id,
+                title: "Request Approved",
+                message: "You are now a member of '\(group.name)'!"
+            )
+        }
     }
 
     public func approveRequest(group: GroupTrip, user: UserProfile) {
@@ -187,6 +209,14 @@ public class GroupViewModel: ObservableObject {
         ]) { error in
             if let error = error {
                 print("❌ Failed to approve request: \(error)")
+            } else {
+                NotificationsViewModel.sendNotification(
+                    to: user.id,
+                    type: "join_approved",
+                    groupId: group.id,
+                    title: "Request Approved",
+                    message: "You are now a member of '\(group.name)'!"
+                )
             }
         }
     }
@@ -199,6 +229,14 @@ public class GroupViewModel: ObservableObject {
         ]) { error in
             if let error = error {
                 print("❌ Failed to decline request: \(error)")
+            } else {
+                NotificationsViewModel.sendNotification(
+                    to: user.id,
+                    type: "join_denied",
+                    groupId: group.id,
+                    title: "Request Denied",
+                    message: "Your join request for '\(group.name)' was denied."
+                )
             }
         }
     }

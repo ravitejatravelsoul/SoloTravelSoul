@@ -28,6 +28,26 @@ class GroupChatViewModel: ObservableObject {
             .collection("messages")
             .document(message.id)
             .setData(message.dict)
+
+        // Fetch group members and notify everyone except sender
+        let groupRef = db.collection("groups").document(groupId)
+        groupRef.getDocument { doc, error in
+            guard let data = doc?.data(),
+                  let members = data["members"] as? [[String: Any]],
+                  let groupName = data["name"] as? String
+            else { return }
+            for member in members {
+                if let memberId = member["id"] as? String, memberId != sender.id {
+                    NotificationsViewModel.sendNotification(
+                        to: memberId,
+                        type: "group_chat",
+                        groupId: groupId,
+                        title: "New message in \(groupName)",
+                        message: "\(sender.name): \(text.prefix(100))"
+                    )
+                }
+            }
+        }
     }
 
     deinit {

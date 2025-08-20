@@ -4,6 +4,7 @@ struct RootTabView: View {
     @StateObject var tripViewModel = TripViewModel()
     @StateObject var groupViewModel = GroupViewModel()
     @EnvironmentObject var authViewModel: AuthViewModel
+    @EnvironmentObject var notificationsVM: NotificationsViewModel
 
     @AppStorage("profileImageData") var profileImageData: Data = Data()
 
@@ -118,12 +119,12 @@ struct RootTabView: View {
         .sheet(item: $drawerDestination) { destination in
             switch destination {
             case .notifications:
-                NotificationsListView(notifications: /* Pass your notification array or VM here */ [])
+                NotificationsListView(notifications: notificationsVM.notifications)
             case .approvals:
-                ApprovalsListView(approvals: /* Pass your approvals array or VM here */ [])
+                ApprovalsListView(approvals: [])
             case .chats:
                 GroupChatsListView(
-                    groups: /* Pass your chat groups array or VM here */ [],
+                    groups: [],
                     menuOnRight: true,
                     onMenu: { withAnimation { showDrawer = true } }
                 )

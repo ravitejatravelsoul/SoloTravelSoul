@@ -28,6 +28,8 @@
 		3AB08F792E514C60007BD0AA /* GroupJoinRequestsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB08F782E514C60007BD0AA /* GroupJoinRequestsView.swift */; };
 		3AB08F7B2E515333007BD0AA /* ToolbarMenuButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB08F7A2E515333007BD0AA /* ToolbarMenuButton.swift */; };
 		3AB08F7D2E516EEF007BD0AA /* GroupMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB08F7C2E516EEF007BD0AA /* GroupMessage.swift */; };
+		3AB5552C2E554D4800074CC0 /* NotificationBadgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB5552B2E554D4800074CC0 /* NotificationBadgeView.swift */; };
+		3AB555302E55786A00074CC0 /* NotificationsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB5552F2E55786A00074CC0 /* NotificationsScreen.swift */; };
 		8C02E0FD2E29BE8E000C4AA9 /* GooglePlacesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C02E0FC2E29BE8E000C4AA9 /* GooglePlacesService.swift */; };
 		8C02E0FF2E29C36B000C4AA9 /* PlaceSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C02E0FE2E29C36B000C4AA9 /* PlaceSearchView.swift */; };
 		8C0B260F2E45C4D100E195FA /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 8C0B260E2E45C4D100E195FA /* FirebaseFirestore */; };
@@ -117,6 +119,8 @@
 		3AB08F782E514C60007BD0AA /* GroupJoinRequestsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupJoinRequestsView.swift; sourceTree = "<group>"; };
 		3AB08F7A2E515333007BD0AA /* ToolbarMenuButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarMenuButton.swift; sourceTree = "<group>"; };
 		3AB08F7C2E516EEF007BD0AA /* GroupMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupMessage.swift; sourceTree = "<group>"; };
+		3AB5552B2E554D4800074CC0 /* NotificationBadgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationBadgeView.swift; sourceTree = "<group>"; };
+		3AB5552F2E55786A00074CC0 /* NotificationsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsScreen.swift; sourceTree = "<group>"; };
 		8C02E0FC2E29BE8E000C4AA9 /* GooglePlacesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GooglePlacesService.swift; sourceTree = "<group>"; };
 		8C02E0FE2E29C36B000C4AA9 /* PlaceSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceSearchView.swift; sourceTree = "<group>"; };
 		8C0FE9342E483FCE00FA651C /* FirestoreService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirestoreService.swift; sourceTree = "<group>"; };
@@ -268,6 +272,8 @@
 		8C714C122E25EB7E0002CDCD /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				3AB5552F2E55786A00074CC0 /* NotificationsScreen.swift */,
+				3AB5552B2E554D4800074CC0 /* NotificationBadgeView.swift */,
 				3AB08F7A2E515333007BD0AA /* ToolbarMenuButton.swift */,
 				3AB08F782E514C60007BD0AA /* GroupJoinRequestsView.swift */,
 				3AB08F762E514C4B007BD0AA /* GroupMembersListView.swift */,
@@ -530,6 +536,7 @@
 				8CBCD0ED2E42FCD100D216BA /* GroupTrip.swift in Sources */,
 				8C8BC4742E45A91E00EE8F4C /* GroupViewModel.swift in Sources */,
 				8CB474392E4698EC001F4D78 /* BiometricAuthManager.swift in Sources */,
+				3AB5552C2E554D4800074CC0 /* NotificationBadgeView.swift in Sources */,
 				8CD88C6B2E45783E0028CDF7 /* RoundedCorner+CornerRadius.swift in Sources */,
 				8C75F1512E3333E3001D915E /* PlacePickerView.swift in Sources */,
 				3AB08F672E503FBC007BD0AA /* SideDrawerView.swift in Sources */,
@@ -576,6 +583,7 @@
 				8CDB231D2E28BADA00949D00 /* CarouselView.swift in Sources */,
 				8CDB23192E28AF5500949D00 /* ExploreView.swift in Sources */,
 				3AB08F4F2E4EEF16007BD0AA /* TripCoreModels.swift in Sources */,
+				3AB555302E55786A00074CC0 /* NotificationsScreen.swift in Sources */,
 				8C3993792E2DC46300739CF8 /* TripViewModel.swift in Sources */,
 				3AB08F732E513F8B007BD0AA /* UserAvatarView.swift in Sources */,
 				8C75F1392E32E9A5001D915E /* HomeGreetingView.swift in Sources */,
