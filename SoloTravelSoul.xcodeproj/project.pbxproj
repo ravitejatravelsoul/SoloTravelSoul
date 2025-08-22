@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3A05CC032E58116300770D8E /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 3A05CC022E58116300770D8E /* FirebaseAuth */; };
+		3A05CC052E58116300770D8E /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3A05CC042E58116300770D8E /* FirebaseCore */; };
+		3A05CC072E58116300770D8E /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 3A05CC062E58116300770D8E /* FirebaseMessaging */; };
 		3AB08F4F2E4EEF16007BD0AA /* TripCoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB08F4E2E4EEF16007BD0AA /* TripCoreModels.swift */; };
 		3AB08F512E4FC320007BD0AA /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB08F502E4FC320007BD0AA /* OnboardingView.swift */; };
 		3AB08F532E50305F007BD0AA /* UserManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB08F522E50305F007BD0AA /* UserManager.swift */; };
@@ -172,9 +175,22 @@
 		8CDB231C2E28BADA00949D00 /* CarouselView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarouselView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		3AB555322E568E7800074CC0 /* Exceptions for "SoloTravelSoul" folder in "SoloTravelSoul" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 8C714BE72E25EB480002CDCD /* SoloTravelSoul */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		8C714BEA2E25EB480002CDCD /* SoloTravelSoul */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				3AB555322E568E7800074CC0 /* Exceptions for "SoloTravelSoul" folder in "SoloTravelSoul" target */,
+			);
 			path = SoloTravelSoul;
 			sourceTree = "<group>";
 		};
@@ -216,8 +232,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				8CAA0E172E2DFD6E0015B571 /* GooglePlaces in Frameworks */,
+				3A05CC032E58116300770D8E /* FirebaseAuth in Frameworks */,
+				3A05CC072E58116300770D8E /* FirebaseMessaging in Frameworks */,
 				3AB08F752E5142BC007BD0AA /* FirebaseStorage in Frameworks */,
 				8C0FE93D2E492C4F00FA651C /* FirebaseAuth in Frameworks */,
+				3A05CC052E58116300770D8E /* FirebaseCore in Frameworks */,
 				8C0B260F2E45C4D100E195FA /* FirebaseFirestore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -763,11 +782,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = SoloTravelSoul/SoloTravelSoul.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 9X7XR5DT7P;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SoloTravelSoul/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -791,11 +812,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = SoloTravelSoul/SoloTravelSoul.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 9X7XR5DT7P;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SoloTravelSoul/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -947,6 +970,21 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		3A05CC022E58116300770D8E /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C0B260D2E45C4D100E195FA /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		3A05CC042E58116300770D8E /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C0B260D2E45C4D100E195FA /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		3A05CC062E58116300770D8E /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C0B260D2E45C4D100E195FA /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
+		};
 		3AB08F742E5142BC007BD0AA /* FirebaseStorage */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 8C0B260D2E45C4D100E195FA /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
