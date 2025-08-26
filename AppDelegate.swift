@@ -34,28 +34,36 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         return true
     }
     
-    // Correctly placed inside the class!
+    // Called when APNS device token is received
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         Messaging.messaging().apnsToken = deviceToken
         print("APNS device token set: \(deviceToken.map { String(format: "%02.2hhx", $0) }.joined())")
     }
 
-    // Optional: Catch registration errors
+    // Called if registration for remote notifications fails
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         print("Failed to register for remote notifications: \(error.localizedDescription)")
     }
     
-    // Called when FCM token is updated/received
+    // Called when FCM token is updated or received
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
         print("FCM registration token (didReceiveRegistrationToken): \(fcmToken ?? "nil")")
         // Save this token to Firestore under the current user
         if let uid = Auth.auth().currentUser?.uid, let token = fcmToken {
             let db = Firestore.firestore()
-            db.collection("users").document(uid).setData(["fcmToken": token], merge: true)
+            db.collection("users").document(uid).setData(["fcmToken": token], merge: true) { error in
+                if let error = error {
+                    print("Error saving FCM token to Firestore: \(error)")
+                } else {
+                    print("FCM token updated in Firestore: \(token)")
+                }
+            }
+        } else {
+            print("No current user or FCM token, not saving to Firestore.")
         }
     }
     
-    // Show banner when app is in foreground
+    // Show notification banner when app is in foreground
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {

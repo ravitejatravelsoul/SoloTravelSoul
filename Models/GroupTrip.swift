@@ -1,6 +1,6 @@
 import Foundation
 
-public struct GroupTrip: Codable, Identifiable, Hashable {
+public struct GroupTrip: Identifiable, Equatable {
     public let id: String
     public var name: String
     public var destination: String
@@ -9,14 +9,10 @@ public struct GroupTrip: Codable, Identifiable, Hashable {
     public var description: String?
     public var activities: [String]?
     public var creator: UserProfile
-    public var admins: [String] // user IDs of admins (besides creator)
     public var members: [UserProfile]
+    public var admins: [String]
     public var requests: [UserProfile]
-    public var joinRequests: [String] // user IDs
-
-    public var leaderProfile: UserProfile? {
-        return creator
-    }
+    public var joinRequests: [String]
 
     public init(
         id: String = UUID().uuidString,
@@ -27,8 +23,8 @@ public struct GroupTrip: Codable, Identifiable, Hashable {
         description: String? = nil,
         activities: [String]? = nil,
         creator: UserProfile,
-        admins: [String] = [],
         members: [UserProfile] = [],
+        admins: [String] = [],
         requests: [UserProfile] = [],
         joinRequests: [String] = []
     ) {
@@ -40,8 +36,8 @@ public struct GroupTrip: Codable, Identifiable, Hashable {
         self.description = description
         self.activities = activities
         self.creator = creator
-        self.admins = admins
         self.members = members
+        self.admins = admins
         self.requests = requests
         self.joinRequests = joinRequests
     }
@@ -54,13 +50,14 @@ public struct GroupTrip: Codable, Identifiable, Hashable {
             "startDate": startDate.timeIntervalSince1970,
             "endDate": endDate.timeIntervalSince1970,
             "creator": creator.toDict(),
-            "admins": admins,
             "members": members.map { $0.toDict() },
+            "admins": admins,
             "requests": requests.map { $0.toDict() },
             "joinRequests": joinRequests
         ]
-        dict["description"] = description ?? ""
-        dict["activities"] = activities ?? []
+        // Only add description and activities if they exist
+        if let desc = description { dict["description"] = desc }
+        if let acts = activities { dict["activities"] = acts }
         return dict
     }
 
@@ -69,30 +66,30 @@ public struct GroupTrip: Codable, Identifiable, Hashable {
             let id = dict["id"] as? String,
             let name = dict["name"] as? String,
             let destination = dict["destination"] as? String,
-            let startDateTS = dict["startDate"] as? TimeInterval,
-            let endDateTS = dict["endDate"] as? TimeInterval,
+            let startTimestamp = dict["startDate"] as? TimeInterval,
+            let endTimestamp = dict["endDate"] as? TimeInterval,
             let creatorDict = dict["creator"] as? [String: Any],
-            let creator = UserProfile.fromDict(creatorDict)
+            let creator = UserProfile.fromDict(creatorDict),
+            let membersArray = dict["members"] as? [[String: Any]],
+            let admins = dict["admins"] as? [String],
+            let requestsArray = dict["requests"] as? [[String: Any]],
+            let joinRequests = dict["joinRequests"] as? [String]
         else { return nil }
-
         let description = dict["description"] as? String
         let activities = dict["activities"] as? [String]
-        let admins = dict["admins"] as? [String] ?? []
-        let members = (dict["members"] as? [[String: Any]])?.compactMap(UserProfile.fromDict) ?? []
-        let requests = (dict["requests"] as? [[String: Any]])?.compactMap(UserProfile.fromDict) ?? []
-        let joinRequests = dict["joinRequests"] as? [String] ?? []
-
+        let members = membersArray.compactMap { UserProfile.fromDict($0) }
+        let requests = requestsArray.compactMap { UserProfile.fromDict($0) }
         return GroupTrip(
             id: id,
             name: name,
             destination: destination,
-            startDate: Date(timeIntervalSince1970: startDateTS),
-            endDate: Date(timeIntervalSince1970: endDateTS),
+            startDate: Date(timeIntervalSince1970: startTimestamp),
+            endDate: Date(timeIntervalSince1970: endTimestamp),
             description: description,
             activities: activities,
             creator: creator,
-            admins: admins,
             members: members,
+            admins: admins,
             requests: requests,
             joinRequests: joinRequests
         )

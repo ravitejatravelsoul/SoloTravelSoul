@@ -5,21 +5,19 @@ struct GroupDetailView: View {
     @ObservedObject var groupViewModel: GroupViewModel
     @State private var group: GroupTrip
 
+    @Environment(\.presentationMode) var presentationMode
+
     @State private var showMembers = false
     @State private var showChat = false
 
     // For delete/transfer/make admin logic:
-    @State private var showDeleteAlert = false
+    @State private var showDeleteActionSheet = false
     @State private var showAdminPicker = false
     @State private var showTransferPicker = false
-    @State private var selectedAdmin: UserProfile? = nil
-    @State private var selectedMember: UserProfile? = nil
-    @State private var deleteActionPending = false
-
-    enum DangerAction {
-        case deleteGroup, makeAdmin, transferOwnership
-    }
-    @State private var actionToPerform: DangerAction?
+    @State private var selectedAdminId: String? = nil
+    @State private var selectedTransferUserId: String? = nil
+    @State private var showDeleteFinalAlert = false
+    @State private var isPerformingAction = false
 
     init(groupViewModel: GroupViewModel, group: GroupTrip) {
         self.groupViewModel = groupViewModel
@@ -27,7 +25,10 @@ struct GroupDetailView: View {
     }
 
     var isCreator: Bool {
-        authViewModel.user?.uid == group.creator.id
+        let myUid = authViewModel.user?.uid ?? "nil"
+        let creatorId = group.creator.id
+        print("DEBUG: My UID: \(myUid) | Group Creator ID: \(creatorId)")
+        return myUid == creatorId
     }
     var isMember: Bool {
         guard let uid = authViewModel.user?.uid else { return false }
@@ -40,16 +41,17 @@ struct GroupDetailView: View {
         return inRequests || inJoinRequests
     }
 
-    // Eligible admins for transfer (cannot be self)
     var eligibleNewAdmins: [UserProfile] {
-        group.members.filter {
-            !group.admins.contains($0.id) && $0.id != group.creator.id
-        }
+        group.members.filter { !group.admins.contains($0.id) && $0.id != group.creator.id }
     }
     var eligibleCurrentAdmins: [UserProfile] {
-        group.members.filter {
-            group.admins.contains($0.id) && $0.id != group.creator.id
-        }
+        group.members.filter { group.admins.contains($0.id) && $0.id != group.creator.id }
+    }
+    var eligibleMembersForTransfer: [UserProfile] {
+        group.members.filter { $0.id != group.creator.id }
+    }
+    var isLastMember: Bool {
+        group.members.count == 1 && group.creator.id == group.members.first?.id
     }
 
     var body: some View {
@@ -78,6 +80,19 @@ struct GroupDetailView: View {
                 }
             }
             .padding()
+            .disabled(isPerformingAction)
+            .overlay(
+                Group {
+                    if isPerformingAction {
+                        ZStack {
+                            Color.black.opacity(0.2).ignoresSafeArea()
+                            ProgressView("Processing...")
+                                .progressViewStyle(CircularProgressViewStyle())
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                    }
+                }
+            )
         }
         .navigationTitle("Group")
         .navigationBarTitleDisplayMode(.inline)
@@ -99,102 +114,156 @@ struct GroupDetailView: View {
                 }
             }
         }
-        .onAppear {
-            reloadGroup()
-        }
-        .alert("Group Actions", isPresented: $showDeleteAlert, actions: {
-            Button("Delete Group", role: .destructive) {
-                groupViewModel.deleteGroup(group: group)
-                // Optionally: navigate out of this view
-            }
-            if !eligibleNewAdmins.isEmpty {
-                Button("Make Admin", role: .none) {
-                    selectedMember = eligibleNewAdmins.first
-                    showAdminPicker = true
+        .onAppear { reloadGroup() }
+        .actionSheet(isPresented: $showDeleteActionSheet) {
+            var buttons: [ActionSheet.Button] = []
+            if isLastMember {
+                buttons.append(.destructive(Text("Delete Group for Everyone")) {
+                    showDeleteFinalAlert = true
+                })
+            } else {
+                if !eligibleMembersForTransfer.isEmpty {
+                    buttons.append(.default(Text("Transfer Ownership & Leave")) {
+                        showTransferPicker = true
+                    })
+                    if !eligibleNewAdmins.isEmpty {
+                        buttons.append(.default(Text("Promote to Admin & Leave")) {
+                            showAdminPicker = true
+                        })
+                    }
                 }
             }
-            if !eligibleCurrentAdmins.isEmpty {
-                Button("Transfer Ownership & Leave", role: .none) {
-                    selectedAdmin = eligibleCurrentAdmins.first
-                    showTransferPicker = true
+            buttons.append(.cancel())
+            return ActionSheet(
+                title: Text("Delete/Leave Group"),
+                message: Text("Select an option for leaving or deleting the group."),
+                buttons: buttons
+            )
+        }
+        .alert("Delete Group?", isPresented: $showDeleteFinalAlert, actions: {
+            Button("Delete Group", role: .destructive) {
+                isPerformingAction = true
+                groupViewModel.deleteGroup(group: group) {
+                    groupViewModel.removeGroupsListener()
+                    isPerformingAction = false
+                    presentationMode.wrappedValue.dismiss()
                 }
             }
             Button("Cancel", role: .cancel) { }
         }, message: {
-            Text("You can delete the group, make someone else admin, or transfer ownership and leave the group.")
+            Text("Are you sure you want to delete this group? This cannot be undone.")
         })
-        .sheet(isPresented: $showAdminPicker) {
+
+        .sheet(isPresented: $showAdminPicker, onDismiss: {
+            selectedAdminId = nil
+        }) {
             NavigationView {
                 VStack {
-                    Text("Make Admin")
+                    Text("Promote to Admin & Leave")
                         .font(.title2)
                         .padding(.top)
-                    Text("Select a member to promote to admin:")
+                    Text("Select a member to promote to admin before you leave:")
                         .font(.body)
                         .multilineTextAlignment(.center)
                         .padding(.bottom)
-                    Picker("Select Member", selection: $selectedMember) {
+                    Picker("Select Member", selection: $selectedAdminId) {
                         ForEach(eligibleNewAdmins, id: \.id) { member in
-                            Text(member.name).tag(member as UserProfile?)
+                            Text(member.name).tag(member.id as String?)
                         }
                     }
                     .pickerStyle(.wheel)
                     .frame(height: 120)
-                    Button("Promote to Admin") {
-                        if let member = selectedMember {
+                    .onAppear {
+                        if selectedAdminId == nil, let first = eligibleNewAdmins.first {
+                            selectedAdminId = first.id
+                        }
+                    }
+                    Button("Promote & Leave Group") {
+                        isPerformingAction = true
+                        if let memberId = selectedAdminId,
+                           let member = eligibleNewAdmins.first(where: { $0.id == memberId }) {
                             groupViewModel.promoteMember(group: group, member: member)
-                            reloadGroup()
+                            groupViewModel.leaveGroup(group: group, userId: group.creator.id)
+                            groupViewModel.removeGroupsListener()
+                            isPerformingAction = false
+                            presentationMode.wrappedValue.dismiss()
                             showAdminPicker = false
+                            selectedAdminId = nil
                         }
                     }
                     .buttonStyle(.borderedProminent)
                     .padding(.top)
-                    .disabled(selectedMember == nil)
+                    .disabled(selectedAdminId == nil || isPerformingAction)
                     Spacer()
                 }
                 .padding()
-                .navigationTitle("Make Admin")
+                .navigationTitle("Promote & Leave")
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { showAdminPicker = false }
+                        Button("Cancel") {
+                            showAdminPicker = false
+                            isPerformingAction = false
+                            selectedAdminId = nil
+                        }
                     }
                 }
             }
         }
-        .sheet(isPresented: $showTransferPicker) {
+
+        .sheet(isPresented: $showTransferPicker, onDismiss: {
+            selectedTransferUserId = nil
+        }) {
             NavigationView {
                 VStack {
                     Text("Transfer Group Ownership")
                         .font(.title2)
                         .padding(.top)
-                    Text("Select an admin to transfer group ownership to before leaving:")
+                    Text("Select a member to transfer group ownership to before leaving:")
                         .font(.body)
                         .multilineTextAlignment(.center)
                         .padding(.bottom)
-                    Picker("New Creator", selection: $selectedAdmin) {
-                        ForEach(eligibleCurrentAdmins, id: \.id) { admin in
-                            Text(admin.name).tag(admin as UserProfile?)
+                    Picker("New Owner", selection: $selectedTransferUserId) {
+                        ForEach(eligibleMembersForTransfer, id: \.id) { member in
+                            Text(member.name).tag(member.id as String?)
                         }
                     }
                     .pickerStyle(.wheel)
                     .frame(height: 120)
+                    .onAppear {
+                        if selectedTransferUserId == nil, let first = eligibleMembersForTransfer.first {
+                            selectedTransferUserId = first.id
+                        }
+                    }
                     Button("Transfer & Leave Group") {
-                        if let admin = selectedAdmin {
-                            groupViewModel.transferOwnershipAndLeave(group: group, newCreator: admin, previousCreatorId: group.creator.id)
-                            reloadGroup()
+                        isPerformingAction = true
+                        if let newOwnerId = selectedTransferUserId,
+                           let newOwner = eligibleMembersForTransfer.first(where: { $0.id == newOwnerId }) {
+                            groupViewModel.transferOwnershipAndLeave(
+                                group: group,
+                                newCreator: newOwner,
+                                previousCreatorId: group.creator.id
+                            )
+                            groupViewModel.removeGroupsListener()
+                            isPerformingAction = false
+                            presentationMode.wrappedValue.dismiss()
                             showTransferPicker = false
+                            selectedTransferUserId = nil
                         }
                     }
                     .buttonStyle(.borderedProminent)
                     .padding(.top)
-                    .disabled(selectedAdmin == nil)
+                    .disabled(selectedTransferUserId == nil || isPerformingAction)
                     Spacer()
                 }
                 .padding()
                 .navigationTitle("Transfer Ownership")
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { showTransferPicker = false }
+                        Button("Cancel") {
+                            showTransferPicker = false
+                            isPerformingAction = false
+                            selectedTransferUserId = nil
+                        }
                     }
                 }
             }
@@ -208,14 +277,11 @@ struct GroupDetailView: View {
             Text(group.name)
                 .font(.largeTitle)
                 .bold()
-
             Text(group.destination)
                 .font(.headline)
                 .foregroundColor(.secondary)
-
             Text("\(group.startDate.formatted(date: .abbreviated, time: .omitted)) - \(group.endDate.formatted(date: .abbreviated, time: .omitted))")
                 .font(.subheadline)
-
             if let desc = group.description, !desc.isEmpty {
                 Text(desc)
                     .font(.body)
@@ -299,9 +365,9 @@ struct GroupDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             Divider()
             Button(role: .destructive) {
-                showDeleteAlert = true
+                showDeleteActionSheet = true
             } label: {
-                Label("Delete Group", systemImage: "trash")
+                Label("Delete/Leave Group", systemImage: "trash")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
@@ -346,8 +412,6 @@ struct GroupDetailView: View {
         }
     }
 
-    // MARK: - Approve/Deny logic with state/UI update
-
     private func approve(_ user: UserProfile) {
         groupViewModel.approveRequest(group: group, user: user)
         reloadGroup()
@@ -367,6 +431,9 @@ struct GroupDetailView: View {
         groupViewModel.fetchGroup(groupId: group.id) { updatedGroup in
             if let updated = updatedGroup {
                 self.group = updated
+            } else {
+                // If group is deleted or you have left, dismiss the view
+                presentationMode.wrappedValue.dismiss()
             }
         }
     }

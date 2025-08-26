@@ -1,7 +1,7 @@
 import Foundation
 
-public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
-    public var id: String                          // Firebase UID string
+public struct UserProfile: Codable, Identifiable, Equatable {
+    public var id: String // CHANGED from let to var
     public var name: String
     public var email: String
     public var phone: String
@@ -18,7 +18,7 @@ public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
     public var privacyEnabled: Bool
     public var firstName: String?
     public var lastName: String?
-    public var photoURL: String?   // 🔥 NEW FIELD
+    public var photoURL: String?
 
     public init(
         id: String,
@@ -61,7 +61,7 @@ public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
     }
 
     public func toDict() -> [String: Any] {
-        var dict: [String: Any] = [
+        return [
             "id": id,
             "name": name,
             "email": email,
@@ -76,34 +76,36 @@ public struct UserProfile: Codable, Hashable, Identifiable, Equatable {
             "languages": languages,
             "emergencyContact": emergencyContact,
             "socialLinks": socialLinks,
-            "privacyEnabled": privacyEnabled
+            "privacyEnabled": privacyEnabled,
+            "firstName": firstName ?? "",
+            "lastName": lastName ?? "",
+            "photoURL": photoURL ?? ""
         ]
-        // Only add firstName, lastName, photoURL if they are not nil
-        if let firstName = firstName { dict["firstName"] = firstName }
-        if let lastName = lastName { dict["lastName"] = lastName }
-        if let photoURL = photoURL { dict["photoURL"] = photoURL }
-        return dict
     }
 
     public static func fromDict(_ dict: [String: Any]) -> UserProfile? {
-        guard let id = dict["id"] as? String else { return nil }
-        let name = dict["name"] as? String ?? ""
-        let email = dict["email"] as? String ?? ""
-        let phone = dict["phone"] as? String ?? ""
-        let birthday = dict["birthday"] as? String ?? ""
-        let gender = dict["gender"] as? String ?? ""
-        let country = dict["country"] as? String ?? ""
-        let city = dict["city"] as? String ?? ""
-        let bio = dict["bio"] as? String ?? ""
-        let preferences = dict["preferences"] as? String ?? ""
-        let favoriteDestinations = dict["favoriteDestinations"] as? String ?? ""
-        let languages = dict["languages"] as? String ?? ""
-        let emergencyContact = dict["emergencyContact"] as? String ?? ""
-        let socialLinks = dict["socialLinks"] as? String ?? ""
-        let privacyEnabled = dict["privacyEnabled"] as? Bool ?? false
+        guard
+            let id = dict["id"] as? String,
+            let name = dict["name"] as? String,
+            let email = dict["email"] as? String,
+            let phone = dict["phone"] as? String,
+            let birthday = dict["birthday"] as? String,
+            let gender = dict["gender"] as? String,
+            let country = dict["country"] as? String,
+            let city = dict["city"] as? String,
+            let bio = dict["bio"] as? String,
+            let preferences = dict["preferences"] as? String,
+            let favoriteDestinations = dict["favoriteDestinations"] as? String,
+            let languages = dict["languages"] as? String,
+            let emergencyContact = dict["emergencyContact"] as? String,
+            let socialLinks = dict["socialLinks"] as? String,
+            let privacyEnabled = dict["privacyEnabled"] as? Bool
+        else { return nil }
+
         let firstName = dict["firstName"] as? String
         let lastName = dict["lastName"] as? String
         let photoURL = dict["photoURL"] as? String
+
         return UserProfile(
             id: id,
             name: name,

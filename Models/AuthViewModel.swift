@@ -5,29 +5,27 @@ import FirebaseStorage
 import SwiftUI
 
 public class AuthViewModel: ObservableObject {
-    @Published var user: User?
-    @Published var profile: UserProfile?
-    @Published var isLoading = false
-    @Published var errorMessage: String?
+    @Published public var user: User?
+    @Published public var profile: UserProfile?
+    @Published public var isLoading = false
+    @Published public var errorMessage: String?
 
     private var db = Firestore.firestore()
     private var storage = Storage.storage()
     private var authHandle: AuthStateDidChangeListenerHandle?
     private var profileListener: ListenerRegistration?
 
-    var currentUserProfile: UserProfile? {
-        return profile
+    public var currentUserProfile: UserProfile? {
+        profile
     }
 
     public init() {
         authHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             self?.user = user
-            _ = self // <-- silences warning
             if let user = user {
                 self?.listenForProfileChanges(userID: user.uid)
             } else {
                 self?.profile = nil
-                _ = self // <-- silences warning
                 self?.profileListener?.remove()
                 self?.profileListener = nil
             }
@@ -43,13 +41,11 @@ public class AuthViewModel: ObservableObject {
 
     // MARK: - Firebase Storage - Upload Profile Image
 
-    /// Uploads the image data to Firebase Storage and returns the download URL string.
     func uploadProfileImage(userID: String, imageData: Data, completion: @escaping (String?) -> Void) {
         let ref = storage.reference().child("profile_images/\(userID).jpg")
         let metadata = StorageMetadata()
         metadata.contentType = "image/jpeg"
-        ref.putData(imageData, metadata: metadata) { [weak self] metadata, error in
-            _ = self
+        ref.putData(imageData, metadata: metadata) { metadata, error in
             if let error = error {
                 print("❌ Failed to upload profile image: \(error.localizedDescription)")
                 completion(nil)
@@ -92,10 +88,8 @@ public class AuthViewModel: ObservableObject {
         Auth.auth().createUser(withEmail: email, password: password) { [weak self] result, error in
             DispatchQueue.main.async {
                 self?.isLoading = false
-                _ = self // <-- silences warning
                 if let error = error {
                     self?.errorMessage = error.localizedDescription
-                    _ = self // <-- silences warning
                     completion(false)
                 } else if let user = result?.user {
                     let saveProfile: (String?) -> Void = { photoURL in
@@ -120,11 +114,9 @@ public class AuthViewModel: ObservableObject {
                         self?.db.collection("users").document(user.uid).setData(profile.toDict()) { err in
                             if let err = err {
                                 self?.errorMessage = "Profile save failed: \(err.localizedDescription)"
-                                _ = self // <-- silences warning
                                 completion(false)
                             } else {
                                 self?.profile = profile
-                                _ = self // <-- silences warning
                                 completion(true)
                             }
                         }
@@ -148,10 +140,8 @@ public class AuthViewModel: ObservableObject {
         Auth.auth().signIn(withEmail: email, password: password) { [weak self] result, error in
             DispatchQueue.main.async {
                 self?.isLoading = false
-                _ = self // <-- silences warning
                 if let error = error {
                     self?.errorMessage = error.localizedDescription
-                    _ = self // <-- silences warning
                     completion(false)
                 } else if let user = result?.user {
                     self?.listenForProfileChanges(userID: user.uid)
@@ -167,9 +157,7 @@ public class AuthViewModel: ObservableObject {
         do {
             try Auth.auth().signOut()
             self.user = nil
-            _ = self // <-- silences warning
             self.profile = nil
-            _ = self // <-- silences warning
             self.profileListener?.remove()
             self.profileListener = nil
         } catch {
@@ -191,11 +179,9 @@ public class AuthViewModel: ObservableObject {
         db.collection("users").document(userID).getDocument { [weak self] snapshot, error in
             if let error = error {
                 self?.errorMessage = error.localizedDescription
-                _ = self // <-- silences warning
             }
             if let data = snapshot?.data(), let profile = UserProfile.fromDict(data) {
                 self?.profile = profile
-                _ = self // <-- silences warning
             } else if let user = self?.user {
                 // If no profile exists, create a default profile and save to Firestore
                 let defaultProfile = UserProfile(
@@ -208,32 +194,27 @@ public class AuthViewModel: ObservableObject {
                     photoURL: nil
                 )
                 self?.profile = defaultProfile
-                _ = self // <-- silences warning
                 self?.db.collection("users").document(user.uid).setData(defaultProfile.toDict(), merge: true)
             }
             completion()
         }
     }
 
-    /// Listen for real-time changes to the user's profile document and update the local profile.
     func listenForProfileChanges(userID: String) {
         profileListener?.remove()
         profileListener = db.collection("users").document(userID).addSnapshotListener { [weak self] snapshot, error in
             if let error = error {
                 self?.errorMessage = error.localizedDescription
-                _ = self // <-- silences warning
                 return
             }
             if let data = snapshot?.data(), let profile = UserProfile.fromDict(data) {
                 DispatchQueue.main.async {
                     self?.profile = profile
-                    _ = self // <-- silences warning
                 }
             }
         }
     }
 
-    /// Update profile details. Optionally include new profile image data to upload.
     func updateProfile(
         userID: String,
         name: String,
@@ -282,11 +263,9 @@ public class AuthViewModel: ObservableObject {
                 DispatchQueue.main.async {
                     if let error = error {
                         self?.errorMessage = error.localizedDescription
-                        _ = self // <-- silences warning
                         completion(false)
                     } else {
                         self?.profile = newProfile
-                        _ = self // <-- silences warning
                         completion(true)
                     }
                 }

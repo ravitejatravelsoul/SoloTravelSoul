@@ -5,6 +5,9 @@ struct GroupMembersListView: View {
     @ObservedObject var groupViewModel: GroupViewModel
     @Binding var group: GroupTrip
 
+    @State private var showRemoveAlert = false
+    @State private var memberToRemove: UserProfile?
+
     var body: some View {
         List {
             ForEach(group.members) { user in
@@ -32,14 +35,27 @@ struct GroupMembersListView: View {
                         .foregroundColor(.orange)
                     } else if canRemove(user: user) {
                         Button(role: .destructive) {
-                            groupViewModel.removeMember(group: group, member: user)
-                            reloadGroup()
+                            memberToRemove = user
+                            showRemoveAlert = true
                         } label: {
                             Image(systemName: "trash")
                         }
                     }
                 }
             }
+        }
+        .alert(
+            "Remove Member",
+            isPresented: $showRemoveAlert,
+            presenting: memberToRemove
+        ) { member in
+            Button("Remove", role: .destructive) {
+                groupViewModel.removeMember(group: group, member: member)
+                reloadGroup()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: { member in
+            Text("Are you sure you want to remove \(member.name) from the group?")
         }
         .navigationTitle("Group Members")
     }
