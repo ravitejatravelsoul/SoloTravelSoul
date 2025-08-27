@@ -346,31 +346,53 @@ public class GroupViewModel: ObservableObject {
         updatedGroup.admins.append(newCreator.id)
         updatedGroup.members.removeAll { $0.id == previousCreatorId }
         updatedGroup.admins.removeAll { $0 == previousCreatorId }
-        groupRef.updateData([
-            "creator": newCreator.toDict(),
-            "admins": FieldValue.arrayUnion([newCreator.id]),
-            "members": FieldValue.arrayRemove([group.creator.toDict()]),
-            "admins": FieldValue.arrayRemove([previousCreatorId])
-        ]) { [weak self] error in
-            if let error = error {
-                print("❌ Failed to transfer ownership: \(error)")
-            } else {
-                print("✅ Ownership transferred to \(newCreator.name), previous creator removed")
-                self?.updateGroupChatDoc(for: updatedGroup) {
-                    NotificationsViewModel.sendNotification(
-                        to: newCreator.id,
-                        type: "ownership_transferred",
-                        groupId: group.id,
-                        title: "Ownership Transferred",
-                        message: "You are now the owner of '\(group.name)'."
-                    )
-                    NotificationsViewModel.sendNotification(
-                        to: previousCreatorId,
-                        type: "left_group",
-                        groupId: group.id,
-                        title: "You Left the Group",
-                        message: "You transferred ownership and left '\(group.name)'."
-                    )
+
+        // Fetch the latest group doc to get the exact member dictionary for the previous creator
+        groupRef.getDocument { [weak self] snapshot, error in
+            guard
+                let data = snapshot?.data(),
+                let members = data["members"] as? [[String: Any]],
+                let prevCreatorDict = members.first(where: { ($0["id"] as? String) == previousCreatorId })
+            else {
+                print("❌ Could not find previous creator in members for removal.")
+                return
+            }
+
+            // Step 1: Transfer ownership and add new admin, remove previous creator from members
+            groupRef.updateData([
+                "creator": newCreator.toDict(),
+                "admins": FieldValue.arrayUnion([newCreator.id]),
+                "members": FieldValue.arrayRemove([prevCreatorDict])
+            ]) { error in
+                if let error = error {
+                    print("❌ Failed to transfer ownership: \(error)")
+                } else {
+                    // Step 2: Remove previous creator from admins
+                    groupRef.updateData([
+                        "admins": FieldValue.arrayRemove([previousCreatorId])
+                    ]) { error in
+                        if let error = error {
+                            print("❌ Failed to remove previous admin: \(error)")
+                        } else {
+                            print("✅ Ownership transferred to \(newCreator.name), previous creator removed")
+                            self?.updateGroupChatDoc(for: updatedGroup) {
+                                NotificationsViewModel.sendNotification(
+                                    to: newCreator.id,
+                                    type: "ownership_transferred",
+                                    groupId: group.id,
+                                    title: "Ownership Transferred",
+                                    message: "You are now the owner of '\(group.name)'."
+                                )
+                                NotificationsViewModel.sendNotification(
+                                    to: previousCreatorId,
+                                    type: "left_group",
+                                    groupId: group.id,
+                                    title: "You Left the Group",
+                                    message: "You transferred ownership and left '\(group.name)'."
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

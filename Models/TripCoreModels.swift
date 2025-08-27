@@ -1,10 +1,3 @@
-//
-//  JournalEntry 3.swift
-//  SoloTravelSoul
-//
-//  Created by Raviteja on 8/14/25.
-//
-
 
 import Foundation
 import FirebaseFirestore
