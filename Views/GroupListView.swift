@@ -7,10 +7,6 @@ struct GroupListView: View {
 
     @State private var showCreate = false
     @State private var search = ""
-    @State private var joiningGroupID: String? = nil
-    @State private var cancellingGroupID: String? = nil
-
-    @State private var showDetail = false
     @State private var selectedGroup: GroupTrip?
 
     private var filtered: [GroupTrip] {
@@ -24,51 +20,37 @@ struct GroupListView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            VStack {
                 if filtered.isEmpty {
-                    List {
-                        Text("No groups found.")
-                            .foregroundColor(.secondary)
-                    }
+                    Text("No groups found.")
+                        .foregroundColor(.secondary)
+                        .padding(.top, 64)
+                    Spacer()
                 } else {
-                    List {
-                        ForEach(filtered) { group in
-                            GroupRow(
-                                group: group,
-                                currentUser: currentUser,
-                                groupViewModel: groupViewModel,
-                                requestAction: { requestJoin(group) },
-                                cancelAction: { cancelJoin(group) }
-                            )
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                selectedGroup = group
-                                showDetail = true
-                            }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                // REMOVE delete for creator here; handled in detail view
-                                // Only allow join/cancel in list
-                                if isMember(group) {
-                                    // Optionally add a leave action here
-                                } else if isPending(group) {
-                                    Button(role: .destructive) {
-                                        cancelJoin(group)
-                                    } label: {
-                                        Label("Cancel", systemImage: "xmark")
-                                    }
-                                } else {
-                                    Button {
-                                        requestJoin(group)
-                                    } label: {
-                                        Label("Join", systemImage: "person.badge.plus")
-                                    }
-                                    .tint(.blue)
+                    ScrollView {
+                        LazyVStack(spacing: 18) {
+                            ForEach(filtered) { group in
+                                Button {
+                                    selectedGroup = group
+                                } label: {
+                                    GroupRow(
+                                        group: group,
+                                        currentUser: currentUser,
+                                        groupViewModel: groupViewModel,
+                                        requestAction: { requestJoin(group) },
+                                        cancelAction: { cancelJoin(group) }
+                                    )
+                                    .padding(.horizontal)
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
+                        .padding(.top, 16)
+                        .padding(.bottom, 24)
                     }
                 }
             }
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .searchable(text: $search)
             .navigationTitle("Groups")
             .toolbar {
@@ -77,6 +59,7 @@ struct GroupListView: View {
                         showCreate = true
                     } label: {
                         Image(systemName: "plus")
+                            .imageScale(.large)
                     }
                 }
             }
@@ -84,14 +67,10 @@ struct GroupListView: View {
                 CreateGroupSheet(groupViewModel: groupViewModel)
                     .environmentObject(authViewModel)
             }
-            .sheet(isPresented: $showDetail, onDismiss: {
-                selectedGroup = nil
-            }) {
-                if let group = selectedGroup {
-                    NavigationView {
-                        GroupDetailView(groupViewModel: groupViewModel, group: group)
-                            .environmentObject(authViewModel)
-                    }
+            .sheet(item: $selectedGroup) { group in
+                NavigationView {
+                    GroupDetailView(groupViewModel: groupViewModel, group: group)
+                        .environmentObject(authViewModel)
                 }
             }
         }
@@ -113,20 +92,12 @@ struct GroupListView: View {
     // MARK: - Actions
     private func requestJoin(_ group: GroupTrip) {
         guard !isMember(group), !isPending(group) else { return }
-        joiningGroupID = group.id
         groupViewModel.requestToJoin(group: group, user: currentUser)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-            joiningGroupID = nil
-        }
     }
 
     private func cancelJoin(_ group: GroupTrip) {
         guard isPending(group) else { return }
-        cancellingGroupID = group.id
         groupViewModel.cancelJoinRequest(group: group, userId: currentUser.id)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-            cancellingGroupID = nil
-        }
     }
 }
 
@@ -149,54 +120,65 @@ private struct GroupRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(group.name)
-                    .font(.headline)
-                    .lineLimit(1)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(group.name)
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    Text(group.destination)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
                 Spacer()
-                statusBadge
+                if isCreator {
+                    roleBadge(text: "Owner", color: .yellow, icon: "crown.fill")
+                } else if isMember {
+                    roleBadge(text: "Member", color: .green, icon: "checkmark.seal.fill")
+                } else if isPending {
+                    roleBadge(text: "Pending", color: .orange, icon: "hourglass")
+                }
             }
-            Text(group.destination)
-                .font(.caption)
-                .foregroundColor(.secondary)
-            HStack(spacing: 8) {
+            HStack(spacing: 14) {
                 Label("\(group.members.count)", systemImage: "person.3.fill")
-                    .font(.caption2)
+                    .font(.subheadline)
                     .foregroundColor(.blue)
                 Text(dateRangeString(from: group.startDate, to: group.endDate))
-                    .font(.caption2)
+                    .font(.subheadline)
                     .foregroundColor(.secondary)
             }
             if !isMember && !isCreator {
                 actionRow
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 14)
+        .padding(.horizontal, 18)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white)
+                .shadow(color: Color.black.opacity(0.06), radius: 4, x: 0, y: 2)
+        )
     }
 
-    // Status Badge
-    @ViewBuilder
-    private var statusBadge: some View {
-        if isCreator {
-            badge(text: "Owner", color: .yellow, system: "crown.fill")
-        } else if isMember {
-            badge(text: "Member", color: .green, system: "checkmark.seal.fill")
-        } else if isPending {
-            badge(text: "Pending", color: .orange, system: "hourglass")
+    private func roleBadge(text: String, color: Color, icon: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+            Text(text)
+                .font(.caption)
+                .fontWeight(.semibold)
         }
-    }
-
-    private func badge(text: String, color: Color, system: String) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: system)
-            Text(text).font(.caption2)
-        }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 10)
         .padding(.vertical, 4)
         .background(color.opacity(0.15))
         .foregroundColor(color)
         .clipShape(Capsule())
+    }
+
+    private func dateRangeString(from start: Date, to end: Date) -> String {
+        let df = DateFormatter()
+        df.dateFormat = "M/d/yy"
+        return "\(df.string(from: start)) - \(df.string(from: end))"
     }
 
     // Join / Cancel row
@@ -224,15 +206,9 @@ private struct GroupRow: View {
             Spacer()
         }
     }
-
-    private func dateRangeString(from start: Date, to end: Date) -> String {
-        let df = DateFormatter()
-        df.dateStyle = .short
-        return "\(df.string(from: start)) - \(df.string(from: end))"
-    }
 }
 
-// MARK: - Create Group Sheet (same as before)
+// MARK: - Create Group Sheet
 
 struct CreateGroupSheet: View {
     @Environment(\.dismiss) var dismiss
