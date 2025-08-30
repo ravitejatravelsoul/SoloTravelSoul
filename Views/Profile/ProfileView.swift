@@ -26,6 +26,32 @@ struct ProfileView: View {
         value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: ", ")
     }
 
+    // Helper to get the editable user
+    var editableUser: UserProfile {
+        if let profile = authViewModel.profile {
+            return profile
+        } else {
+            return UserProfile(
+                id: UUID().uuidString,
+                name: name,
+                email: email,
+                phone: phone,
+                birthday: birthday,
+                gender: gender,
+                country: country,
+                city: city,
+                bio: bio,
+                preferences: preferences,
+                favoriteDestinations: favoriteDestinations,
+                languages: languages,
+                emergencyContact: emergencyContact,
+                socialLinks: socialLinks,
+                privacyEnabled: privacyEnabled,
+                photoURL: nil
+            )
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
@@ -125,10 +151,16 @@ struct ProfileView: View {
                         .cornerRadius(8)
                 }
                 .sheet(isPresented: $showEdit) {
-                    EditProfileView()
-                        .environmentObject(authViewModel)
+                    EditProfileView(
+                        user: editableUser,
+                        isAvatarOnly: false,
+                        onSave: { updatedUser in
+                            // handle the updated user here, e.g. update your view model or AppStorage if needed
+                            // Example: authViewModel.profile = updatedUser
+                        }
+                    )
+                    .environmentObject(authViewModel)
                 }
-
                 // Logout Button REMOVED
                 // If you want logout, add it only in a main menu/drawer, not here!
             }

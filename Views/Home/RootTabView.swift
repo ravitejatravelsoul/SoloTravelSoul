@@ -103,7 +103,7 @@ struct RootTabView: View {
                         showDrawer = false
                     },
                     onSelectProfile: {
-                        showProfileSheet = true
+                        showProfileSheet = true     // <-- Triggers the new ProfileScreen below!
                         showDrawer = false
                     },
                     onLogout: {
@@ -130,8 +130,13 @@ struct RootTabView: View {
                 )
             }
         }
+        // UPDATED: Show new ProfileScreen as sheet
         .sheet(isPresented: $showProfileSheet) {
-            ProfileView()
+            if let userProfile = authViewModel.currentUserProfile {
+                ProfileScreen(user: userProfile)
+            } else {
+                ProgressView("Loading...")
+            }
         }
     }
 }

@@ -10,7 +10,7 @@ struct UserAvatarView: View {
     }
 
     var body: some View {
-        if let urlStr = user.photoURL, let url = URL(string: urlStr) {
+        if let urlStr = user.photoURL, let url = URL(string: urlStr), !urlStr.isEmpty {
             AsyncImage(url: url) { phase in
                 switch phase {
                 case .empty:
@@ -22,6 +22,8 @@ struct UserAvatarView: View {
                         .scaledToFill()
                         .frame(width: size, height: size)
                         .clipShape(Circle())
+                        .overlay(Circle().stroke(AppTheme.primary, lineWidth: 2))
+                        .shadow(color: AppTheme.shadow, radius: 2)
                 case .failure(_):
                     fallbackInitials
                 @unknown default:
@@ -35,13 +37,15 @@ struct UserAvatarView: View {
 
     var fallbackInitials: some View {
         Circle()
-            .fill(Color.blue.opacity(0.2))
+            .fill(AppTheme.chipBackground)
             .frame(width: size, height: size)
             .overlay(
                 Text(initials)
                     .font(.system(size: size / 2))
                     .bold()
-                    .foregroundColor(.blue)
+                    .foregroundColor(AppTheme.primary)
             )
+            .overlay(Circle().stroke(AppTheme.primary, lineWidth: 2))
+            .shadow(color: AppTheme.shadow, radius: 2)
     }
 }

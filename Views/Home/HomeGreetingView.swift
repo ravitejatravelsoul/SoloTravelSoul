@@ -7,6 +7,29 @@ struct HomeGreetingView: View {
 
     @State private var showEditProfile = false
 
+    // Create a dummy user profile for demonstration.
+    // Replace this with your real user fetching logic as needed.
+    var userProfile: UserProfile {
+        UserProfile(
+            id: UUID().uuidString,
+            name: name,
+            email: "",
+            phone: "",
+            birthday: "",
+            gender: "",
+            country: "",
+            city: "",
+            bio: "",
+            preferences: "",
+            favoriteDestinations: "",
+            languages: "",
+            emergencyContact: "",
+            socialLinks: "",
+            privacyEnabled: false,
+            photoURL: nil
+        )
+    }
+
     var avatarImage: Image {
         if let uiImage = UIImage(data: profileImageData), !profileImageData.isEmpty {
             return Image(uiImage: uiImage)
@@ -42,8 +65,17 @@ struct HomeGreetingView: View {
                     .font(.caption)
                     .buttonStyle(.bordered)
                     .sheet(isPresented: $showEditProfile) {
-                        EditProfileView()
-                            .environmentObject(authViewModel)
+                        EditProfileView(
+                            user: userProfile,
+                            isAvatarOnly: false,
+                            onSave: { updatedUser in
+                                // You can update your @AppStorage or model here if needed
+                                // For example:
+                                name = updatedUser.name
+                                // Save profile image, etc.
+                            }
+                        )
+                        .environmentObject(authViewModel)
                     }
 
                     Button(action: {

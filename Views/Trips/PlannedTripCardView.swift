@@ -12,10 +12,10 @@ fileprivate func googlePlacePhotoURL(photoReference: String, maxWidth: Int = 400
 
 struct PlannedTripCardView: View {
     let trip: PlannedTrip
+    var onEdit: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            // Try Google photo from any place in itinerary first
             if let photoRef = trip.allPlaces.compactMap({ $0.photoReferences?.first }).first,
                let url = googlePlacePhotoURL(photoReference: photoRef, maxWidth: 400) {
                 AsyncImage(url: url) { phase in
@@ -42,7 +42,6 @@ struct PlannedTripCardView: View {
                     }
                 }
             }
-            // Next fallback: user-provided image data
             else if let data = trip.photoData, let uiImage = UIImage(data: data) {
                 Image(uiImage: uiImage)
                     .resizable()
@@ -52,7 +51,6 @@ struct PlannedTripCardView: View {
                     .clipped()
                     .cornerRadius(10)
             }
-            // Last fallback: placeholder
             else {
                 Color.gray.opacity(0.1)
                     .frame(height: 80)
@@ -60,12 +58,17 @@ struct PlannedTripCardView: View {
                     .cornerRadius(10)
                     .overlay(Image(systemName: "photo"))
             }
-            Text(trip.destination)
+            Text(trip.destination.isEmpty ? "No Destination" : trip.destination)
                 .font(.headline)
                 .lineLimit(1)
             Text("\(trip.startDate, formatter: dateFormatter) - \(trip.endDate, formatter: dateFormatter)")
                 .font(.caption)
                 .foregroundColor(.secondary)
+            Button("Edit") {
+                onEdit?()
+            }
+            .font(.caption2)
+            .buttonStyle(.bordered)
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))

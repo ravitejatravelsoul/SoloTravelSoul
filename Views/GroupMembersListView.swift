@@ -9,38 +9,64 @@ struct GroupMembersListView: View {
     @State private var memberToRemove: UserProfile?
 
     var body: some View {
-        List {
-            ForEach(group.members) { user in
-                HStack {
-                    UserAvatarView(user: user, size: 36)
-                    Text(user.name)
-                    if user.id == group.creator.id {
-                        Text("(Creator)").font(.caption).foregroundColor(.yellow)
-                    } else if group.admins.contains(user.id) {
-                        Text("(Admin)").font(.caption).foregroundColor(.blue)
+        ScrollView {
+            VStack(spacing: 0) {
+                ForEach(group.members) { user in
+                    HStack(spacing: 16) {
+                        UserAvatarView(user: user, size: 40)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(user.name)
+                                .font(.body.bold())
+                                .foregroundColor(AppTheme.textPrimary)
+                            if user.id == group.creator.id {
+                                Text("(Creator)").font(.caption2).foregroundColor(AppTheme.accent)
+                            } else if group.admins.contains(user.id) {
+                                Text("(Admin)").font(.caption2).foregroundColor(AppTheme.primary)
+                            }
+                        }
+                        Spacer()
+                        if canPromote(user: user) {
+                            Button("Promote") {
+                                groupViewModel.promoteMember(group: group, member: user)
+                                reloadGroup()
+                            }
+                            .font(.caption2)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(AppTheme.primary.opacity(0.1))
+                            .foregroundColor(AppTheme.primary)
+                            .cornerRadius(14)
+                        } else if canDemote(user: user) {
+                            Button("Demote") {
+                                groupViewModel.demoteMember(group: group, member: user)
+                                reloadGroup()
+                            }
+                            .font(.caption2)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(AppTheme.accent.opacity(0.1))
+                            .foregroundColor(AppTheme.accent)
+                            .cornerRadius(14)
+                        } else if canRemove(user: user) {
+                            Button(role: .destructive) {
+                                memberToRemove = user
+                                showRemoveAlert = true
+                            } label: {
+                                Image(systemName: "trash")
+                                    .foregroundColor(.red)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.red.opacity(0.08))
+                            .cornerRadius(14)
+                        }
                     }
-                    Spacer()
-                    // Only one action at a time: Promote, Demote, or Remove
-                    if canPromote(user: user) {
-                        Button("Promote") {
-                            groupViewModel.promoteMember(group: group, member: user)
-                            reloadGroup()
-                        }
-                        .foregroundColor(.blue)
-                    } else if canDemote(user: user) {
-                        Button("Demote") {
-                            groupViewModel.demoteMember(group: group, member: user)
-                            reloadGroup()
-                        }
-                        .foregroundColor(.orange)
-                    } else if canRemove(user: user) {
-                        Button(role: .destructive) {
-                            memberToRemove = user
-                            showRemoveAlert = true
-                        } label: {
-                            Image(systemName: "trash")
-                        }
-                    }
+                    .padding(.vertical, 8)
+                    .padding(.horizontal)
+                    .background(AppTheme.card)
+                    .cornerRadius(AppTheme.cardCornerRadius)
+                    .shadow(color: AppTheme.shadow, radius: 2, x: 0, y: 1)
+                    .padding(.vertical, 4)
                 }
             }
         }
@@ -58,6 +84,7 @@ struct GroupMembersListView: View {
             Text("Are you sure you want to remove \(member.name) from the group?")
         }
         .navigationTitle("Group Members")
+        .background(AppTheme.background.ignoresSafeArea())
     }
 
     func canPromote(user: UserProfile) -> Bool {

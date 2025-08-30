@@ -20,6 +20,20 @@ public struct UserProfile: Codable, Identifiable, Equatable {
     public var lastName: String?
     public var photoURL: String?
 
+    // MARK: - Initials Computed Property
+    public var initials: String {
+        // Prefer firstName + lastName if available, else use name
+        if let first = firstName, let last = lastName, !first.isEmpty, !last.isEmpty {
+            let firstInitial = first.first.map { String($0) } ?? ""
+            let lastInitial = last.first.map { String($0) } ?? ""
+            return (firstInitial + lastInitial).uppercased()
+        } else {
+            let names = name.split(separator: " ")
+            let initials = names.prefix(2).compactMap { $0.first }
+            return initials.map { String($0) }.joined().uppercased()
+        }
+    }
+
     public init(
         id: String,
         name: String,

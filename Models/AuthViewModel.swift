@@ -42,6 +42,7 @@ public class AuthViewModel: ObservableObject {
     // MARK: - Firebase Storage - Upload Profile Image
 
     func uploadProfileImage(userID: String, imageData: Data, completion: @escaping (String?) -> Void) {
+        // Previous working logic: do not check .isEmpty, rely on the caller to only call this when there is new data.
         let ref = storage.reference().child("profile_images/\(userID).jpg")
         let metadata = StorageMetadata()
         metadata.contentType = "image/jpeg"
@@ -272,6 +273,7 @@ public class AuthViewModel: ObservableObject {
             }
         }
 
+        // This was the working logic: only upload if new image data is provided.
         if let imageData = profileImageData {
             uploadProfileImage(userID: userID, imageData: imageData) { url in
                 finishUpdate(url)

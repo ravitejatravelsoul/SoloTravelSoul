@@ -9,6 +9,25 @@ class TripViewModel: ObservableObject {
 
     private var userId: String? { Auth.auth().currentUser?.uid }
 
+    // DEBUG: Add a sample trip for UI testing. Remove/comment this init when Firebase is ready.
+    init() {
+        self.trips = [
+            PlannedTrip(
+                id: UUID(),
+                destination: "Sample Destination",
+                startDate: Date(),
+                endDate: Calendar.current.date(byAdding: .day, value: 3, to: Date())!,
+                notes: "This is a debug trip for UI testing.",
+                itinerary: [],
+                photoData: nil,
+                latitude: nil,
+                longitude: nil,
+                placeName: "Sample Place",
+                members: ["User"]
+            )
+        ]
+    }
+
     func loadTrips() {
         guard let uid = userId else { self.trips = []; return }
         isLoading = true

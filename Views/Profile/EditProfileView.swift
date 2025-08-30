@@ -2,33 +2,36 @@ import SwiftUI
 import PhotosUI
 
 struct EditProfileView: View {
-    @EnvironmentObject var authViewModel: AuthViewModel
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var authViewModel: AuthViewModel
 
-    @State private var name: String = ""
-    @State private var email: String = ""
-    @State private var phone: String = ""
-    @State private var birthday: String = ""
-    @State private var gender: String = ""
-    @State private var country: String = ""
-    @State private var city: String = ""
-    @State private var bio: String = ""
-    @State private var preferences: String = ""
-    @State private var socialLinks: String = ""
-    @State private var favoriteDestinations: String = ""
-    @State private var languages: String = ""
-    @State private var emergencyContact: String = ""
-    @State private var privacyEnabled: Bool = false
-
-    @State private var profileImageData: Data = Data() // Not persisted to Firestore here
+    @State private var profileImageData: Data = Data()
+    @State private var name: String
+    @State private var email: String
+    @State private var phone: String
+    @State private var birthday: String
+    @State private var gender: String
+    @State private var country: String
+    @State private var city: String
+    @State private var bio: String
+    @State private var preferences: String
+    @State private var socialLinks: String
+    @State private var favoriteDestinations: String
+    @State private var languages: String
+    @State private var emergencyContact: String
+    @State private var privacyEnabled: Bool
 
     @State private var showValidationError = false
     @State private var validationError: String = ""
     @State private var saving = false
 
-    // Profile Image Picker
+    // Image Picker
     @State private var showImagePicker = false
     @State private var selectedPhoto: PhotosPickerItem? = nil
+
+    // Only used for profile pic editing
+    let isAvatarOnly: Bool
+    var onSave: (UserProfile) -> Void
 
     // Birthday Picker
     @State private var showBirthdaySheet = false
@@ -89,97 +92,114 @@ struct EditProfileView: View {
         return formatter
     }()
 
+    // MARK: - Init
+    init(user: UserProfile, isAvatarOnly: Bool = false, onSave: @escaping (UserProfile) -> Void) {
+        _name = State(initialValue: user.name)
+        _email = State(initialValue: user.email)
+        _phone = State(initialValue: user.phone)
+        _birthday = State(initialValue: user.birthday)
+        _gender = State(initialValue: user.gender)
+        _country = State(initialValue: user.country)
+        _city = State(initialValue: user.city)
+        _bio = State(initialValue: user.bio)
+        _preferences = State(initialValue: user.preferences)
+        _socialLinks = State(initialValue: user.socialLinks)
+        _favoriteDestinations = State(initialValue: user.favoriteDestinations)
+        _languages = State(initialValue: user.languages)
+        _emergencyContact = State(initialValue: user.emergencyContact)
+        _privacyEnabled = State(initialValue: user.privacyEnabled)
+        self.isAvatarOnly = isAvatarOnly
+        self.onSave = onSave
+    }
+
     var body: some View {
         NavigationView {
             ZStack {
-                LinearGradient(
-                    gradient: Gradient(colors: [Color(.systemBackground), Color.blue.opacity(0.1)]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                ).ignoresSafeArea()
-
+                AppTheme.background.ignoresSafeArea()
                 ScrollView {
                     VStack(spacing: 30) {
                         profileCard
 
-                        Group {
-                            SectionHeader(title: "Name", systemImage: "person")
-                            EditField(text: $name, placeholder: "Your Name")
+                        if !isAvatarOnly {
+                            Group {
+                                SectionHeader(title: "Name", systemImage: "person")
+                                EditField(text: $name, placeholder: "Your Name")
 
-                            SectionHeader(title: "Email", systemImage: "envelope")
-                            EditField(text: $email, placeholder: "Your Email", keyboardType: .emailAddress)
+                                SectionHeader(title: "Email", systemImage: "envelope")
+                                EditField(text: $email, placeholder: "Your Email", keyboardType: .emailAddress)
 
-                            SectionHeader(title: "Phone", systemImage: "phone")
-                            EditField(text: $phone, placeholder: "Phone Number", keyboardType: .phonePad)
+                                SectionHeader(title: "Phone", systemImage: "phone")
+                                EditField(text: $phone, placeholder: "Phone Number", keyboardType: .phonePad)
 
-                            SectionHeader(title: "Birthday", systemImage: "calendar")
-                            Button {
-                                showBirthdaySheet = true
-                            } label: {
-                                FieldDisplay(text: birthday.isEmpty ? "Select Birthday" : birthday)
+                                SectionHeader(title: "Birthday", systemImage: "calendar")
+                                Button {
+                                    showBirthdaySheet = true
+                                } label: {
+                                    FieldDisplay(text: birthday.isEmpty ? "Select Birthday" : birthday)
+                                }
+
+                                SectionHeader(title: "Gender", systemImage: "figure.dress.line.vertical.figure")
+                                Button {
+                                    showGenderSheet = true
+                                } label: {
+                                    FieldDisplay(text: gender.isEmpty ? "Select Gender" : gender)
+                                }
                             }
 
-                            SectionHeader(title: "Gender", systemImage: "figure.dress.line.vertical.figure")
+                            SectionHeader(title: "Country", systemImage: "globe")
                             Button {
-                                showGenderSheet = true
+                                showCountrySheet = true
                             } label: {
-                                FieldDisplay(text: gender.isEmpty ? "Select Gender" : gender)
+                                FieldDisplay(text: country.isEmpty ? "Select Country" : country)
                             }
+                            SectionHeader(title: "City", systemImage: "mappin.and.ellipse")
+                            Button {
+                                showCitySheet = true
+                            } label: {
+                                FieldDisplay(text: city.isEmpty ? "Select City" : city)
+                            }
+
+                            SectionHeader(title: "Bio", systemImage: "quote.bubble")
+                            VStack {
+                                TextEditor(text: $bio)
+                                    .frame(height: 80)
+                                    .padding(8)
+                                    .background(AppTheme.card)
+                                    .cornerRadius(12)
+                            }
+
+                            SectionHeader(title: "Preferences", systemImage: "star.circle")
+                            Button {
+                                showPrefSheet = true
+                            } label: {
+                                FieldDisplay(text: selectedPreferences.isEmpty ? "Select Preferences" : selectedPreferences.sorted().joined(separator: ", "))
+                            }
+
+                            SectionHeader(title: "Favorite Destinations", systemImage: "airplane")
+                            Button {
+                                showDestSheet = true
+                            } label: {
+                                FieldDisplay(text: selectedDestinations.isEmpty ? "Select Destinations" : selectedDestinations.sorted().joined(separator: ", "))
+                            }
+
+                            SectionHeader(title: "Language Preferences", systemImage: "character.book.closed")
+                            Button {
+                                showLangSheet = true
+                            } label: {
+                                FieldDisplay(text: selectedLanguages.isEmpty ? "Select Languages" : selectedLanguages.sorted().joined(separator: ", "))
+                            }
+
+                            SectionHeader(title: "Social Media Links", systemImage: "link")
+                            EditField(text: $socialLinks, placeholder: "Links (comma separated)")
+
+                            SectionHeader(title: "Emergency Contact", systemImage: "phone.bubble.left")
+                            EditField(text: $emergencyContact, placeholder: "Emergency Contact")
+
+                            SectionHeader(title: "Privacy", systemImage: "lock.circle")
+                            Toggle("Enable Privacy Mode", isOn: $privacyEnabled)
+                                .toggleStyle(SwitchToggleStyle(tint: AppTheme.primary))
+                                .padding(.horizontal, 16)
                         }
-
-                        SectionHeader(title: "Country", systemImage: "globe")
-                        Button {
-                            showCountrySheet = true
-                        } label: {
-                            FieldDisplay(text: country.isEmpty ? "Select Country" : country)
-                        }
-                        SectionHeader(title: "City", systemImage: "mappin.and.ellipse")
-                        Button {
-                            showCitySheet = true
-                        } label: {
-                            FieldDisplay(text: city.isEmpty ? "Select City" : city)
-                        }
-
-                        SectionHeader(title: "Bio", systemImage: "quote.bubble")
-                        VStack {
-                            TextEditor(text: $bio)
-                                .frame(height: 80)
-                                .padding(8)
-                                .background(Color(.secondarySystemBackground))
-                                .cornerRadius(12)
-                        }
-
-                        SectionHeader(title: "Preferences", systemImage: "star.circle")
-                        Button {
-                            showPrefSheet = true
-                        } label: {
-                            FieldDisplay(text: selectedPreferences.isEmpty ? "Select Preferences" : selectedPreferences.sorted().joined(separator: ", "))
-                        }
-
-                        SectionHeader(title: "Favorite Destinations", systemImage: "airplane")
-                        Button {
-                            showDestSheet = true
-                        } label: {
-                            FieldDisplay(text: selectedDestinations.isEmpty ? "Select Destinations" : selectedDestinations.sorted().joined(separator: ", "))
-                        }
-
-                        SectionHeader(title: "Language Preferences", systemImage: "character.book.closed")
-                        Button {
-                            showLangSheet = true
-                        } label: {
-                            FieldDisplay(text: selectedLanguages.isEmpty ? "Select Languages" : selectedLanguages.sorted().joined(separator: ", "))
-                        }
-
-                        SectionHeader(title: "Social Media Links", systemImage: "link")
-                        EditField(text: $socialLinks, placeholder: "Links (comma separated)")
-
-                        SectionHeader(title: "Emergency Contact", systemImage: "phone.bubble.left")
-                        EditField(text: $emergencyContact, placeholder: "Emergency Contact")
-
-                        SectionHeader(title: "Privacy", systemImage: "lock.circle")
-                        Toggle("Enable Privacy Mode", isOn: $privacyEnabled)
-                            .toggleStyle(SwitchToggleStyle(tint: Color.blue))
-                            .padding(.horizontal, 16)
 
                         Button(action: saveProfile) {
                             if saving {
@@ -192,7 +212,7 @@ struct EditProfileView: View {
                                     .frame(maxWidth: .infinity)
                                     .padding()
                                     .background(LinearGradient(
-                                        gradient: Gradient(colors: [Color.blue, Color.purple]),
+                                        gradient: Gradient(colors: [AppTheme.primary, .purple]),
                                         startPoint: .leading,
                                         endPoint: .trailing)
                                     )
@@ -210,7 +230,7 @@ struct EditProfileView: View {
                     Button("OK", role: .cancel) {}
                 }
             }
-            .navigationTitle("Edit Profile")
+            .navigationTitle(isAvatarOnly ? "Edit Profile Photo" : "Edit Profile")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showBirthdaySheet) {
                 VStack(spacing: 24) {
@@ -233,7 +253,7 @@ struct EditProfileView: View {
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(Color.blue)
+                    .background(AppTheme.primary)
                     .foregroundColor(.white)
                     .cornerRadius(12)
                     Spacer()
@@ -294,29 +314,12 @@ struct EditProfileView: View {
             .photosPicker(isPresented: $showImagePicker, selection: $selectedPhoto, matching: .images)
         }
         .onAppear {
-            if let profile = authViewModel.currentUserProfile {
-                // Initialize local state from Firestore profile
-                name = profile.name
-                email = profile.email
-                phone = profile.phone
-                birthday = profile.birthday
-                gender = profile.gender
-                country = profile.country
-                city = profile.city
-                bio = profile.bio
-                preferences = profile.preferences
-                socialLinks = profile.socialLinks
-                favoriteDestinations = profile.favoriteDestinations
-                languages = profile.languages
-                emergencyContact = profile.emergencyContact
-                privacyEnabled = profile.privacyEnabled
-
-                selectedLanguages = Set(languages.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
-                selectedDestinations = Set(favoriteDestinations.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
-                selectedPreferences = Set(preferences.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
-                if let date = calendarFormatter.date(from: birthday) {
-                    birthdayDate = date
-                }
+            // Prefill multi-selects
+            selectedLanguages = Set(languages.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+            selectedDestinations = Set(favoriteDestinations.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+            selectedPreferences = Set(preferences.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+            if let date = calendarFormatter.date(from: birthday) {
+                birthdayDate = date
             }
         }
         .onChange(of: selectedPhoto) {
@@ -324,7 +327,6 @@ struct EditProfileView: View {
                 Task {
                     if let data = try? await newPhoto.loadTransferable(type: Data.self) {
                         profileImageData = data
-                        // You can upload this to Firebase Storage and save the downloadURL in Firestore as part of the profile if you wish.
                     }
                 }
             }
@@ -332,25 +334,31 @@ struct EditProfileView: View {
     }
 
     private func saveProfile() {
-        if name.trimmingCharacters(in: .whitespaces).isEmpty {
-            validationError = "Name cannot be empty."; showValidationError = true; return
-        }
-        if !isValidEmail(email) {
-            validationError = "Please enter a valid email address."; showValidationError = true; return
-        }
-        if !isValidPhone(phone) {
-            validationError = "Please enter a valid phone number."; showValidationError = true; return
-        }
-        if birthday.isEmpty {
-            validationError = "Birthday must be selected."; showValidationError = true; return
+        if !isAvatarOnly {
+            if name.trimmingCharacters(in: .whitespaces).isEmpty {
+                validationError = "Name cannot be empty."; showValidationError = true; return
+            }
+            if !isValidEmail(email) {
+                validationError = "Please enter a valid email address."; showValidationError = true; return
+            }
+            if !isValidPhone(phone) {
+                validationError = "Please enter a valid phone number."; showValidationError = true; return
+            }
+            if birthday.isEmpty {
+                validationError = "Birthday must be selected."; showValidationError = true; return
+            }
         }
         preferences = selectedPreferences.sorted().joined(separator: ", ")
         favoriteDestinations = selectedDestinations.sorted().joined(separator: ", ")
         languages = selectedLanguages.sorted().joined(separator: ", ")
+
         guard let user = authViewModel.user else {
             validationError = "Not logged in."; showValidationError = true; return
         }
         saving = true
+
+        // Always pass profileImageData, as in previous working logic!
+        let imageDataToUpload: Data? = profileImageData.isEmpty ? nil : profileImageData
         authViewModel.updateProfile(
             userID: user.uid,
             name: name,
@@ -365,10 +373,12 @@ struct EditProfileView: View {
             languages: languages,
             emergencyContact: emergencyContact,
             socialLinks: socialLinks,
-            privacyEnabled: privacyEnabled
+            privacyEnabled: privacyEnabled,
+            profileImageData: imageDataToUpload
         ) { success in
             saving = false
-            if success {
+            if success, let updatedProfile = authViewModel.profile {
+                onSave(updatedProfile)
                 dismiss()
             } else {
                 validationError = authViewModel.errorMessage ?? "Failed to save profile."
@@ -384,10 +394,20 @@ struct EditProfileView: View {
                 Group {
                     if let uiImage = UIImage(data: profileImageData), !profileImageData.isEmpty {
                         Image(uiImage: uiImage).resizable()
+                    } else if let url = URL(string: authViewModel.profile?.photoURL ?? ""), !(authViewModel.profile?.photoURL?.isEmpty ?? true) {
+                        AsyncImage(url: url) { phase in
+                            if let image = phase.image {
+                                image.resizable()
+                            } else {
+                                Image(systemName: "person.crop.circle.fill")
+                                    .resizable()
+                                    .foregroundColor(AppTheme.primary)
+                            }
+                        }
                     } else {
                         Image(systemName: "person.crop.circle.fill")
                             .resizable()
-                            .foregroundColor(.blue)
+                            .foregroundColor(AppTheme.primary)
                     }
                 }
                 .aspectRatio(contentMode: .fill)
@@ -401,7 +421,7 @@ struct EditProfileView: View {
                         Image(systemName: "camera.fill")
                             .font(.title2)
                             .padding(8)
-                            .background(Color.blue)
+                            .background(AppTheme.primary)
                             .foregroundColor(.white)
                             .clipShape(Circle())
                             .shadow(radius: 3)
@@ -411,18 +431,20 @@ struct EditProfileView: View {
                 )
             }
 
-            Text(name.isEmpty ? "Your Name" : name)
-                .font(.title2)
-                .bold()
-            Text(email.isEmpty ? "your@email.com" : email)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+            if !isAvatarOnly {
+                Text(name.isEmpty ? "Your Name" : name)
+                    .font(.title2)
+                    .bold()
+                Text(email.isEmpty ? "your@email.com" : email)
+                    .font(.subheadline)
+                    .foregroundColor(AppTheme.textSecondary)
+            }
         }
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 28)
-                .fill(Color(.secondarySystemBackground))
-                .shadow(color: Color(.systemGray).opacity(0.2), radius: 8, x: 0, y: 2)
+                .fill(AppTheme.card)
+                .shadow(color: AppTheme.shadow, radius: 8, x: 0, y: 2)
         )
         .padding(.bottom, 20)
     }
@@ -435,167 +457,5 @@ struct EditProfileView: View {
     func isValidPhone(_ phone: String) -> Bool {
         let phoneRegex = #"^\+?[0-9]{7,15}$"#
         return phone.range(of: phoneRegex, options: .regularExpression) != nil
-    }
-}
-
-// MARK: - Components
-
-struct EditField: View {
-    @Binding var text: String
-    var placeholder: String
-    var keyboardType: UIKeyboardType = .default
-    var body: some View {
-        TextField(placeholder, text: $text)
-            .padding(12)
-            .background(Color(.secondarySystemBackground))
-            .cornerRadius(12)
-            .keyboardType(keyboardType)
-            .padding(.horizontal, 8)
-    }
-}
-
-struct SheetPicker: View {
-    let title: String
-    let options: [String]
-    @Binding var searchText: String
-    @Binding var selected: String
-    var onDone: () -> Void
-
-    var filtered: [String] {
-        if searchText.isEmpty { return options }
-        return options.filter { $0.localizedCaseInsensitiveContains(searchText) }
-    }
-
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                TextField("Search \(title.lowercased())...", text: $searchText)
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(10)
-                    .padding(.top, 16)
-                    .padding(.horizontal, 16)
-                List {
-                    ForEach(filtered, id: \.self) { option in
-                        Button {
-                            selected = option
-                            onDone()
-                        } label: {
-                            HStack {
-                                Text(option)
-                                if selected == option {
-                                    Spacer()
-                                    Image(systemName: "checkmark")
-                                        .foregroundColor(.blue)
-                                }
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-                .listStyle(.insetGrouped)
-                Button("Done") { onDone() }
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(12)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
-            }
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-        }
-    }
-}
-
-struct MultiSheetPicker: View {
-    let title: String
-    let options: [String]
-    @Binding var selected: Set<String>
-    var onDone: () -> Void
-    @State private var searchText: String = ""
-
-    var filtered: [String] {
-        if searchText.isEmpty { return options }
-        return options.filter { $0.localizedCaseInsensitiveContains(searchText) }
-    }
-
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                TextField("Search \(title.lowercased())...", text: $searchText)
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(10)
-                    .padding(.top, 16)
-                    .padding(.horizontal, 16)
-                List {
-                    ForEach(filtered, id: \.self) { option in
-                        Button {
-                            if selected.contains(option) {
-                                selected.remove(option)
-                            } else {
-                                selected.insert(option)
-                            }
-                        } label: {
-                            HStack {
-                                Text(option)
-                                Spacer()
-                                if selected.contains(option) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.blue)
-                                } else {
-                                    Image(systemName: "circle")
-                                        .foregroundColor(.gray)
-                                }
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-                .listStyle(.insetGrouped)
-                Button("Done") { onDone() }
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(12)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
-            }
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-        }
-    }
-}
-
-struct SectionHeader: View {
-    let title: String
-    let systemImage: String
-    var body: some View {
-        HStack {
-            Image(systemName: systemImage)
-                .foregroundColor(.blue)
-            Text(title)
-                .font(.headline)
-            Spacer()
-        }
-        .padding(.horizontal, 8)
-    }
-}
-
-struct FieldDisplay: View {
-    let text: String
-    var body: some View {
-        HStack {
-            Text(text)
-                .foregroundColor(text.contains("Select") ? .gray : .primary)
-            Spacer()
-        }
-        .padding(12)
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(12)
-        .padding(.horizontal, 8)
     }
 }

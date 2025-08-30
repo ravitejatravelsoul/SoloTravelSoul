@@ -4,13 +4,10 @@ import MapKit
 struct DiscoverView: View {
     @EnvironmentObject var tripViewModel: TripViewModel
     @ObservedObject var searchViewModel: PlaceSearchViewModel
-    @ObservedObject var groupViewModel: GroupViewModel // <-- Add this line!
-    let currentUser: UserProfile // <-- Add this line!
+    @ObservedObject var groupViewModel: GroupViewModel
+    let currentUser: UserProfile
 
-    @State private var selectedTrip: PlannedTrip? = nil
-    @State private var selectedDate: Date = Date()
     @State private var selectedPlace: Place? = nil
-    @State private var showTripDetail: Bool = false
     @State private var loadingDetail: Bool = false
     @State private var detailError: String? = nil
 
@@ -20,9 +17,7 @@ struct DiscoverView: View {
     @State private var selectedRegion: String = "Paris"
     @State private var selectedActivity: String = "All"
     let regions = ["Paris", "London", "New York", "Tokyo", "Rome", "Sydney"]
-
-    // Date filter for trips and places
-    @State private var filterDate: Date = Date()
+    let suggestedActivities = ["All", "Restaurant", "Beach", "Museum", "Hiking", "Park", "Shopping", "Nightlife", "Cafe"]
 
     init(tripViewModel: TripViewModel, groupViewModel: GroupViewModel, currentUser: UserProfile) {
         self._searchViewModel = ObservedObject(wrappedValue: PlaceSearchViewModel(tripViewModel: tripViewModel))
@@ -45,6 +40,7 @@ struct DiscoverView: View {
         }
     }
 
+    // --- Region/City Filter Bar ---
     var regionFilterBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
@@ -56,122 +52,52 @@ struct DiscoverView: View {
                         }
                     }) {
                         Text(region)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
                             .background(selectedRegion == region ? Color.blue : Color.gray.opacity(0.2))
                             .foregroundColor(selectedRegion == region ? .white : .primary)
+                            .font(.callout.bold())
                             .cornerRadius(16)
                     }
                 }
             }
             .padding(.horizontal)
         }
+        .padding(.top, 8)
     }
 
+    // --- Suggested Activities Filter Bar ---
     var activityFilterBar: some View {
-        let activities = searchViewModel.availableActivities
-        return ScrollView(.horizontal, showsIndicators: false) {
+        ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
-                ForEach(activities, id: \.self) { activity in
+                ForEach(suggestedActivities, id: \.self) { activity in
                     Button(action: {
                         selectedActivity = activity
-                        if activity == "All" {
-                            searchViewModel.filterActivity = nil
-                        } else {
-                            searchViewModel.filterActivity = activity
-                        }
+                        searchViewModel.filterActivity = activity == "All" ? nil : activity
                         searchViewModel.applyActivityFilter()
                     }) {
-                        HStack {
-                            Text(activity)
-                            if activity != "All" {
-                                let count = searchViewModel.results.filter {
-                                    $0.types?.contains(where: { $0.localizedCaseInsensitiveContains(activity) }) ?? false
-                                }.count
-                                if count > 0 {
-                                    Text("\(count)")
-                                        .font(.caption2)
-                                        .foregroundColor(.white)
-                                        .padding(4)
-                                        .background(Circle().fill(Color.purple))
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(selectedActivity == activity ? Color.purple : Color.gray.opacity(0.15))
-                        .foregroundColor(selectedActivity == activity ? .white : .primary)
-                        .cornerRadius(16)
+                        Text(activity)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(selectedActivity == activity ? Color.purple : Color.gray.opacity(0.15))
+                            .foregroundColor(selectedActivity == activity ? .white : .primary)
+                            .font(.callout)
+                            .cornerRadius(15)
                     }
                 }
             }
             .padding(.horizontal)
         }
-    }
-    
-    var dateFilterBar: some View {
-        HStack {
-            Text("Date:")
-                .font(.subheadline)
-            DatePicker(
-                "",
-                selection: $filterDate,
-                displayedComponents: [.date]
-            )
-            .labelsHidden()
-            .datePickerStyle(.compact)
-        }
-        .padding(.horizontal)
-        .padding(.top, 4)
+        .padding(.top, 8)
     }
 
-    var upcomingTripsSection: some View {
-        let filteredTrips = tripViewModel.trips.filter {
-            $0.startDate <= filterDate && $0.endDate >= filterDate
-        }
-        return VStack(alignment: .leading) {
-            if !filteredTrips.isEmpty {
-                Text("Upcoming Group Trips")
-                    .font(.title3)
-                    .bold()
-                    .padding(.horizontal)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 14) {
-                        ForEach(filteredTrips) { trip in
-                            Button {
-                                selectedTrip = trip
-                                showTripDetail = true
-                            } label: {
-                                PlannedTripCardView(trip: trip)
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-                .padding(.bottom, 8)
-            } else {
-                Text("No group trips for selected date.")
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal)
-                    .padding(.bottom, 8)
-            }
-        }
-    }
-
+    // --- Places Grid ---
     var placesGrid: some View {
-        let tripsOnDate = tripViewModel.trips.filter { $0.startDate <= filterDate && $0.endDate >= filterDate }
-        let placeIdsOnTrips = Set(tripsOnDate.flatMap { $0.allPlaces.map { $0.id } })
-        let places: [Place]
-        if !tripsOnDate.isEmpty {
-            places = searchViewModel.filteredResults.filter { placeIdsOnTrips.contains($0.id) }
-        } else {
-            places = searchViewModel.filteredResults
-        }
+        let places = searchViewModel.filteredResults
         return ScrollView {
-            LazyVGrid(columns: gridColumns, spacing: 12) {
+            LazyVGrid(columns: gridColumns, spacing: 16) {
                 if places.isEmpty && !searchViewModel.isLoading {
-                    Text("No places found for selected filters and date.")
+                    Text("No places found for selected filters.")
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 40)
@@ -185,78 +111,92 @@ struct DiscoverView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                regionFilterBar
-                activityFilterBar
-                dateFilterBar
-                TextField("Search places...", text: $searchViewModel.searchText)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .padding([.horizontal, .top])
-
-                if searchViewModel.isLoading {
-                    ProgressView("Searching...")
-                        .padding(.top)
-                }
-
-                if let error = searchViewModel.errorMessage {
-                    Text(error)
-                        .foregroundColor(.red)
-                        .padding(.top)
-                }
-
-                upcomingTripsSection
-                placesGrid
+        VStack(spacing: 0) {
+            // --- Centered Discover Title ---
+            HStack {
+                Spacer()
+                Text("Discover")
+                    .font(.largeTitle.bold())
+                    .foregroundColor(.primary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                Spacer()
             }
-            .navigationTitle("Discover")
-            .sheet(item: $selectedPlace) { place in
-                DestinationDetailView(
+            .padding(.top, 24)
+            .padding(.bottom, 2)
+
+            regionFilterBar
+            activityFilterBar
+
+            // --- Modern Search Bar ---
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                TextField("Search places...", text: $searchViewModel.searchText)
+                    .font(.body)
+                    .foregroundColor(.primary)
+            }
+            .padding()
+            .background(Color(.systemGray6))
+            .cornerRadius(16)
+            .shadow(color: .black.opacity(0.04), radius: 2, x: 0, y: 1)
+            .padding(.horizontal)
+            .padding(.top, 8)
+
+            if searchViewModel.isLoading {
+                ProgressView("Searching...")
+                    .padding(.top)
+            }
+
+            if let error = searchViewModel.errorMessage {
+                Text(error)
+                    .foregroundColor(.red)
+                    .padding(.top)
+            }
+
+            placesGrid
+                .padding(.top, 4)
+        }
+        .background(Color(.systemBackground).ignoresSafeArea())
+        .sheet(item: $selectedPlace) { place in
+            DestinationDetailView(
+                place: place,
+                groupViewModel: groupViewModel,
+                currentUser: currentUser
+            )
+        }
+        .alert(isPresented: .constant(detailError != nil)) {
+            Alert(title: Text("Error"), message: Text(detailError ?? ""), dismissButton: .default(Text("OK")))
+        }
+        .overlay(
+            loadingDetail ? ProgressView("Loading details...").padding().background(.ultraThinMaterial).cornerRadius(10) : nil
+        )
+        .sheet(isPresented: $searchViewModel.showAddToItinerarySheet) {
+            if let place = searchViewModel.selectedPlace {
+                AddToItinerarySheet(
+                    trips: searchViewModel.trips,
                     place: place,
-                    groupViewModel: groupViewModel,
-                    currentUser: currentUser
+                    selectedTrip: .constant(nil),
+                    selectedDate: .constant(Date()),
+                    onAddExisting: { trip, date, place in
+                        searchViewModel.addPlaceToTrip(trip: trip, date: date, place: place)
+                        searchViewModel.showAddToItinerarySheet = false
+                    },
+                    onAddNew: { name, notes, date, place in
+                        searchViewModel.createTripAndAddPlace(name: name, notes: notes, date: date, place: place)
+                        searchViewModel.showAddToItinerarySheet = false
+                    }
                 )
             }
-            .sheet(isPresented: $showTripDetail, onDismiss: {
-                self.selectedTrip = nil
-            }) {
-                if let trip = selectedTrip {
-                    TripDetailView(tripViewModel: tripViewModel, trip: trip)
-                }
-            }
-            .alert(isPresented: .constant(detailError != nil)) {
-                Alert(title: Text("Error"), message: Text(detailError ?? ""), dismissButton: .default(Text("OK")))
-            }
-            .overlay(
-                loadingDetail ? ProgressView("Loading details...").padding().background(.ultraThinMaterial).cornerRadius(10) : nil
-            )
-            .sheet(isPresented: $searchViewModel.showAddToItinerarySheet) {
-                if let place = searchViewModel.selectedPlace {
-                    AddToItinerarySheet(
-                        trips: searchViewModel.trips,
-                        place: place,
-                        selectedTrip: $selectedTrip,
-                        selectedDate: $selectedDate,
-                        onAddExisting: { trip, date, place in
-                            searchViewModel.addPlaceToTrip(trip: trip, date: date, place: place)
-                            searchViewModel.showAddToItinerarySheet = false
-                        },
-                        onAddNew: { name, notes, date, place in
-                            searchViewModel.createTripAndAddPlace(name: name, notes: notes, date: date, place: place)
-                            searchViewModel.showAddToItinerarySheet = false
-                        }
-                    )
-                }
-            }
-            .onAppear {
-                if searchViewModel.results.isEmpty && searchViewModel.searchText.isEmpty {
-                    Task { await searchViewModel.fetchTopPlaces(for: "tourist attractions in \(selectedRegion)") }
-                }
+        }
+        .onAppear {
+            if searchViewModel.results.isEmpty && searchViewModel.searchText.isEmpty {
+                Task { await searchViewModel.fetchTopPlaces(for: "tourist attractions in \(selectedRegion)") }
             }
         }
     }
 }
 
-// Extracted for compiler performance and reusability
+// --- Place cell, always show name and address ---
 fileprivate struct DiscoverPlaceCell: View {
     let place: Place
     let handlePlaceTap: (Place) -> Void
@@ -273,37 +213,41 @@ fileprivate struct DiscoverPlaceCell: View {
                             image
                                 .resizable()
                                 .scaledToFill()
-                                .frame(height: 100)
+                                .frame(height: 110)
                                 .frame(maxWidth: .infinity)
                                 .clipped()
-                                .cornerRadius(12, corners: [.topLeft, .topRight])
+                                .cornerRadius(14, corners: [.topLeft, .topRight])
                         } else if phase.error != nil {
                             Color.gray.opacity(0.1)
-                                .frame(height: 100)
+                                .frame(height: 110)
                                 .overlay(Image(systemName: "exclamationmark.triangle").foregroundColor(.red))
-                                .cornerRadius(12, corners: [.topLeft, .topRight])
+                                .cornerRadius(14, corners: [.topLeft, .topRight])
                         } else {
                             Color.gray.opacity(0.1)
-                                .frame(height: 100)
+                                .frame(height: 110)
                                 .overlay(ProgressView())
-                                .cornerRadius(12, corners: [.topLeft, .topRight])
+                                .cornerRadius(14, corners: [.topLeft, .topRight])
                         }
                     }
                 } else {
                     Color.gray.opacity(0.1)
-                        .frame(height: 100)
+                        .frame(height: 110)
                         .overlay(Image(systemName: "photo").foregroundColor(.gray))
-                        .cornerRadius(12, corners: [.topLeft, .topRight])
+                        .cornerRadius(14, corners: [.topLeft, .topRight])
                 }
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(place.name)
                         .font(.headline)
+                        .foregroundColor(.primary)
                         .lineLimit(2)
+                        .padding(.top, 8)
+                        .padding(.horizontal, 6)
                     if let address = place.address {
                         Text(address)
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .lineLimit(2)
+                            .padding(.horizontal, 6)
                     }
                     if let rating = place.rating {
                         HStack(spacing: 2) {
@@ -312,18 +256,21 @@ fileprivate struct DiscoverPlaceCell: View {
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         }
+                        .padding(.horizontal, 6)
+                        .padding(.bottom, 6)
+                    } else {
+                        Spacer().frame(height: 6)
                     }
                 }
-                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.clear)
             }
             .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                    .background(Color(.systemBackground))
-                    .cornerRadius(12, corners: [.topLeft, .topRight])
-                    .shadow(color: .black.opacity(0.03), radius: 2, x: 0, y: 2)
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color(.systemBackground))
+                    .shadow(color: .black.opacity(0.04), radius: 3, x: 0, y: 2)
             )
-            .frame(height: 180)
+            .frame(height: 190)
         }
         .buttonStyle(PlainButtonStyle())
     }

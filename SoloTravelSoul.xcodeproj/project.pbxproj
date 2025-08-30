@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3A7578CA2E5EB6FD00F150B2 /* ProfileScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7578C92E5EB14A00F150B2 /* ProfileScreen.swift */; };
+		3A7578CB2E5EB70600F150B2 /* ProfileMoodBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7578C82E5EB13A00F150B2 /* ProfileMoodBoardView.swift */; };
+		3A7578CC2E5EB70E00F150B2 /* ProfileHeroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7578C72E5EB12A00F150B2 /* ProfileHeroView.swift */; };
+		3A7578CD2E5EB71700F150B2 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7578C62E5EB11300F150B2 /* AppTheme.swift */; };
+		3A7578CF2E5EC23D00F150B2 /* RecentTripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7578CE2E5EC23D00F150B2 /* RecentTripsView.swift */; };
+		3A7578D52E600A7500F150B2 /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7578D42E600A7500F150B2 /* LocationManager.swift */; };
+		3A7578DB2E62B81100F150B2 /* IconLabelStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7578DA2E62B81100F150B2 /* IconLabelStyle.swift */; };
 		3A83CDB62E5C1E500059B67F /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 3A83CDB52E5C1E500059B67F /* FirebaseAuth */; };
 		3A83CDB82E5C1E500059B67F /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3A83CDB72E5C1E500059B67F /* FirebaseCore */; };
 		3A83CDBA2E5C1E500059B67F /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 3A83CDB92E5C1E500059B67F /* FirebaseFirestore */; };
@@ -51,7 +58,6 @@
 		8C75F1392E32E9A5001D915E /* HomeGreetingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F1382E32E9A5001D915E /* HomeGreetingView.swift */; };
 		8C75F13B2E32EAE9001D915E /* NextTripOverviewCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F13A2E32EAE9001D915E /* NextTripOverviewCard.swift */; };
 		8C75F13D2E32F15F001D915E /* QuickActionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F13C2E32F15F001D915E /* QuickActionView.swift */; };
-		8C75F13F2E32F244001D915E /* RecentTripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F13E2E32F244001D915E /* RecentTripsView.swift */; };
 		8C75F1412E32F25A001D915E /* TravelJournalPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F1402E32F25A001D915E /* TravelJournalPreview.swift */; };
 		8C75F1432E32F278001D915E /* DiscoverInspirationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F1422E32F278001D915E /* DiscoverInspirationView.swift */; };
 		8C75F1472E32F64F001D915E /* ItineraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C75F1462E32F64F001D915E /* ItineraryView.swift */; };
@@ -80,7 +86,6 @@
 		8CBCD0ED2E42FCD100D216BA /* GroupTrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CBCD0EC2E42FCD100D216BA /* GroupTrip.swift */; };
 		8CD88C6B2E45783E0028CDF7 /* RoundedCorner+CornerRadius.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CD88C6A2E45783E0028CDF7 /* RoundedCorner+CornerRadius.swift */; };
 		8CDB23192E28AF5500949D00 /* ExploreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CDB23182E28AF5500949D00 /* ExploreView.swift */; };
-		8CDB231B2E28B0CD00949D00 /* TripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CDB231A2E28B0CD00949D00 /* TripsView.swift */; };
 		8CDB231D2E28BADA00949D00 /* CarouselView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CDB231C2E28BADA00949D00 /* CarouselView.swift */; };
 /* End PBXBuildFile section */
 
@@ -102,6 +107,13 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		3A7578C62E5EB11300F150B2 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
+		3A7578C72E5EB12A00F150B2 /* ProfileHeroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileHeroView.swift; sourceTree = "<group>"; };
+		3A7578C82E5EB13A00F150B2 /* ProfileMoodBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileMoodBoardView.swift; sourceTree = "<group>"; };
+		3A7578C92E5EB14A00F150B2 /* ProfileScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileScreen.swift; sourceTree = "<group>"; };
+		3A7578CE2E5EC23D00F150B2 /* RecentTripsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentTripsView.swift; sourceTree = "<group>"; };
+		3A7578D42E600A7500F150B2 /* LocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManager.swift; sourceTree = "<group>"; };
+		3A7578DA2E62B81100F150B2 /* IconLabelStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconLabelStyle.swift; sourceTree = "<group>"; };
 		3A83CDC12E5E7E800059B67F /* DictionaryDuplicateKeyScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictionaryDuplicateKeyScanner.swift; sourceTree = "<group>"; };
 		3AB08F4E2E4EEF16007BD0AA /* TripCoreModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripCoreModels.swift; sourceTree = "<group>"; };
 		3AB08F502E4FC320007BD0AA /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
@@ -145,7 +157,6 @@
 		8C75F1382E32E9A5001D915E /* HomeGreetingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeGreetingView.swift; sourceTree = "<group>"; };
 		8C75F13A2E32EAE9001D915E /* NextTripOverviewCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NextTripOverviewCard.swift; sourceTree = "<group>"; };
 		8C75F13C2E32F15F001D915E /* QuickActionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionView.swift; sourceTree = "<group>"; };
-		8C75F13E2E32F244001D915E /* RecentTripsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentTripsView.swift; sourceTree = "<group>"; };
 		8C75F1402E32F25A001D915E /* TravelJournalPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelJournalPreview.swift; sourceTree = "<group>"; };
 		8C75F1422E32F278001D915E /* DiscoverInspirationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverInspirationView.swift; sourceTree = "<group>"; };
 		8C75F1462E32F64F001D915E /* ItineraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItineraryView.swift; sourceTree = "<group>"; };
@@ -172,7 +183,6 @@
 		8CBCD0EC2E42FCD100D216BA /* GroupTrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupTrip.swift; sourceTree = "<group>"; };
 		8CD88C6A2E45783E0028CDF7 /* RoundedCorner+CornerRadius.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RoundedCorner+CornerRadius.swift"; sourceTree = SOURCE_ROOT; };
 		8CDB23182E28AF5500949D00 /* ExploreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExploreView.swift; sourceTree = "<group>"; };
-		8CDB231A2E28B0CD00949D00 /* TripsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsView.swift; sourceTree = "<group>"; };
 		8CDB231C2E28BADA00949D00 /* CarouselView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarouselView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -258,9 +268,21 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		3A7578C52E5EB0FE00F150B2 /* AppTheme */ = {
+			isa = PBXGroup;
+			children = (
+				3A7578C92E5EB14A00F150B2 /* ProfileScreen.swift */,
+				3A7578C82E5EB13A00F150B2 /* ProfileMoodBoardView.swift */,
+				3A7578C72E5EB12A00F150B2 /* ProfileHeroView.swift */,
+				3A7578C62E5EB11300F150B2 /* AppTheme.swift */,
+			);
+			path = AppTheme;
+			sourceTree = "<group>";
+		};
 		8C714BDF2E25EB480002CDCD = {
 			isa = PBXGroup;
 			children = (
+				3A7578C52E5EB0FE00F150B2 /* AppTheme */,
 				8CAA0E1B2E2F31EF0015B571 /* AppDelegate.swift */,
 				8C3993B02E2DEC8A00739CF8 /* GooglePlacesAutocompleteView.swift */,
 				8C9D1B9B2E276F1000858387 /* Data */,
@@ -289,6 +311,7 @@
 		8C714C122E25EB7E0002CDCD /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				3A7578DA2E62B81100F150B2 /* IconLabelStyle.swift */,
 				3A83CDC12E5E7E800059B67F /* DictionaryDuplicateKeyScanner.swift */,
 				3AB5552F2E55786A00074CC0 /* NotificationsScreen.swift */,
 				3AB5552B2E554D4800074CC0 /* NotificationBadgeView.swift */,
@@ -328,6 +351,7 @@
 		8C714C132E25EB970002CDCD /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				3A7578D42E600A7500F150B2 /* LocationManager.swift */,
 				8CD88C6A2E45783E0028CDF7 /* RoundedCorner+CornerRadius.swift */,
 				3AB08F5A2E503931007BD0AA /* CompanionSuggestionViewModel.swift */,
 				3AB08F562E5038F5007BD0AA /* GroupChatViewModel.swift */,
@@ -366,14 +390,13 @@
 		8C714C172E25EC0E0002CDCD /* Home */ = {
 			isa = PBXGroup;
 			children = (
+				3A7578CE2E5EC23D00F150B2 /* RecentTripsView.swift */,
 				8C75F1422E32F278001D915E /* DiscoverInspirationView.swift */,
 				8C75F1402E32F25A001D915E /* TravelJournalPreview.swift */,
-				8C75F13E2E32F244001D915E /* RecentTripsView.swift */,
 				8C75F13C2E32F15F001D915E /* QuickActionView.swift */,
 				8C75F13A2E32EAE9001D915E /* NextTripOverviewCard.swift */,
 				8C75F1382E32E9A5001D915E /* HomeGreetingView.swift */,
 				8CDB231C2E28BADA00949D00 /* CarouselView.swift */,
-				8CDB231A2E28B0CD00949D00 /* TripsView.swift */,
 				8CDB23182E28AF5500949D00 /* ExploreView.swift */,
 				8C9D1BA92E277DC700858387 /* HomeView.swift */,
 				8C9D1B8C2E274ADE00858387 /* RootTabView.swift */,
@@ -547,12 +570,15 @@
 				8C0FE9352E483FCE00FA651C /* FirestoreService.swift in Sources */,
 				3AB08F512E4FC320007BD0AA /* OnboardingView.swift in Sources */,
 				8CB474372E469113001F4D78 /* NotificationsListView.swift in Sources */,
-				8C75F13F2E32F244001D915E /* RecentTripsView.swift in Sources */,
 				8C75F14B2E32F867001D915E /* JournalView.swift in Sources */,
+				3A7578CB2E5EB70600F150B2 /* ProfileMoodBoardView.swift in Sources */,
 				8C60EAC32E39B46F002D7E74 /* TripJournalView.swift in Sources */,
 				8C9D1B7A2E273E1A00858387 /* AuthHomeView.swift in Sources */,
 				8C8BC4812E45AB9000EE8F4C /* UserProfile.swift in Sources */,
 				3AB08F592E503915007BD0AA /* GroupChatView.swift in Sources */,
+				3A7578CC2E5EB70E00F150B2 /* ProfileHeroView.swift in Sources */,
+				3A7578CF2E5EC23D00F150B2 /* RecentTripsView.swift in Sources */,
+				3A7578DB2E62B81100F150B2 /* IconLabelStyle.swift in Sources */,
 				3AB08F612E5039C1007BD0AA /* NotificationsView.swift in Sources */,
 				3AB08F552E5038A7007BD0AA /* Message.swift in Sources */,
 				3AB08F6B2E5040E7007BD0AA /* AnimatedDrawer.swift in Sources */,
@@ -573,6 +599,7 @@
 				8CAA0E1C2E2F31EF0015B571 /* AppDelegate.swift in Sources */,
 				8C60EAC92E39B5C3002D7E74 /* EditJournalEntryView.swift in Sources */,
 				8C02E0FD2E29BE8E000C4AA9 /* GooglePlacesService.swift in Sources */,
+				3A7578CA2E5EB6FD00F150B2 /* ProfileScreen.swift in Sources */,
 				8C75F1592E35AC88001D915E /* AccessibleCardView.swift in Sources */,
 				3AB08F6D2E504129007BD0AA /* GroupChatsListView.swift in Sources */,
 				8C9D1BAA2E277DC700858387 /* HomeView.swift in Sources */,
@@ -592,10 +619,11 @@
 				8C3993792E2DC46300739CF8 /* TripViewModel.swift in Sources */,
 				3AB08F732E513F8B007BD0AA /* UserAvatarView.swift in Sources */,
 				8C75F1392E32E9A5001D915E /* HomeGreetingView.swift in Sources */,
-				8CDB231B2E28B0CD00949D00 /* TripsView.swift in Sources */,
 				8C75F1532E344149001D915E /* ItineraryOptimizer.swift in Sources */,
 				8C02E0FF2E29C36B000C4AA9 /* PlaceSearchView.swift in Sources */,
 				3AB08F572E5038F5007BD0AA /* GroupChatViewModel.swift in Sources */,
+				3A7578D52E600A7500F150B2 /* LocationManager.swift in Sources */,
+				3A7578CD2E5EB71700F150B2 /* AppTheme.swift in Sources */,
 				8C3993B12E2DEC8A00739CF8 /* GooglePlacesAutocompleteView.swift in Sources */,
 				8C8BC4782E45A9A600EE8F4C /* GroupListView.swift in Sources */,
 			);
@@ -780,6 +808,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UIUserInterfaceStyle = Light;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -810,6 +839,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UIUserInterfaceStyle = Light;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

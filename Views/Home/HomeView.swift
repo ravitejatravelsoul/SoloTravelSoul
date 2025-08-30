@@ -23,6 +23,63 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
+                    // --- Modern UI Header ---
+                    VStack(spacing: 16) {
+                        // Centered App Title
+                        Text("Solo Travel Soul")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.top, 18)
+
+                        // Greeting & Avatar Row
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Hi \(currentUser.firstName ?? currentUser.name.components(separatedBy: " ").first ?? ""),")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Text("Travelling Today?")
+                                    .font(.title.bold())
+                                    .foregroundColor(.primary)
+                            }
+                            Spacer()
+                            if let photoURL = currentUser.photoURL, !photoURL.isEmpty, let url = URL(string: photoURL) {
+                                AsyncImage(url: url) { phase in
+                                    if let image = phase.image {
+                                        image.resizable().scaledToFill()
+                                    } else {
+                                        Circle().fill(Color.blue)
+                                    }
+                                }
+                                .frame(width: 44, height: 44)
+                                .clipShape(Circle())
+                            } else {
+                                Circle()
+                                    .fill(Color.blue)
+                                    .frame(width: 44, height: 44)
+                                    .overlay(
+                                        Text(currentUser.initials)
+                                            .font(.headline)
+                                            .foregroundColor(.white)
+                                    )
+                            }
+                        }
+                        // Search Bar below greeting
+                        HStack {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundColor(.secondary)
+                            Text("Search trip, place or group...")
+                                .font(.body)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(16)
+                        .shadow(color: .black.opacity(0.04), radius: 2, x: 0, y: 1)
+                    }
+                    .padding(.horizontal)
+
+                    // --- YOUR ORIGINAL CONTENT BELOW ---
                     // Next Trip Card
                     if let nextTrip = tripViewModel.trips.first {
                         NextTripOverviewCard(
@@ -61,7 +118,8 @@ struct HomeView: View {
                 }
                 .padding(.horizontal)
             }
-            .navigationTitle("Solo Travel Soul")
+            .navigationTitle("") // Hide default nav title, since we're showing it in content
+            .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showAddTrip) {
                 AddTripView { newTrip in
                     tripViewModel.addTrip(newTrip)

@@ -27,7 +27,6 @@ struct GroupDetailView: View {
     var isCreator: Bool {
         let myUid = authViewModel.user?.uid ?? "nil"
         let creatorId = group.creator.id
-        print("DEBUG: My UID: \(myUid) | Group Creator ID: \(creatorId)")
         return myUid == creatorId
     }
     var isMember: Bool {
@@ -56,30 +55,104 @@ struct GroupDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                groupHeaderSection
-                activitiesSection
-                Divider()
-                Button {
-                    showMembers = true
-                } label: {
-                    Label("View Members (\(group.members.count))", systemImage: "person.3.fill")
+            VStack(alignment: .center, spacing: 28) {
+                // --- Centered Group Header ---
+                VStack(spacing: 8) {
+                    Text(group.name)
+                        .font(.largeTitle.bold())
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    Text(group.destination)
+                        .font(.title3)
+                        .foregroundColor(.accentColor)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    Text("\(group.startDate.formatted(date: .abbreviated, time: .omitted)) - \(group.endDate.formatted(date: .abbreviated, time: .omitted))")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    if let desc = group.description, !desc.isEmpty {
+                        Text(desc)
+                            .font(.body)
+                            .foregroundColor(.primary)
+                            .padding(.top, 8)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
                 }
-                Button {
-                    showChat = true
-                } label: {
-                    Label("Open Group Chat", systemImage: "bubble.left.and.bubble.right.fill")
+                .padding(.vertical, 8)
+                .padding(.horizontal)
+
+                // --- Activities Card ---
+                if let activities = group.activities, !activities.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Activities")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        ForEach(activities, id: \.self) { act in
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.accentColor)
+                                Text(act)
+                                    .font(.subheadline)
+                                    .foregroundColor(.primary)
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color(.systemGray6))
+                            .shadow(color: .black.opacity(0.04), radius: 3, x: 0, y: 2)
+                    )
+                    .padding(.horizontal)
                 }
-                Divider()
-                if isCreator {
-                    creatorRequestSection
-                    Divider()
-                    creatorDangerSection
-                } else {
-                    joinControlsSection
+
+                // --- Members & Chat Buttons ---
+                HStack(spacing: 16) {
+                    Button {
+                        showMembers = true
+                    } label: {
+                        Label("View Members (\(group.members.count))", systemImage: "person.3.fill")
+                            .font(.body.bold())
+                            .foregroundColor(.white)
+                            .padding(.vertical, 12)
+                            .frame(maxWidth: .infinity)
+                            .background(Color.blue)
+                            .cornerRadius(14)
+                            .shadow(color: .black.opacity(0.08), radius: 2, x: 0, y: 1)
+                    }
+                    Button {
+                        showChat = true
+                    } label: {
+                        Label("Open Group Chat", systemImage: "bubble.left.and.bubble.right.fill")
+                            .font(.body.bold())
+                            .foregroundColor(.white)
+                            .padding(.vertical, 12)
+                            .frame(maxWidth: .infinity)
+                            .background(Color.purple)
+                            .cornerRadius(14)
+                            .shadow(color: .black.opacity(0.08), radius: 2, x: 0, y: 1)
+                    }
                 }
+                .padding(.horizontal)
+
+                // --- Admin/Join Controls Section ---
+                VStack(alignment: .leading, spacing: 16) {
+                    if isCreator {
+                        creatorRequestSection
+                        creatorDangerSection
+                    } else {
+                        joinControlsSection
+                    }
+                }
+                .padding(.top, 8)
+                .padding(.horizontal)
+                .background(Color(.systemBackground))
+                .cornerRadius(14)
+                .shadow(color: .black.opacity(0.03), radius: 2, x: 0, y: 2)
             }
-            .padding()
+            .padding(.top)
+            .padding(.bottom, 24)
+            .background(Color(.systemBackground))
             .disabled(isPerformingAction)
             .overlay(
                 Group {
@@ -94,8 +167,9 @@ struct GroupDetailView: View {
                 }
             )
         }
-        .navigationTitle("Group")
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Group")
         .sheet(isPresented: $showMembers) {
             NavigationView {
                 GroupMembersListView(groupViewModel: groupViewModel, group: $group)
@@ -158,7 +232,7 @@ struct GroupDetailView: View {
             selectedAdminId = nil
         }) {
             NavigationView {
-                VStack {
+                VStack(spacing: 20) {
                     Text("Promote to Admin & Leave")
                         .font(.title2)
                         .padding(.top)
@@ -214,7 +288,7 @@ struct GroupDetailView: View {
             selectedTransferUserId = nil
         }) {
             NavigationView {
-                VStack {
+                VStack(spacing: 20) {
                     Text("Transfer Group Ownership")
                         .font(.title2)
                         .padding(.top)
@@ -272,47 +346,12 @@ struct GroupDetailView: View {
 
     // MARK: - Sections
 
-    private var groupHeaderSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(group.name)
-                .font(.largeTitle)
-                .bold()
-            Text(group.destination)
-                .font(.headline)
-                .foregroundColor(.secondary)
-            Text("\(group.startDate.formatted(date: .abbreviated, time: .omitted)) - \(group.endDate.formatted(date: .abbreviated, time: .omitted))")
-                .font(.subheadline)
-            if let desc = group.description, !desc.isEmpty {
-                Text(desc)
-                    .font(.body)
-            }
-        }
-    }
-
-    private var activitiesSection: some View {
-        Group {
-            if let activities = group.activities, !activities.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Activities")
-                        .font(.headline)
-                    ForEach(activities, id: \.self) { act in
-                        HStack {
-                            Image(systemName: "checkmark.circle")
-                                .foregroundColor(.blue)
-                            Text(act)
-                        }
-                        .font(.subheadline)
-                    }
-                }
-            }
-        }
-    }
-
     private var creatorRequestSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Join Requests (\(pendingRequests.count))")
                     .font(.headline)
+                    .foregroundColor(.primary)
                 Spacer()
                 if !pendingRequests.isEmpty {
                     Button("Approve All") {
@@ -359,6 +398,8 @@ struct GroupDetailView: View {
                 }
             }
         }
+        .padding()
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemGray6)))
     }
 
     private var creatorDangerSection: some View {
@@ -382,7 +423,7 @@ struct GroupDetailView: View {
     }
 
     private var joinControlsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             if isMember {
                 GroupBadge(title: "You are a member", systemImage: "checkmark.seal.fill", color: .green)
             } else if hasRequested {
@@ -410,6 +451,8 @@ struct GroupDetailView: View {
                 .buttonStyle(.borderedProminent)
             }
         }
+        .padding()
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemGray6)))
     }
 
     private func approve(_ user: UserProfile) {
@@ -432,7 +475,6 @@ struct GroupDetailView: View {
             if let updated = updatedGroup {
                 self.group = updated
             } else {
-                // If group is deleted or you have left, dismiss the view
                 presentationMode.wrappedValue.dismiss()
             }
         }

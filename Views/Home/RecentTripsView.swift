@@ -5,24 +5,41 @@ struct RecentTripsView: View {
     var onEditTrip: ((PlannedTrip) -> Void)? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Recent Trips")
-                .font(.headline)
-                .padding(.leading)
+        if trips.isEmpty {
+            EmptyView() // or a Text("No recent trips") if you want
+        } else {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
                     ForEach(trips.prefix(10)) { trip in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Image("trip_placeholder")
-                                .resizable()
-                                .frame(width: 60, height: 60)
-                                .cornerRadius(8)
+                        VStack(alignment: .leading, spacing: 6) {
+                            // --- Trip Image or Placeholder ---
+                            Group {
+                                if let data = trip.photoData, let uiImage = UIImage(data: data) {
+                                    Image(uiImage: uiImage)
+                                        .resizable()
+                                        .scaledToFill()
+                                } else {
+                                    Image("trip_placeholder")
+                                        .resizable()
+                                        .scaledToFill()
+                                }
+                            }
+                            .frame(width: 60, height: 60)
+                            .clipped()
+                            .cornerRadius(8)
+
+                            // --- Trip Destination ---
                             Text(trip.destination)
                                 .font(.subheadline)
                                 .lineLimit(1)
+                                .foregroundColor(AppTheme.textPrimary)
+
+                            // --- Trip Dates ---
                             Text(DateFormatter.localizedString(from: trip.startDate, dateStyle: .short, timeStyle: .none))
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(AppTheme.textSecondary)
+
+                            // --- Edit Button ---
                             Button("Edit") {
                                 onEditTrip?(trip)
                             }
@@ -30,51 +47,13 @@ struct RecentTripsView: View {
                             .buttonStyle(.bordered)
                         }
                         .frame(width: 80)
-                        .background(Color(.systemGray6))
+                        .background(AppTheme.card)
                         .cornerRadius(10)
-                        .shadow(radius: 1)
+                        .shadow(color: AppTheme.shadow, radius: 1)
                     }
                 }
                 .padding(.horizontal)
             }
         }
-        .padding(.vertical)
-    }
-}
-
-struct RecentTripsView_Previews: PreviewProvider {
-    static var previews: some View {
-        RecentTripsView(
-            trips: [
-                PlannedTrip(
-                    id: UUID(),
-                    destination: "Paris",
-                    startDate: Date(),
-                    endDate: Calendar.current.date(byAdding: .day, value: 4, to: Date())!,
-                    notes: "Sample Paris trip",
-                    itinerary: [],
-                    photoData: nil,
-                    latitude: nil,
-                    longitude: nil,
-                    placeName: "Eiffel Tower",
-                    members: ["Alice", "Bob", "Charlie"]
-                ),
-                PlannedTrip(
-                    id: UUID(),
-                    destination: "London",
-                    startDate: Date(),
-                    endDate: Calendar.current.date(byAdding: .day, value: 7, to: Date())!,
-                    notes: "Sample London trip",
-                    itinerary: [],
-                    photoData: nil,
-                    latitude: nil,
-                    longitude: nil,
-                    placeName: "Big Ben",
-                    members: ["Diana", "Eve"]
-                )
-            ],
-            onEditTrip: { _ in print("Edit trip pressed") }
-        )
-        .previewLayout(.sizeThatFits)
     }
 }
