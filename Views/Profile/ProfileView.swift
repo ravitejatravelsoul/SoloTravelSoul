@@ -22,8 +22,12 @@ struct ProfileView: View {
 
     @State private var showEdit = false
 
-    func listString(_ value: String) -> String {
-        value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: ", ")
+    func listString(_ value: [String]) -> String {
+        value.joined(separator: ", ")
+    }
+
+    func csvToArray(_ csv: String) -> [String] {
+        csv.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
 
     // Helper to get the editable user
@@ -41,9 +45,9 @@ struct ProfileView: View {
                 country: country,
                 city: city,
                 bio: bio,
-                preferences: preferences,
-                favoriteDestinations: favoriteDestinations,
-                languages: languages,
+                preferences: csvToArray(preferences),
+                favoriteDestinations: csvToArray(favoriteDestinations),
+                languages: csvToArray(languages),
                 emergencyContact: emergencyContact,
                 socialLinks: socialLinks,
                 privacyEnabled: privacyEnabled,
@@ -125,9 +129,9 @@ struct ProfileView: View {
                         ProfileRow(title: "Country", value: country)
                         ProfileRow(title: "City", value: city)
                         ProfileRow(title: "Bio", value: bio)
-                        ProfileRow(title: "Preferences", value: listString(preferences))
-                        ProfileRow(title: "Favorite Destinations", value: listString(favoriteDestinations))
-                        ProfileRow(title: "Languages", value: listString(languages))
+                        ProfileRow(title: "Preferences", value: listString(csvToArray(preferences)))
+                        ProfileRow(title: "Favorite Destinations", value: listString(csvToArray(favoriteDestinations)))
+                        ProfileRow(title: "Languages", value: listString(csvToArray(languages)))
                         ProfileRow(title: "Emergency Contact", value: emergencyContact)
                         ProfileRow(title: "Social Links", value: socialLinks)
                     }
@@ -161,8 +165,6 @@ struct ProfileView: View {
                     )
                     .environmentObject(authViewModel)
                 }
-                // Logout Button REMOVED
-                // If you want logout, add it only in a main menu/drawer, not here!
             }
             .padding()
         }

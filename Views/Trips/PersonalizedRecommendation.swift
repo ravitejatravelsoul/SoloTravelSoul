@@ -1,12 +1,4 @@
-import Foundation
 import SwiftUI
-
-struct PersonalizedRecommendation: Identifiable {
-    let id = UUID()
-    let title: String
-    let description: String
-    let imageName: String
-}
 
 struct PersonalizedRecommendationsView: View {
     let city: String

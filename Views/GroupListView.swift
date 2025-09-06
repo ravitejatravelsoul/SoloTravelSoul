@@ -2,47 +2,115 @@ import SwiftUI
 
 struct GroupListView: View {
     @ObservedObject var groupViewModel: GroupViewModel
-    let currentUser: UserProfile        // RootTabView supplies this
+    let currentUser: UserProfile
     @EnvironmentObject var authViewModel: AuthViewModel
 
     @State private var showCreate = false
     @State private var search = ""
     @State private var selectedGroup: GroupTrip?
 
-    private var filtered: [GroupTrip] {
+    // --- Sectioned Group Logic ---
+    private var recommendedGroups: [GroupTrip] {
+        let userPrefs = currentUser.preferences.map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
+        let userFavDests = currentUser.favoriteDestinations.map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
+        let userLangs = currentUser.languages.map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
+        let all = groupViewModel.groups
+
+        // Always include groups where user is creator or member
+        let alwaysInclude: [GroupTrip] = all.filter {
+            $0.creator.id == currentUser.id || $0.members.contains(where: { $0.id == currentUser.id })
+        }
+
+        // Add groups matching preferences (not already included)
+        let matched: [GroupTrip] = all.filter { group in
+            if alwaysInclude.contains(where: { $0.id == group.id }) { return false }
+            let groupDest = group.destination.lowercased().trimmingCharacters(in: .whitespaces)
+            let groupActs = (group.activities ?? []).map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
+            let groupLangs = (group.languages ?? []).map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
+            let destMatch = userFavDests.contains(where: { groupDest.contains($0) })
+            let actMatch = groupActs.contains(where: { userPrefs.contains($0) })
+            let langMatch = groupLangs.contains(where: { userLangs.contains($0) })
+            return destMatch || actMatch || langMatch
+        }
+
+        return (alwaysInclude + matched).removingDuplicates()
+    }
+
+    private var otherGroups: [GroupTrip] {
+        let recommendedIds = Set(recommendedGroups.map { $0.id })
+        return groupViewModel.groups.filter { !recommendedIds.contains($0.id) }
+    }
+
+    // --- Search logic (filters both sections) ---
+    private var searchedRecommended: [GroupTrip] {
         let trimmed = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return groupViewModel.groups }
-        return groupViewModel.groups.filter {
-            $0.name.localizedCaseInsensitiveContains(trimmed) ||
-            $0.destination.localizedCaseInsensitiveContains(trimmed)
+        guard !trimmed.isEmpty else { return recommendedGroups }
+        return recommendedGroups.filter {
+            $0.name.localizedCaseInsensitiveContains(trimmed)
+            || $0.destination.localizedCaseInsensitiveContains(trimmed)
+        }
+    }
+    private var searchedOther: [GroupTrip] {
+        let trimmed = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return otherGroups }
+        return otherGroups.filter {
+            $0.name.localizedCaseInsensitiveContains(trimmed)
+            || $0.destination.localizedCaseInsensitiveContains(trimmed)
         }
     }
 
     var body: some View {
         NavigationStack {
             VStack {
-                if filtered.isEmpty {
+                if searchedRecommended.isEmpty && searchedOther.isEmpty {
                     Text("No groups found.")
                         .foregroundColor(.secondary)
                         .padding(.top, 64)
                     Spacer()
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 18) {
-                            ForEach(filtered) { group in
-                                Button {
-                                    selectedGroup = group
-                                } label: {
-                                    GroupRow(
-                                        group: group,
-                                        currentUser: currentUser,
-                                        groupViewModel: groupViewModel,
-                                        requestAction: { requestJoin(group) },
-                                        cancelAction: { cancelJoin(group) }
-                                    )
-                                    .padding(.horizontal)
+                        LazyVStack(alignment: .leading, spacing: 24) {
+                            if !searchedRecommended.isEmpty {
+                                Text("Recommended & Your Groups")
+                                    .font(.title3.bold())
+                                    .padding(.leading)
+                                    .padding(.top, 12)
+                                ForEach(searchedRecommended) { group in
+                                    Button {
+                                        selectedGroup = group
+                                    } label: {
+                                        GroupRow(
+                                            group: group,
+                                            currentUser: currentUser,
+                                            groupViewModel: groupViewModel,
+                                            requestAction: { requestJoin(group) },
+                                            cancelAction: { cancelJoin(group) }
+                                        )
+                                        .padding(.horizontal)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
+                            }
+                            if !searchedOther.isEmpty {
+                                Text("Other Groups (Outside Your Preferences)")
+                                    .font(.title3.bold())
+                                    .padding(.leading)
+                                    .padding(.top, searchedRecommended.isEmpty ? 12 : 0)
+                                ForEach(searchedOther) { group in
+                                    Button {
+                                        selectedGroup = group
+                                    } label: {
+                                        GroupRow(
+                                            group: group,
+                                            currentUser: currentUser,
+                                            groupViewModel: groupViewModel,
+                                            requestAction: { requestJoin(group) },
+                                            cancelAction: { cancelJoin(group) }
+                                        )
+                                        .padding(.horizontal)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
                         }
                         .padding(.top, 16)
@@ -75,7 +143,8 @@ struct GroupListView: View {
             }
         }
         .onAppear {
-            groupViewModel.fetchAllGroups()
+            groupViewModel.removeGroupsListener()
+            groupViewModel.fetchAllGroupsAndFilter(for: currentUser)
         }
     }
 
@@ -98,6 +167,65 @@ struct GroupListView: View {
     private func cancelJoin(_ group: GroupTrip) {
         guard isPending(group) else { return }
         groupViewModel.cancelJoinRequest(group: group, userId: currentUser.id)
+    }
+}
+
+// Helper to remove duplicates by ID
+extension Array where Element: Identifiable {
+    func removingDuplicates() -> [Element] {
+        var seen = Set<Element.ID>()
+        return self.filter { seen.insert($0.id).inserted }
+    }
+}
+
+// MARK: - GroupRecommendationCard
+
+private struct GroupRecommendationCard: View {
+    let group: GroupTrip
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(group.name)
+                .font(.headline)
+                .foregroundColor(.primary)
+                .lineLimit(1)
+            Text(group.destination)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            if let activities = group.activities, !activities.isEmpty {
+                Text(activities.joined(separator: ", "))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            if let languages = group.languages, !languages.isEmpty {
+                Text("Languages: \(languages.joined(separator: ", "))")
+                    .font(.caption2)
+                    .foregroundColor(.purple)
+                    .lineLimit(1)
+            }
+            HStack {
+                Label("\(group.members.count)", systemImage: "person.3.fill")
+                    .font(.caption2)
+                    .foregroundColor(.blue)
+                Spacer()
+                Text(dateRangeString(from: group.startDate, to: group.endDate))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white)
+                .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
+        )
+    }
+
+    private func dateRangeString(from start: Date, to end: Date) -> String {
+        let df = DateFormatter()
+        df.dateStyle = .short
+        return "\(df.string(from: start)) - \(df.string(from: end))"
     }
 }
 
@@ -130,6 +258,12 @@ private struct GroupRow: View {
                     Text(group.destination)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
+                    if let languages = group.languages, !languages.isEmpty {
+                        Text("Languages: \(languages.joined(separator: ", "))")
+                            .font(.caption2)
+                            .foregroundColor(.purple)
+                            .lineLimit(1)
+                    }
                 }
                 Spacer()
                 if isCreator {
@@ -181,7 +315,6 @@ private struct GroupRow: View {
         return "\(df.string(from: start)) - \(df.string(from: end))"
     }
 
-    // Join / Cancel row
     @ViewBuilder
     private var actionRow: some View {
         HStack {
@@ -221,6 +354,7 @@ struct CreateGroupSheet: View {
     @State private var endDate = Calendar.current.date(byAdding: .day, value: 2, to: Date())!
     @State private var descriptionText = ""
     @State private var activitiesText = ""
+    @State private var languagesText = ""
     @State private var creating = false
 
     var body: some View {
@@ -241,6 +375,9 @@ struct CreateGroupSheet: View {
                 Section("Activities (comma separated)") {
                     TextField("e.g. Hiking, Museums", text: $activitiesText)
                 }
+                Section("Languages (comma separated)") {
+                    TextField("e.g. English, Spanish", text: $languagesText)
+                }
             }
             .disabled(creating)
             .navigationTitle("New Group")
@@ -260,6 +397,9 @@ struct CreateGroupSheet: View {
                         let activities = activitiesText
                             .split(separator: ",")
                             .map { $0.trimmingCharacters(in: .whitespaces) }
+                        let languages = languagesText
+                            .split(separator: ",")
+                            .map { $0.trimmingCharacters(in: .whitespaces) }
                         groupViewModel.createGroup(
                             name: name,
                             destination: destination,
@@ -267,6 +407,7 @@ struct CreateGroupSheet: View {
                             endDate: endDate,
                             description: descriptionText.isEmpty ? nil : descriptionText,
                             activities: activities,
+                            languages: languages,
                             creator: creator
                         )
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {

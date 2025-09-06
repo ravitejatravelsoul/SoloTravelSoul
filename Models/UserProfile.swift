@@ -1,7 +1,7 @@
 import Foundation
 
 public struct UserProfile: Codable, Identifiable, Equatable {
-    public var id: String // CHANGED from let to var
+    public var id: String
     public var name: String
     public var email: String
     public var phone: String
@@ -10,9 +10,9 @@ public struct UserProfile: Codable, Identifiable, Equatable {
     public var country: String
     public var city: String
     public var bio: String
-    public var preferences: String
-    public var favoriteDestinations: String
-    public var languages: String
+    public var preferences: [String]
+    public var favoriteDestinations: [String]
+    public var languages: [String]
     public var emergencyContact: String
     public var socialLinks: String
     public var privacyEnabled: Bool
@@ -20,9 +20,7 @@ public struct UserProfile: Codable, Identifiable, Equatable {
     public var lastName: String?
     public var photoURL: String?
 
-    // MARK: - Initials Computed Property
     public var initials: String {
-        // Prefer firstName + lastName if available, else use name
         if let first = firstName, let last = lastName, !first.isEmpty, !last.isEmpty {
             let firstInitial = first.first.map { String($0) } ?? ""
             let lastInitial = last.first.map { String($0) } ?? ""
@@ -44,9 +42,9 @@ public struct UserProfile: Codable, Identifiable, Equatable {
         country: String,
         city: String,
         bio: String,
-        preferences: String,
-        favoriteDestinations: String,
-        languages: String,
+        preferences: [String],
+        favoriteDestinations: [String],
+        languages: [String],
         emergencyContact: String,
         socialLinks: String,
         privacyEnabled: Bool,
@@ -97,7 +95,15 @@ public struct UserProfile: Codable, Identifiable, Equatable {
         ]
     }
 
+    /// This version is tolerant to both [String] and String (comma-separated) for arrays (for migration/backward compatibility)
     public static func fromDict(_ dict: [String: Any]) -> UserProfile? {
+        func toStringArray(_ value: Any?) -> [String] {
+            if let arr = value as? [String] { return arr }
+            if let str = value as? String {
+                return str.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            }
+            return []
+        }
         guard
             let id = dict["id"] as? String,
             let name = dict["name"] as? String,
@@ -108,13 +114,14 @@ public struct UserProfile: Codable, Identifiable, Equatable {
             let country = dict["country"] as? String,
             let city = dict["city"] as? String,
             let bio = dict["bio"] as? String,
-            let preferences = dict["preferences"] as? String,
-            let favoriteDestinations = dict["favoriteDestinations"] as? String,
-            let languages = dict["languages"] as? String,
             let emergencyContact = dict["emergencyContact"] as? String,
             let socialLinks = dict["socialLinks"] as? String,
             let privacyEnabled = dict["privacyEnabled"] as? Bool
         else { return nil }
+
+        let preferences = toStringArray(dict["preferences"])
+        let favoriteDestinations = toStringArray(dict["favoriteDestinations"])
+        let languages = toStringArray(dict["languages"])
 
         let firstName = dict["firstName"] as? String
         let lastName = dict["lastName"] as? String

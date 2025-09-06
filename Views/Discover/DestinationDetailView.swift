@@ -67,7 +67,6 @@ struct DestinationDetailView: View {
             }
         }
         .sheet(isPresented: $showCreateGroupSheet) {
-            // Use a renamed sheet to avoid redeclaration conflict
             CreateGroupForDestinationSheet(
                 groupViewModel: groupViewModel,
                 prefillDestination: place.name
@@ -327,9 +326,9 @@ struct DestinationDetailView_Previews: PreviewProvider {
             country: "France",
             city: "Paris",
             bio: "Traveler",
-            preferences: "Food, Art",
-            favoriteDestinations: "Paris, Rome",
-            languages: "English, French",
+            preferences: ["Food", "Art"],
+            favoriteDestinations: ["Paris", "Rome"],
+            languages: ["English", "French"],
             emergencyContact: "123456789",
             socialLinks: "@alice",
             privacyEnabled: false

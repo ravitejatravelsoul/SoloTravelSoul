@@ -14,6 +14,7 @@
 		3A7578CF2E5EC23D00F150B2 /* RecentTripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7578CE2E5EC23D00F150B2 /* RecentTripsView.swift */; };
 		3A7578D52E600A7500F150B2 /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7578D42E600A7500F150B2 /* LocationManager.swift */; };
 		3A7578DB2E62B81100F150B2 /* IconLabelStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7578DA2E62B81100F150B2 /* IconLabelStyle.swift */; };
+		3A7578E52E6BF0BE00F150B2 /* PersonalizedRecommendation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7578E42E6BF0BD00F150B2 /* PersonalizedRecommendation.swift */; };
 		3A83CDB62E5C1E500059B67F /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 3A83CDB52E5C1E500059B67F /* FirebaseAuth */; };
 		3A83CDB82E5C1E500059B67F /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3A83CDB72E5C1E500059B67F /* FirebaseCore */; };
 		3A83CDBA2E5C1E500059B67F /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 3A83CDB92E5C1E500059B67F /* FirebaseFirestore */; };
@@ -114,6 +115,7 @@
 		3A7578CE2E5EC23D00F150B2 /* RecentTripsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentTripsView.swift; sourceTree = "<group>"; };
 		3A7578D42E600A7500F150B2 /* LocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManager.swift; sourceTree = "<group>"; };
 		3A7578DA2E62B81100F150B2 /* IconLabelStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconLabelStyle.swift; sourceTree = "<group>"; };
+		3A7578E42E6BF0BD00F150B2 /* PersonalizedRecommendation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalizedRecommendation.swift; sourceTree = "<group>"; };
 		3A83CDC12E5E7E800059B67F /* DictionaryDuplicateKeyScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictionaryDuplicateKeyScanner.swift; sourceTree = "<group>"; };
 		3AB08F4E2E4EEF16007BD0AA /* TripCoreModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripCoreModels.swift; sourceTree = "<group>"; };
 		3AB08F502E4FC320007BD0AA /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
@@ -351,6 +353,7 @@
 		8C714C132E25EB970002CDCD /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				3A7578E42E6BF0BD00F150B2 /* PersonalizedRecommendation.swift */,
 				3A7578D42E600A7500F150B2 /* LocationManager.swift */,
 				8CD88C6A2E45783E0028CDF7 /* RoundedCorner+CornerRadius.swift */,
 				3AB08F5A2E503931007BD0AA /* CompanionSuggestionViewModel.swift */,
@@ -559,6 +562,7 @@
 				8C9D1B8D2E274ADE00858387 /* RootTabView.swift in Sources */,
 				8C75F1432E32F278001D915E /* DiscoverInspirationView.swift in Sources */,
 				8C9D1B9A2E276ECD00858387 /* Attraction.swift in Sources */,
+				3A7578E52E6BF0BE00F150B2 /* PersonalizedRecommendation.swift in Sources */,
 				8C75F13D2E32F15F001D915E /* QuickActionView.swift in Sources */,
 				8CBCD0ED2E42FCD100D216BA /* GroupTrip.swift in Sources */,
 				8C8BC4742E45A91E00EE8F4C /* GroupViewModel.swift in Sources */,

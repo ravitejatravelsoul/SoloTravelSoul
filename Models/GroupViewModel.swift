@@ -8,7 +8,6 @@ public class GroupViewModel: ObservableObject {
     private let db = Firestore.firestore()
     private let groupsCollection = "groups"
     private var groupsListener: ListenerRegistration?
-    private var didFetchGroups = false
 
     public init() { }
 
@@ -16,11 +15,9 @@ public class GroupViewModel: ObservableObject {
         removeGroupsListener()
     }
 
-    // Remove the snapshot listener to avoid accessing deleted/left groups
     public func removeGroupsListener() {
         groupsListener?.remove()
         groupsListener = nil
-        didFetchGroups = false
     }
 
     private func updateGroupChatDoc(for group: GroupTrip, completion: (() -> Void)? = nil) {
@@ -33,12 +30,34 @@ public class GroupViewModel: ObservableObject {
         ], merge: true) { _ in completion?() }
     }
 
+    /// Real-time fetch: listens to all groups, passes all to the UI for sectioning/filtering.
+    public func fetchAllGroupsAndFilter(for user: UserProfile) {
+        removeGroupsListener()
+        groupsListener = db.collection(groupsCollection)
+            .order(by: "startDate", descending: false)
+            .addSnapshotListener { [weak self] snapshot, error in
+                if let error = error {
+                    DispatchQueue.main.async {
+                        self?.errorMessage = "Failed to load groups: \(error.localizedDescription)"
+                    }
+                    print("❌ fetchAllGroupsAndFilter error: \(error)")
+                    return
+                }
+                let docs = snapshot?.documents ?? []
+                let allGroups = docs.compactMap { GroupTrip.fromDict($0.data()) }
+                DispatchQueue.main.async {
+                    self?.groups = allGroups
+                    if allGroups.isEmpty {
+                        self?.errorMessage = "No groups found. Try creating one!"
+                    } else {
+                        self?.errorMessage = nil
+                    }
+                }
+            }
+    }
+
+    // --- Standard fetch (listener, optional fallback) ---
     public func fetchAllGroups() {
-        if didFetchGroups {
-            print("⚠️ fetchAllGroups called again; ignoring to prevent duplicate listeners.")
-            return
-        }
-        didFetchGroups = true
         removeGroupsListener()
         groupsListener = db.collection(groupsCollection)
             .order(by: "startDate", descending: false)
@@ -52,10 +71,8 @@ public class GroupViewModel: ObservableObject {
                 }
                 let docs = snapshot?.documents ?? []
                 let allGroups = docs.compactMap { GroupTrip.fromDict($0.data()) }
-                if allGroups != self?.groups {
-                    DispatchQueue.main.async {
-                        self?.groups = allGroups
-                    }
+                DispatchQueue.main.async {
+                    self?.groups = allGroups
                 }
             }
     }
@@ -90,6 +107,7 @@ public class GroupViewModel: ObservableObject {
         }
     }
 
+    // --- Updated to support languages ---
     public func createGroup(
         name: String,
         destination: String,
@@ -97,6 +115,7 @@ public class GroupViewModel: ObservableObject {
         endDate: Date,
         description: String?,
         activities: [String],
+        languages: [String] = [],
         creator: UserProfile
     ) {
         let group = GroupTrip(
@@ -105,7 +124,8 @@ public class GroupViewModel: ObservableObject {
             startDate: startDate,
             endDate: endDate,
             description: description,
-            activities: activities,
+            activities: activities.isEmpty ? [] : activities,
+            languages: languages.isEmpty ? [] : languages,
             creator: creator,
             members: [creator]
         )
@@ -122,8 +142,7 @@ public class GroupViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Group Membership & Requests Logic
-
+    // --- All other membership/admin logic unchanged ---
     public func requestToJoin(group: GroupTrip, user: UserProfile) {
         let ref = db.collection(groupsCollection).document(group.id)
         ref.updateData([
@@ -267,8 +286,6 @@ public class GroupViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Group Member Management (Promote/Demote/Remove Admin/Member)
-
     public func promoteMember(group: GroupTrip, member: UserProfile) {
         let groupRef = db.collection(groupsCollection).document(group.id)
         groupRef.updateData([
@@ -338,7 +355,6 @@ public class GroupViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Transfer Ownership then Leave (creator only)
     public func transferOwnershipAndLeave(group: GroupTrip, newCreator: UserProfile, previousCreatorId: String) {
         let groupRef = db.collection(groupsCollection).document(group.id)
         var updatedGroup = group
@@ -347,7 +363,6 @@ public class GroupViewModel: ObservableObject {
         updatedGroup.members.removeAll { $0.id == previousCreatorId }
         updatedGroup.admins.removeAll { $0 == previousCreatorId }
 
-        // Fetch the latest group doc to get the exact member dictionary for the previous creator
         groupRef.getDocument { [weak self] snapshot, error in
             guard
                 let data = snapshot?.data(),
@@ -357,8 +372,6 @@ public class GroupViewModel: ObservableObject {
                 print("❌ Could not find previous creator in members for removal.")
                 return
             }
-
-            // Step 1: Transfer ownership and add new admin, remove previous creator from members
             groupRef.updateData([
                 "creator": newCreator.toDict(),
                 "admins": FieldValue.arrayUnion([newCreator.id]),
@@ -367,7 +380,6 @@ public class GroupViewModel: ObservableObject {
                 if let error = error {
                     print("❌ Failed to transfer ownership: \(error)")
                 } else {
-                    // Step 2: Remove previous creator from admins
                     groupRef.updateData([
                         "admins": FieldValue.arrayRemove([previousCreatorId])
                     ]) { error in

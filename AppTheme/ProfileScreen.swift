@@ -72,7 +72,7 @@ struct ProfileScreen: View {
                                 Text("Languages")
                                     .font(.caption)
                                     .foregroundColor(AppTheme.textSecondary)
-                                Text(profileUser.languages.isEmpty ? "Not set" : profileUser.languages)
+                                Text(profileUser.languages.isEmpty ? "Not set" : profileUser.languages.joined(separator: ", "))
                                     .font(.body)
                                     .foregroundColor(AppTheme.textPrimary)
                             }
@@ -96,14 +96,14 @@ struct ProfileScreen: View {
                     if !profileUser.preferences.isEmpty {
                         ProfileMoodBoardView(
                             title: "Preferences",
-                            items: profileUser.preferences.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                            items: profileUser.preferences
                         )
                     }
                     // --- Favorite Destinations Mood Board ---
                     if !profileUser.favoriteDestinations.isEmpty {
                         ProfileMoodBoardView(
                             title: "Favorite Destinations",
-                            items: profileUser.favoriteDestinations.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                            items: profileUser.favoriteDestinations
                         )
                     }
 

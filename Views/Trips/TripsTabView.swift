@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreLocation
+import FirebaseAuth
 
 struct TripsTabView: View {
     @EnvironmentObject var tripViewModel: TripViewModel
@@ -12,12 +13,38 @@ struct TripsTabView: View {
     @State private var sheetTrip: SheetTrip? = nil
     @State private var showCreateTrip = false
 
-    var today: Date { Calendar.current.startOfDay(for: Date()) }
+    // Only show trips where the user is a member (by uid)
+    private var currentUserId: String? {
+        let uid = Auth.auth().currentUser?.uid
+        print("TripsTabView: currentUserId = \(uid ?? "nil")")
+        return uid
+    }
+    var today: Date {
+        let today = Calendar.current.startOfDay(for: Date())
+        print("TripsTabView: today's date = \(today)")
+        return today
+    }
+
+    // Filter only user's trips
+    var myTrips: [PlannedTrip] {
+        guard let uid = currentUserId else {
+            print("TripsTabView: No currentUserId")
+            return []
+        }
+        print("TripsTabView: All trips from viewModel = \(tripViewModel.trips)")
+        let mine = tripViewModel.trips.filter { $0.members.contains(uid) }
+        print("TripsTabView: myTrips = \(mine.map { "\($0.destination) [\($0.id)] members:\($0.members)" })")
+        return mine
+    }
     var upcomingTrips: [PlannedTrip] {
-        tripViewModel.trips.filter { $0.startDate >= today }
+        let upcoming = myTrips.filter { $0.startDate >= today }.sorted { $0.startDate < $1.startDate }
+        print("TripsTabView: upcomingTrips = \(upcoming.map { "\($0.destination) [\($0.id)]" })")
+        return upcoming
     }
     var pastTrips: [PlannedTrip] {
-        tripViewModel.trips.filter { $0.endDate < today }
+        let past = myTrips.filter { $0.endDate < today }.sorted { $0.startDate > $1.startDate }
+        print("TripsTabView: pastTrips = \(past.map { "\($0.destination) [\($0.id)]" })")
+        return past
     }
 
     var body: some View {
@@ -32,7 +59,10 @@ struct TripsTabView: View {
                             .foregroundColor(.primary)
                             .frame(maxWidth: .infinity, alignment: .center)
                         Spacer()
-                        Button(action: { showCreateTrip = true }) {
+                        Button(action: {
+                            print("TripsTabView: Add Trip button tapped")
+                            showCreateTrip = true
+                        }) {
                             Image(systemName: "plus.circle.fill")
                                 .font(.title)
                                 .foregroundColor(AppTheme.primary)
@@ -58,9 +88,18 @@ struct TripsTabView: View {
                                 ForEach(upcomingTrips) { trip in
                                     PlannedTripMainCardView(
                                         trip: trip,
-                                        onView: { sheetTrip = SheetTrip(id: trip.id) },
-                                        onEdit: { sheetTrip = SheetTrip(id: trip.id) },
-                                        onDelete: { tripViewModel.deleteTrip(trip) }
+                                        onView: {
+                                            print("TripsTabView: Viewing trip with id \(trip.id)")
+                                            sheetTrip = SheetTrip(id: trip.id)
+                                        },
+                                        onEdit: {
+                                            print("TripsTabView: Editing trip with id \(trip.id)")
+                                            sheetTrip = SheetTrip(id: trip.id)
+                                        },
+                                        onDelete: {
+                                            print("TripsTabView: Deleting trip with id \(trip.id)")
+                                            tripViewModel.deleteTrip(trip)
+                                        }
                                     )
                                 }
                             }
@@ -92,7 +131,10 @@ struct TripsTabView: View {
                                 ForEach(pastTrips) { trip in
                                     PlannedTripCardView(
                                         trip: trip,
-                                        onEdit: { sheetTrip = SheetTrip(id: trip.id) }
+                                        onEdit: {
+                                            print("TripsTabView: Editing past trip with id \(trip.id)")
+                                            sheetTrip = SheetTrip(id: trip.id)
+                                        }
                                     )
                                 }
                             }
@@ -109,16 +151,23 @@ struct TripsTabView: View {
 
                     // --- SUGGESTIONS OR GOOGLE PLACE RECOMMENDATIONS ---
                     if upcomingTrips.isEmpty && pastTrips.isEmpty {
+                        print("TripsTabView: No trips found, showing suggestions")
                         if !locationManager.googleSuggestions.isEmpty {
                             GoogleSuggestionsView(
                                 suggestions: locationManager.googleSuggestions,
-                                onAdd: { _ in showCreateTrip = true }
+                                onAdd: { suggestion in
+                                    print("TripsTabView: Google suggestion tapped: \(suggestion.name)")
+                                    showCreateTrip = true
+                                }
                             )
                         } else if let city = locationManager.city {
                             PersonalizedRecommendationsView(
                                 city: city,
                                 recommendations: locationManager.recommendationsForCity,
-                                onAdd: { _ in showCreateTrip = true }
+                                onAdd: { _ in
+                                    print("TripsTabView: Personalized recommendation tapped for city \(city)")
+                                    showCreateTrip = true
+                                }
                             )
                         } else {
                             ProgressView("Loading suggestions...")
@@ -132,6 +181,7 @@ struct TripsTabView: View {
             .background(AppTheme.background.ignoresSafeArea())
             .sheet(item: $sheetTrip) { sheet in
                 if let trip = tripViewModel.trips.first(where: { $0.id == sheet.id }) {
+                    print("TripsTabView: Opening TripDetailView for trip id \(sheet.id)")
                     TripDetailView(tripViewModel: tripViewModel, trip: trip)
                 } else {
                     VStack {
@@ -141,148 +191,26 @@ struct TripsTabView: View {
                 }
             }
             .sheet(isPresented: $showCreateTrip) {
+                print("TripsTabView: Presenting CreateTripView")
                 CreateTripView()
                     .environmentObject(tripViewModel)
             }
             .onAppear {
+                print("TripsTabView: onAppear called")
                 tripViewModel.loadTrips()
                 locationManager.requestLocation()
                 if tripViewModel.trips.isEmpty {
+                    print("TripsTabView: No trips yet, fetching Google suggestions")
                     locationManager.fetchGoogleSuggestions()
                 }
             }
-            .onChange(of: editTripID) { _, new in
-                if let id = new {
+            .onChange(of: editTripID) { oldValue, newValue in
+                print("TripsTabView: editTripID changed from \(String(describing: oldValue)) to \(String(describing: newValue))")
+                if let id = newValue {
                     sheetTrip = SheetTrip(id: id)
                     editTripID = nil
                 }
             }
         }
-    }
-}
-
-// --- Google Suggestions Widget ---
-struct GooglePlaceSuggestion: Identifiable {
-    let id = UUID()
-    let name: String
-    let photoURL: URL?
-    let description: String?
-}
-
-struct GoogleSuggestionsView: View {
-    let suggestions: [GooglePlaceSuggestion]
-    let onAdd: (GooglePlaceSuggestion) -> Void
-
-    var body: some View {
-        TabView {
-            ForEach(suggestions) { suggestion in
-                VStack(spacing: 16) {
-                    if let url = suggestion.photoURL {
-                        AsyncImage(url: url) { image in
-                            image.resizable()
-                                .scaledToFill()
-                        } placeholder: {
-                            Color.gray.opacity(0.2)
-                        }
-                        .frame(height: 260)
-                        .clipped()
-                        .cornerRadius(18)
-                    }
-                    Text(suggestion.name)
-                        .font(.title2.bold())
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
-                    if let desc = suggestion.description {
-                        Text(desc)
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                    }
-                    Button("Add to Trip") {
-                        onAdd(suggestion)
-                    }
-                    .font(.headline)
-                    .buttonStyle(.borderedProminent)
-                    .padding(.top, 8)
-                }
-                .padding(.vertical, 32)
-                .padding(.horizontal)
-            }
-        }
-        .tabViewStyle(.page)
-        .frame(height: 430)
-    }
-}
-
-// --- Suggestions View (Legacy, fallback) ---
-struct DestinationSuggestion: Identifiable {
-    let id = UUID()
-    let title: String
-    let imageName: String
-}
-
-struct SuggestionsView: View {
-    let suggestions: [DestinationSuggestion]
-    let onAdd: () -> Void
-
-    var body: some View {
-        VStack(spacing: 22) {
-            Text("Top Destinations")
-                .font(.headline)
-                .foregroundColor(.primary)
-                .padding(.top, 24)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 20) {
-                    ForEach(suggestions) { suggestion in
-                        VStack(spacing: 10) {
-                            Image(suggestion.imageName)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 120, height: 80)
-                                .clipped()
-                                .cornerRadius(14)
-                            Text(suggestion.title)
-                                .font(.subheadline.bold())
-                                .foregroundColor(.primary)
-                            Button("Add to Trip") {
-                                onAdd()
-                            }
-                            .font(.caption)
-                            .buttonStyle(.borderedProminent)
-                        }
-                        .frame(width: 130)
-                    }
-                }
-                .padding(.horizontal)
-            }
-        }
-    }
-}
-
-// --- Empty State (optional, could be replaced by SuggestionsView) ---
-struct EmptyTripsView: View {
-    let onAdd: () -> Void
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "airplane.departure")
-                .font(.system(size: 44))
-                .foregroundColor(AppTheme.primary)
-            Text("No planned trips yet!")
-                .font(.title2)
-                .foregroundColor(.secondary)
-            Button(action: onAdd) {
-                Label("Add Your First Trip", systemImage: "plus.circle.fill")
-            }
-            .font(.headline)
-            .foregroundColor(.white)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 12)
-            .background(AppTheme.primary)
-            .cornerRadius(10)
-        }
-        .padding(.vertical, 48)
-        .frame(maxWidth: .infinity)
     }
 }

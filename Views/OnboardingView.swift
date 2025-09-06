@@ -1,4 +1,3 @@
-
 import SwiftUI
 
 struct OnboardingView: View {
@@ -20,6 +19,13 @@ struct OnboardingView: View {
     @State private var privacyEnabled = false
     @State private var showSignUp = false
     @State private var errorMsg: String?
+
+    // Helper to convert comma-separated to [String] array
+    private func csvToArray(_ csv: String) -> [String] {
+        csv.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -60,12 +66,21 @@ struct OnboardingView: View {
             Button(showSignUp ? "Sign Up" : "Login") {
                 if showSignUp {
                     authViewModel.signUp(
-                        email: email, password: password,
-                        name: name, phone: phone, birthday: birthday, gender: gender,
-                        country: country, city: city, bio: bio,
-                        preferences: preferences, favoriteDestinations: favoriteDestinations,
-                        languages: languages, emergencyContact: emergencyContact,
-                        socialLinks: socialLinks, privacyEnabled: privacyEnabled
+                        email: email,
+                        password: password,
+                        name: name,
+                        phone: phone,
+                        birthday: birthday,
+                        gender: gender,
+                        country: country,
+                        city: city,
+                        bio: bio,
+                        preferences: csvToArray(preferences),
+                        favoriteDestinations: csvToArray(favoriteDestinations),
+                        languages: csvToArray(languages),
+                        emergencyContact: emergencyContact,
+                        socialLinks: socialLinks,
+                        privacyEnabled: privacyEnabled
                     ) { success in
                         if !success {
                             errorMsg = authViewModel.errorMessage ?? "Unknown error."

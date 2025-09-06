@@ -7,8 +7,7 @@ struct HomeGreetingView: View {
 
     @State private var showEditProfile = false
 
-    // Create a dummy user profile for demonstration.
-    // Replace this with your real user fetching logic as needed.
+    // Using new UserProfile array fields for demo
     var userProfile: UserProfile {
         UserProfile(
             id: UUID().uuidString,
@@ -20,9 +19,9 @@ struct HomeGreetingView: View {
             country: "",
             city: "",
             bio: "",
-            preferences: "",
-            favoriteDestinations: "",
-            languages: "",
+            preferences: [],
+            favoriteDestinations: [],
+            languages: [],
             emergencyContact: "",
             socialLinks: "",
             privacyEnabled: false,
@@ -69,8 +68,6 @@ struct HomeGreetingView: View {
                             user: userProfile,
                             isAvatarOnly: false,
                             onSave: { updatedUser in
-                                // You can update your @AppStorage or model here if needed
-                                // For example:
                                 name = updatedUser.name
                                 // Save profile image, etc.
                             }

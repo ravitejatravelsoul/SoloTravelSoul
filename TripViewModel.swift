@@ -9,8 +9,14 @@ class TripViewModel: ObservableObject {
 
     private var userId: String? { Auth.auth().currentUser?.uid }
 
-    // DEBUG: Add a sample trip for UI testing. Remove/comment this init when Firebase is ready.
+    // Returns only trips where the user is a member (by id)
+    func myTrips(forUserId uid: String) -> [PlannedTrip] {
+        trips.filter { $0.members.contains(uid) }
+    }
+
+    // MARK: - Init
     init() {
+        // For DEBUG: Add a sample trip for UI testing. Remove/comment this init when Firebase is ready.
         self.trips = [
             PlannedTrip(
                 id: UUID(),
@@ -27,6 +33,8 @@ class TripViewModel: ObservableObject {
             )
         ]
     }
+
+    // MARK: - Firebase Trip Operations
 
     func loadTrips() {
         guard let uid = userId else { self.trips = []; return }
@@ -72,6 +80,7 @@ class TripViewModel: ObservableObject {
     }
 
     // MARK: - Places
+
     func addPlaceToTrip(place: Place, to trip: PlannedTrip) {
         var updated = trip
         if updated.itinerary.isEmpty {
@@ -83,6 +92,7 @@ class TripViewModel: ObservableObject {
     }
 
     // MARK: - Journal Entry Mutations
+
     func deleteJournalEntryFromDay(tripId: UUID, dayId: UUID, entryId: UUID) {
         guard let tripIndex = trips.firstIndex(where: { $0.id == tripId }),
               let dayIndex = trips[tripIndex].itinerary.firstIndex(where: { $0.id == dayId }) else { return }

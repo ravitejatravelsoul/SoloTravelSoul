@@ -1,9 +1,33 @@
 import SwiftUI
 import PhotosUI
+import FirebaseFirestore
 
+// MARK: - Helper for adding new option values to Firestore
+enum ProfileOptionType {
+    case preference, destination, language
+}
+
+func addOptionToFirestore(type: ProfileOptionType, value: String) {
+    let collection: String
+    switch type {
+        case .preference: collection = "profile_options_preferences"
+        case .destination: collection = "profile_options_destinations"
+        case .language: collection = "profile_options_languages"
+    }
+    let db = Firestore.firestore()
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return }
+    db.collection(collection).whereField("value", isEqualTo: trimmed).getDocuments { snapshot, error in
+        guard let snapshot = snapshot, snapshot.documents.isEmpty else { return }
+        db.collection(collection).addDocument(data: ["value": trimmed])
+    }
+}
+
+// MARK: - EditProfileView
 struct EditProfileView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var authViewModel: AuthViewModel
+    @ObservedObject private var optionsVM = ProfileOptionsViewModel()
 
     @State private var profileImageData: Data = Data()
     @State private var name: String
@@ -14,10 +38,10 @@ struct EditProfileView: View {
     @State private var country: String
     @State private var city: String
     @State private var bio: String
-    @State private var preferences: String
+    @State private var selectedPreferences: [String]
     @State private var socialLinks: String
-    @State private var favoriteDestinations: String
-    @State private var languages: String
+    @State private var selectedDestinations: [String]
+    @State private var selectedLanguages: [String]
     @State private var emergencyContact: String
     @State private var privacyEnabled: Bool
 
@@ -25,74 +49,12 @@ struct EditProfileView: View {
     @State private var validationError: String = ""
     @State private var saving = false
 
-    // Image Picker
     @State private var showImagePicker = false
     @State private var selectedPhoto: PhotosPickerItem? = nil
 
-    // Only used for profile pic editing
     let isAvatarOnly: Bool
     var onSave: (UserProfile) -> Void
 
-    // Birthday Picker
-    @State private var showBirthdaySheet = false
-    @State private var birthdayDate: Date = Date()
-
-    // Gender Picker
-    @State private var showGenderSheet = false
-    @State private var genderSearchText = ""
-    let genderOptions = ["Male", "Female", "Non-binary", "Prefer not to say", "Other"]
-
-    // Country & City Sheet
-    @State private var showCountrySheet = false
-    @State private var showCitySheet = false
-    @State private var countrySearchText = ""
-    @State private var citySearchText = ""
-
-    // Multi-select Sheets
-    @State private var showDestSheet = false
-    @State private var showLangSheet = false
-    @State private var showPrefSheet = false
-
-    // Selections
-    @State private var selectedDestinations: Set<String> = []
-    @State private var selectedLanguages: Set<String> = []
-    @State private var selectedPreferences: Set<String> = []
-
-    // Static Data
-    let languageOptions = ["English", "Spanish", "French", "German", "Hindi", "Mandarin", "Arabic"]
-    let destinationOptions = ["Paris", "Tokyo", "Sydney", "New York", "Cape Town", "Rio", "Bali"]
-    let preferenceOptions = ["Hiking", "Beach", "Local Food", "Nightlife", "Museums", "Wildlife", "Shopping"]
-    let countryOptions = ["India", "USA", "France", "Japan", "Australia", "Brazil", "South Africa"]
-    let cityDatabase: [String: [String]] = [
-        "India": ["Mumbai", "Delhi", "Bangalore", "Hyderabad"],
-        "USA": ["New York", "Los Angeles", "Chicago", "Houston"],
-        "France": ["Paris", "Lyon", "Marseille"],
-        "Japan": ["Tokyo", "Kyoto", "Osaka"],
-        "Australia": ["Sydney", "Melbourne", "Brisbane"],
-        "Brazil": ["Rio", "Sao Paulo", "Brasilia"],
-        "South Africa": ["Cape Town", "Johannesburg", "Durban"]
-    ]
-    var filteredCountries: [String] {
-        if countrySearchText.isEmpty { return countryOptions }
-        return countryOptions.filter { $0.localizedCaseInsensitiveContains(countrySearchText) }
-    }
-    var filteredCities: [String] {
-        let suggestions = cityDatabase[country] ?? []
-        if citySearchText.isEmpty { return suggestions }
-        return suggestions.filter { $0.localizedCaseInsensitiveContains(citySearchText) }
-    }
-    var filteredGenders: [String] {
-        if genderSearchText.isEmpty { return genderOptions }
-        return genderOptions.filter { $0.localizedCaseInsensitiveContains(genderSearchText) }
-    }
-
-    let calendarFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
-
-    // MARK: - Init
     init(user: UserProfile, isAvatarOnly: Bool = false, onSave: @escaping (UserProfile) -> Void) {
         _name = State(initialValue: user.name)
         _email = State(initialValue: user.email)
@@ -102,10 +64,10 @@ struct EditProfileView: View {
         _country = State(initialValue: user.country)
         _city = State(initialValue: user.city)
         _bio = State(initialValue: user.bio)
-        _preferences = State(initialValue: user.preferences)
+        _selectedPreferences = State(initialValue: user.preferences)
         _socialLinks = State(initialValue: user.socialLinks)
-        _favoriteDestinations = State(initialValue: user.favoriteDestinations)
-        _languages = State(initialValue: user.languages)
+        _selectedDestinations = State(initialValue: user.favoriteDestinations)
+        _selectedLanguages = State(initialValue: user.languages)
         _emergencyContact = State(initialValue: user.emergencyContact)
         _privacyEnabled = State(initialValue: user.privacyEnabled)
         self.isAvatarOnly = isAvatarOnly
@@ -114,50 +76,31 @@ struct EditProfileView: View {
 
     var body: some View {
         NavigationView {
-            ZStack {
-                AppTheme.background.ignoresSafeArea()
-                ScrollView {
-                    VStack(spacing: 30) {
-                        profileCard
+            ScrollView {
+                VStack(spacing: 30) {
+                    profileCard
 
-                        if !isAvatarOnly {
-                            Group {
-                                SectionHeader(title: "Name", systemImage: "person")
-                                EditField(text: $name, placeholder: "Your Name")
+                    if !isAvatarOnly {
+                        Group {
+                            SectionHeader(title: "Name", systemImage: "person")
+                            EditField(text: $name, placeholder: "Your Name")
 
-                                SectionHeader(title: "Email", systemImage: "envelope")
-                                EditField(text: $email, placeholder: "Your Email", keyboardType: .emailAddress)
+                            SectionHeader(title: "Email", systemImage: "envelope")
+                            EditField(text: $email, placeholder: "Your Email", keyboardType: .emailAddress)
 
-                                SectionHeader(title: "Phone", systemImage: "phone")
-                                EditField(text: $phone, placeholder: "Phone Number", keyboardType: .phonePad)
+                            SectionHeader(title: "Phone", systemImage: "phone")
+                            EditField(text: $phone, placeholder: "Phone Number", keyboardType: .phonePad)
 
-                                SectionHeader(title: "Birthday", systemImage: "calendar")
-                                Button {
-                                    showBirthdaySheet = true
-                                } label: {
-                                    FieldDisplay(text: birthday.isEmpty ? "Select Birthday" : birthday)
-                                }
+                            SectionHeader(title: "Birthday", systemImage: "calendar")
+                            EditField(text: $birthday, placeholder: "yyyy-MM-dd")
 
-                                SectionHeader(title: "Gender", systemImage: "figure.dress.line.vertical.figure")
-                                Button {
-                                    showGenderSheet = true
-                                } label: {
-                                    FieldDisplay(text: gender.isEmpty ? "Select Gender" : gender)
-                                }
-                            }
+                            SectionHeader(title: "Gender", systemImage: "figure.dress.line.vertical.figure")
+                            EditField(text: $gender, placeholder: "Gender")
 
                             SectionHeader(title: "Country", systemImage: "globe")
-                            Button {
-                                showCountrySheet = true
-                            } label: {
-                                FieldDisplay(text: country.isEmpty ? "Select Country" : country)
-                            }
+                            EditField(text: $country, placeholder: "Country")
                             SectionHeader(title: "City", systemImage: "mappin.and.ellipse")
-                            Button {
-                                showCitySheet = true
-                            } label: {
-                                FieldDisplay(text: city.isEmpty ? "Select City" : city)
-                            }
+                            EditField(text: $city, placeholder: "City")
 
                             SectionHeader(title: "Bio", systemImage: "quote.bubble")
                             VStack {
@@ -167,166 +110,88 @@ struct EditProfileView: View {
                                     .background(AppTheme.card)
                                     .cornerRadius(12)
                             }
-
-                            SectionHeader(title: "Preferences", systemImage: "star.circle")
-                            Button {
-                                showPrefSheet = true
-                            } label: {
-                                FieldDisplay(text: selectedPreferences.isEmpty ? "Select Preferences" : selectedPreferences.sorted().joined(separator: ", "))
-                            }
-
-                            SectionHeader(title: "Favorite Destinations", systemImage: "airplane")
-                            Button {
-                                showDestSheet = true
-                            } label: {
-                                FieldDisplay(text: selectedDestinations.isEmpty ? "Select Destinations" : selectedDestinations.sorted().joined(separator: ", "))
-                            }
-
-                            SectionHeader(title: "Language Preferences", systemImage: "character.book.closed")
-                            Button {
-                                showLangSheet = true
-                            } label: {
-                                FieldDisplay(text: selectedLanguages.isEmpty ? "Select Languages" : selectedLanguages.sorted().joined(separator: ", "))
-                            }
-
-                            SectionHeader(title: "Social Media Links", systemImage: "link")
-                            EditField(text: $socialLinks, placeholder: "Links (comma separated)")
-
-                            SectionHeader(title: "Emergency Contact", systemImage: "phone.bubble.left")
-                            EditField(text: $emergencyContact, placeholder: "Emergency Contact")
-
-                            SectionHeader(title: "Privacy", systemImage: "lock.circle")
-                            Toggle("Enable Privacy Mode", isOn: $privacyEnabled)
-                                .toggleStyle(SwitchToggleStyle(tint: AppTheme.primary))
-                                .padding(.horizontal, 16)
                         }
 
-                        Button(action: saveProfile) {
-                            if saving {
-                                ProgressView()
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                            } else {
-                                Text("Save")
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                                    .background(LinearGradient(
-                                        gradient: Gradient(colors: [AppTheme.primary, .purple]),
-                                        startPoint: .leading,
-                                        endPoint: .trailing)
-                                    )
-                                    .foregroundColor(.white)
-                                    .cornerRadius(14)
-                                    .shadow(radius: 3)
-                            }
-                        }
-                        .padding(.top, 10)
-                        .disabled(saving)
+                        SectionHeader(title: "Preferences", systemImage: "star.circle")
+                        ProfileTagDropdownEditor(
+                            title: "Preferences",
+                            items: $selectedPreferences,
+                            suggestions: optionsVM.preferences,
+                            optionType: .preference,
+                            placeholder: "Add new preference"
+                        )
+
+                        SectionHeader(title: "Favorite Destinations", systemImage: "airplane")
+                        ProfileTagDropdownEditor(
+                            title: "Favorite Destinations",
+                            items: $selectedDestinations,
+                            suggestions: optionsVM.destinations,
+                            optionType: .destination,
+                            placeholder: "Add new destination"
+                        )
+
+                        SectionHeader(title: "Languages", systemImage: "character.book.closed")
+                        ProfileTagDropdownEditor(
+                            title: "Languages",
+                            items: $selectedLanguages,
+                            suggestions: optionsVM.languages,
+                            optionType: .language,
+                            placeholder: "Add new language"
+                        )
+
+                        SectionHeader(title: "Social Media Links", systemImage: "link")
+                        EditField(text: $socialLinks, placeholder: "Links (comma separated)")
+
+                        SectionHeader(title: "Emergency Contact", systemImage: "phone.bubble.left")
+                        EditField(text: $emergencyContact, placeholder: "Emergency Contact")
+
+                        SectionHeader(title: "Privacy", systemImage: "lock.circle")
+                        Toggle("Enable Privacy Mode", isOn: $privacyEnabled)
+                            .toggleStyle(SwitchToggleStyle(tint: AppTheme.primary))
+                            .padding(.horizontal, 16)
                     }
-                    .padding(.vertical, 10)
+
+                    Button(action: saveProfile) {
+                        if saving {
+                            ProgressView()
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                        } else {
+                            Text("Save")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(LinearGradient(
+                                    gradient: Gradient(colors: [AppTheme.primary, .purple]),
+                                    startPoint: .leading,
+                                    endPoint: .trailing)
+                                )
+                                .foregroundColor(.white)
+                                .cornerRadius(14)
+                                .shadow(radius: 3)
+                        }
+                    }
+                    .padding(.top, 10)
+                    .disabled(saving)
                 }
-                .alert(validationError, isPresented: $showValidationError) {
-                    Button("OK", role: .cancel) {}
-                }
+                .padding(.vertical, 10)
             }
             .navigationTitle(isAvatarOnly ? "Edit Profile Photo" : "Edit Profile")
             .navigationBarTitleDisplayMode(.inline)
-            .sheet(isPresented: $showBirthdaySheet) {
-                VStack(spacing: 24) {
-                    Text("Select Your Birthday")
-                        .font(.title2).bold()
-                        .padding(.top, 24)
-                    DatePicker(
-                        "",
-                        selection: $birthdayDate,
-                        in: ...Date(),
-                        displayedComponents: .date
-                    )
-                    .datePickerStyle(.graphical)
-                    .labelsHidden()
-                    .padding()
-                    Button("Done") {
-                        birthday = calendarFormatter.string(from: birthdayDate)
-                        showBirthdaySheet = false
-                    }
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(AppTheme.primary)
-                    .foregroundColor(.white)
-                    .cornerRadius(12)
-                    Spacer()
-                }
-                .padding()
+            .alert(validationError, isPresented: $showValidationError) {
+                Button("OK", role: .cancel) {}
             }
-            .sheet(isPresented: $showGenderSheet) {
-                SheetPicker(
-                    title: "Select Gender",
-                    options: filteredGenders,
-                    searchText: $genderSearchText,
-                    selected: $gender,
-                    onDone: { showGenderSheet = false }
-                )
+            .onAppear {
+                optionsVM.fetchPreferences()
+                optionsVM.fetchDestinations()
+                optionsVM.fetchLanguages()
             }
-            .sheet(isPresented: $showCountrySheet) {
-                SheetPicker(
-                    title: "Select Country",
-                    options: filteredCountries,
-                    searchText: $countrySearchText,
-                    selected: $country,
-                    onDone: { showCountrySheet = false }
-                )
-            }
-            .sheet(isPresented: $showCitySheet) {
-                SheetPicker(
-                    title: "Select City",
-                    options: filteredCities,
-                    searchText: $citySearchText,
-                    selected: $city,
-                    onDone: { showCitySheet = false }
-                )
-            }
-            .sheet(isPresented: $showPrefSheet) {
-                MultiSheetPicker(
-                    title: "Preferences",
-                    options: preferenceOptions,
-                    selected: $selectedPreferences,
-                    onDone: { showPrefSheet = false }
-                )
-            }
-            .sheet(isPresented: $showDestSheet) {
-                MultiSheetPicker(
-                    title: "Favorite Destinations",
-                    options: destinationOptions,
-                    selected: $selectedDestinations,
-                    onDone: { showDestSheet = false }
-                )
-            }
-            .sheet(isPresented: $showLangSheet) {
-                MultiSheetPicker(
-                    title: "Language Preferences",
-                    options: languageOptions,
-                    selected: $selectedLanguages,
-                    onDone: { showLangSheet = false }
-                )
-            }
-            .photosPicker(isPresented: $showImagePicker, selection: $selectedPhoto, matching: .images)
-        }
-        .onAppear {
-            // Prefill multi-selects
-            selectedLanguages = Set(languages.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
-            selectedDestinations = Set(favoriteDestinations.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
-            selectedPreferences = Set(preferences.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
-            if let date = calendarFormatter.date(from: birthday) {
-                birthdayDate = date
-            }
-        }
-        .onChange(of: selectedPhoto) {
-            if let newPhoto = selectedPhoto {
-                Task {
-                    if let data = try? await newPhoto.loadTransferable(type: Data.self) {
-                        profileImageData = data
+            .onChange(of: selectedPhoto) { oldValue, newValue in
+                if let newPhoto = newValue {
+                    Task {
+                        if let data = try? await newPhoto.loadTransferable(type: Data.self) {
+                            profileImageData = data
+                        }
                     }
                 }
             }
@@ -348,16 +213,12 @@ struct EditProfileView: View {
                 validationError = "Birthday must be selected."; showValidationError = true; return
             }
         }
-        preferences = selectedPreferences.sorted().joined(separator: ", ")
-        favoriteDestinations = selectedDestinations.sorted().joined(separator: ", ")
-        languages = selectedLanguages.sorted().joined(separator: ", ")
 
         guard let user = authViewModel.user else {
             validationError = "Not logged in."; showValidationError = true; return
         }
         saving = true
 
-        // Always pass profileImageData, as in previous working logic!
         let imageDataToUpload: Data? = profileImageData.isEmpty ? nil : profileImageData
         authViewModel.updateProfile(
             userID: user.uid,
@@ -368,9 +229,9 @@ struct EditProfileView: View {
             country: country,
             city: city,
             bio: bio,
-            preferences: preferences,
-            favoriteDestinations: favoriteDestinations,
-            languages: languages,
+            preferences: selectedPreferences,
+            favoriteDestinations: selectedDestinations,
+            languages: selectedLanguages,
             emergencyContact: emergencyContact,
             socialLinks: socialLinks,
             privacyEnabled: privacyEnabled,
@@ -449,7 +310,6 @@ struct EditProfileView: View {
         .padding(.bottom, 20)
     }
 
-    // MARK: - Validation
     func isValidEmail(_ email: String) -> Bool {
         let emailRegex = #"^[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"#
         return email.range(of: emailRegex, options: .regularExpression) != nil
@@ -457,5 +317,82 @@ struct EditProfileView: View {
     func isValidPhone(_ phone: String) -> Bool {
         let phoneRegex = #"^\+?[0-9]{7,15}$"#
         return phone.range(of: phoneRegex, options: .regularExpression) != nil
+    }
+}
+
+// MARK: - ProfileTagDropdownEditor (Dropdown + manual add & Firestore auto-update)
+struct ProfileTagDropdownEditor: View {
+    let title: String
+    @Binding var items: [String]
+    var suggestions: [String] = []
+    var optionType: ProfileOptionType
+    @State private var newItem: String = ""
+    @State private var selectedSuggestion: String = ""
+    var placeholder: String = "Add new..."
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text(title)
+                .font(.headline)
+
+            // Chips for selected items
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack {
+                    ForEach(items, id: \.self) { item in
+                        HStack(spacing: 2) {
+                            Text(item)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Capsule().fill(Color.blue.opacity(0.15)))
+                            Button(action: {
+                                if let idx = items.firstIndex(of: item) {
+                                    items.remove(at: idx)
+                                }
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.red)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Dropdown picker for suggestions
+            if !suggestions.isEmpty {
+                Picker("Select \(title)", selection: $selectedSuggestion) {
+                    Text("Select \(title)").tag("")
+                    ForEach(suggestions.filter { !items.contains($0) }, id: \.self) { suggestion in
+                        Text(suggestion).tag(suggestion)
+                    }
+                }
+                .pickerStyle(MenuPickerStyle())
+                .onChange(of: selectedSuggestion) { oldValue, newValue in
+                    if !newValue.isEmpty && !items.contains(newValue) {
+                        items.append(newValue)
+                        selectedSuggestion = ""
+                    }
+                }
+            }
+
+            // Manual text field for custom entry (adds to Firestore)
+            HStack {
+                TextField(placeholder, text: $newItem)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                Button(action: {
+                    let trimmed = newItem.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty && !items.contains(trimmed) {
+                        items.append(trimmed)
+                        addOptionToFirestore(type: optionType, value: trimmed)
+                        newItem = ""
+                    }
+                }) {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundColor(.green)
+                        .font(.title2)
+                }
+                .disabled(newItem.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(.vertical, 8)
     }
 }

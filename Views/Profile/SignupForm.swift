@@ -23,6 +23,13 @@ struct SignupForm: View {
         !name.isEmpty && !email.isEmpty && !password.isEmpty && password == confirmPassword
     }
 
+    // Helper to convert comma separated to array
+    private func csvToArray(_ csv: String) -> [String] {
+        csv.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
@@ -76,11 +83,11 @@ struct SignupForm: View {
                         country: country,
                         city: city,
                         bio: bio,
-                        preferences: preferences,
-                        favoriteDestinations: favoriteDestinations,  // <-- moved before socialLinks!
-                        languages: languages,
+                        preferences: csvToArray(preferences),
+                        favoriteDestinations: csvToArray(favoriteDestinations),
+                        languages: csvToArray(languages),
                         emergencyContact: emergencyContact,
-                        socialLinks: socialLinks,                   // <-- now after favoriteDestinations
+                        socialLinks: socialLinks,
                         privacyEnabled: privacyEnabled
                     ) { success in
                         // Do nothing; view will update on login state change

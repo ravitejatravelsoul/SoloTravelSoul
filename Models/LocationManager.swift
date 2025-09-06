@@ -2,6 +2,15 @@ import Foundation
 import CoreLocation
 import Combine
 
+struct GooglePlaceSuggestion: Identifiable {
+    let id = UUID()
+    let name: String
+    let photoURL: URL?
+    let description: String?
+}
+
+// PersonalizedRecommendation is defined in Models/PersonalizedRecommendation.swift and available project-wide.
+
 class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     @Published var city: String?
@@ -47,8 +56,7 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
 
     func fetchGoogleSuggestions() {
-        // --- DEMO/FALLBACK: Simulate Google Places API call ---
-        // Replace this with your real Google Places API logic!
+        // Simulate Google Places API call (replace with your real API logic)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             self.googleSuggestions = [
                 GooglePlaceSuggestion(

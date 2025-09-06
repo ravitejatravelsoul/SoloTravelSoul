@@ -56,7 +56,7 @@ struct GroupChatMessageRow: View {
                     .background(Color.blue.opacity(0.2))
                     .cornerRadius(8)
             } else {
-                // Adjust UserAvatarView call to match your actual initializer signature!
+                // Updated initializer: Use empty arrays for preferences, favoriteDestinations, languages
                 UserAvatarView(
                     user: UserProfile(
                         id: message.senderId,
@@ -68,9 +68,9 @@ struct GroupChatMessageRow: View {
                         country: "",
                         city: "",
                         bio: "",
-                        preferences: "",
-                        favoriteDestinations: "",
-                        languages: "",
+                        preferences: [],
+                        favoriteDestinations: [],
+                        languages: [],
                         emergencyContact: "",
                         socialLinks: "",
                         privacyEnabled: false,
