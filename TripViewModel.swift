@@ -9,52 +9,74 @@ class TripViewModel: ObservableObject {
 
     private var userId: String? { Auth.auth().currentUser?.uid }
 
-    // Returns only trips where the user is a member (by id)
-    func myTrips(forUserId uid: String) -> [PlannedTrip] {
-        trips.filter { $0.members.contains(uid) }
-    }
-
     // MARK: - Init
     init() {
-        // For DEBUG: Add a sample trip for UI testing. Remove/comment this init when Firebase is ready.
-        self.trips = [
-            PlannedTrip(
-                id: UUID(),
-                destination: "Sample Destination",
-                startDate: Date(),
-                endDate: Calendar.current.date(byAdding: .day, value: 3, to: Date())!,
-                notes: "This is a debug trip for UI testing.",
-                itinerary: [],
-                photoData: nil,
-                latitude: nil,
-                longitude: nil,
-                placeName: "Sample Place",
-                members: ["User"]
-            )
-        ]
+        // For UI testing, keep trips empty so suggestions show
+        self.trips = []
+    }
+
+    // MARK: - Computed properties for filtering trips
+
+    var currentUserId: String? {
+        Auth.auth().currentUser?.uid
+    }
+    var today: Date {
+        Calendar.current.startOfDay(for: Date())
+    }
+    var myTrips: [PlannedTrip] {
+        guard let uid = currentUserId else { return [] }
+        return trips.filter { $0.members.contains(uid) }
+    }
+    var upcomingTrips: [PlannedTrip] {
+        myTrips.filter { $0.startDate >= today }.sorted { $0.startDate < $1.startDate }
+    }
+    var pastTrips: [PlannedTrip] {
+        myTrips.filter { $0.endDate < today }.sorted { $0.startDate > $1.startDate }
     }
 
     // MARK: - Firebase Trip Operations
 
     func loadTrips() {
         guard let uid = userId else { self.trips = []; return }
+        print("TripViewModel: Loading trips for user \(uid)")
         isLoading = true
         FirestoreService.shared.fetchTrips(forUser: uid) { [weak self] result in
             DispatchQueue.main.async {
                 self?.isLoading = false
                 switch result {
                 case .success(let trips):
+                    print("TripViewModel: Loaded \(trips.count) trips")
                     self?.trips = trips
+
+                    // Debug: Print loaded trips meta
+                    for trip in trips {
+                        print("Trip \(trip.destination): members = \(trip.members), startDate = \(trip.startDate), endDate = \(trip.endDate)")
+                    }
+                    // Debug: Print filtering results
+                    let uid = self?.currentUserId ?? "nil"
+                    let myTrips = trips.filter { $0.members.contains(uid) }
+                    let today = Calendar.current.startOfDay(for: Date())
+                    let upcoming = myTrips.filter { $0.startDate >= today }
+                    let past = myTrips.filter { $0.endDate < today }
+                    print("CurrentUserId: \(uid)")
+                    print("myTrips: \(myTrips.count), upcoming: \(upcoming.count), past: \(past.count)")
+
                 case .failure(let error):
+                    print("TripViewModel: Failed to load trips: \(error)")
                     self?.errorMessage = error.localizedDescription
                 }
             }
         }
     }
 
+    // Updated: Ensure user is added to members array when creating/updating trip
     func addOrUpdateTrip(_ trip: PlannedTrip) {
         guard let uid = userId else { return }
-        FirestoreService.shared.addOrUpdateTrip(trip, forUser: uid) { [weak self] error in
+        var updatedTrip = trip
+        if !updatedTrip.members.contains(uid) {
+            updatedTrip.members.append(uid)
+        }
+        FirestoreService.shared.addOrUpdateTrip(updatedTrip, forUser: uid) { [weak self] error in
             DispatchQueue.main.async {
                 if let error = error {
                     self?.errorMessage = error.localizedDescription

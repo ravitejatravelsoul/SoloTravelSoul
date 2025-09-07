@@ -38,5 +38,6 @@ struct PersonalizedRecommendationsView: View {
                 .padding(.horizontal)
             }
         }
+        .padding(.vertical)
     }
 }
