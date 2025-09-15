@@ -38,7 +38,8 @@ struct GroupChatView: View {
         }
         .navigationTitle("Group Chat")
         .onAppear {
-            chatVM.setup(groupId: groupId)
+            // Pass both groupId and userId so read logic works!
+            chatVM.setup(groupId: groupId, userId: currentUser.id)
         }
     }
 }

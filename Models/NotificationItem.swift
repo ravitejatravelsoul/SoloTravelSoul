@@ -34,7 +34,8 @@ public struct NotificationItem: Identifiable, Codable, Hashable {
             "type": type,
             "title": title,
             "message": message,
-            "createdAt": createdAt.timeIntervalSince1970,
+            // Store createdAt as Firestore Timestamp for consistency
+            "createdAt": Timestamp(date: createdAt),
             "isRead": isRead
         ]
         if let groupId = groupId { dict["groupId"] = groupId }
@@ -42,20 +43,25 @@ public struct NotificationItem: Identifiable, Codable, Hashable {
     }
 
     public static func fromDict(_ dict: [String: Any]) -> NotificationItem? {
+        // Try to get id from dict, fallback to documentID
         guard let id = dict["id"] as? String,
               let type = dict["type"] as? String,
               let title = dict["title"] as? String,
-              let message = dict["message"] as? String,
-              let isRead = dict["isRead"] as? Bool else { return nil }
+              let message = dict["message"] as? String
+        else { return nil }
+
         let groupId = dict["groupId"] as? String
 
-        // Robust createdAt
         var createdAt: Date = Date()
-        if let ts = dict["createdAt"] as? TimeInterval {
-            createdAt = Date(timeIntervalSince1970: ts)
-        } else if let ts = dict["createdAt"] as? Timestamp {
+        if let ts = dict["createdAt"] as? Timestamp {
             createdAt = ts.dateValue()
+        } else if let ts = dict["createdAt"] as? TimeInterval {
+            createdAt = Date(timeIntervalSince1970: ts)
+        } else if let date = dict["createdAt"] as? Date {
+            createdAt = date
         }
+
+        let isRead = dict["isRead"] as? Bool ?? false
 
         return NotificationItem(
             id: id, type: type, groupId: groupId,

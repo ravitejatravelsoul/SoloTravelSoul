@@ -5,6 +5,7 @@ struct RootTabView: View {
     @StateObject var groupViewModel = GroupViewModel()
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var notificationsVM: NotificationsViewModel
+    @EnvironmentObject var appState: AppState // NEW
 
     @AppStorage("profileImageData") var profileImageData: Data = Data()
 
@@ -60,8 +61,18 @@ struct RootTabView: View {
                         groupViewModel: groupViewModel,
                         currentUser: userProfile
                     )
-                    .tabItem { Label("Groups", systemImage: "person.3.fill") }
+                    .tabItem {
+                        Label("Groups", systemImage: "person.3.fill")
+                            .badge(appState.unreadChatCount) // NEW: group chat badge
+                    }
                     .tag(3)
+
+                    NotificationsScreen()
+                        .tabItem {
+                            Label("Notifications", systemImage: "bell")
+                                .badge(appState.unreadNotificationCount) // NEW: notifications badge
+                        }
+                        .tag(4)
                 } else {
                     ProgressView("Loading profile...")
                         .tabItem { Label("Home", systemImage: "house") }
@@ -103,7 +114,7 @@ struct RootTabView: View {
                         showDrawer = false
                     },
                     onSelectProfile: {
-                        showProfileSheet = true     // <-- Triggers the new ProfileScreen below!
+                        showProfileSheet = true
                         showDrawer = false
                     },
                     onLogout: {
@@ -130,7 +141,6 @@ struct RootTabView: View {
                 )
             }
         }
-        // UPDATED: Show new ProfileScreen as sheet
         .sheet(isPresented: $showProfileSheet) {
             if let userProfile = authViewModel.currentUserProfile {
                 ProfileScreen(user: userProfile)

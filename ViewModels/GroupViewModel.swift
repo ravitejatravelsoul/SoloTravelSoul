@@ -5,19 +5,28 @@ public class GroupViewModel: ObservableObject {
     @Published public var groups: [GroupTrip] = []
     @Published public var errorMessage: String?
 
-    private let db = Firestore.firestore()
-    private let groupsCollection = "groups"
+    internal let db = Firestore.firestore()
+    internal let groupsCollection = "groups"
     private var groupsListener: ListenerRegistration?
+    private var joinRequestsListeners: [String: ListenerRegistration] = [:]
 
     public init() { }
 
     deinit {
         removeGroupsListener()
+        removeAllJoinRequestsListeners()
     }
 
     public func removeGroupsListener() {
         groupsListener?.remove()
         groupsListener = nil
+    }
+
+    public func removeAllJoinRequestsListeners() {
+        for (_, listener) in joinRequestsListeners {
+            listener.remove()
+        }
+        joinRequestsListeners.removeAll()
     }
 
     private func updateGroupChatDoc(for group: GroupTrip, completion: (() -> Void)? = nil) {
@@ -30,7 +39,7 @@ public class GroupViewModel: ObservableObject {
         ], merge: true) { _ in completion?() }
     }
 
-    /// Real-time fetch: listens to all groups, passes all to the UI for sectioning/filtering.
+    // Real-time fetch: listens to all groups, passes all to the UI for sectioning/filtering.
     public func fetchAllGroupsAndFilter(for user: UserProfile) {
         removeGroupsListener()
         groupsListener = db.collection(groupsCollection)
@@ -56,7 +65,7 @@ public class GroupViewModel: ObservableObject {
             }
     }
 
-    // --- Standard fetch (listener, optional fallback) ---
+    // Standard fetch (listener, optional fallback)
     public func fetchAllGroups() {
         removeGroupsListener()
         groupsListener = db.collection(groupsCollection)
@@ -107,7 +116,8 @@ public class GroupViewModel: ObservableObject {
         }
     }
 
-    // --- Updated to support languages ---
+    // --- Group CRUD and Membership Methods ---
+
     public func createGroup(
         name: String,
         destination: String,
@@ -142,52 +152,67 @@ public class GroupViewModel: ObservableObject {
         }
     }
 
-    // --- All other membership/admin logic unchanged ---
-    public func requestToJoin(group: GroupTrip, user: UserProfile) {
-        let ref = db.collection(groupsCollection).document(group.id)
-        ref.updateData([
-            "joinRequests": FieldValue.arrayUnion([user.id]),
-            "requests": FieldValue.arrayUnion([user.toDict()])
-        ]) { [weak self] error in
+    // --- JOIN REQUESTS WITH SUBCOLLECTION (NEW) ---
+    public func requestToJoin(group: GroupTrip, user: UserProfile, completion: (() -> Void)? = nil) {
+        let groupChatRef = db.collection("groupChats").document(group.id)
+        let requestDoc = groupChatRef.collection("requests").document(user.id)
+        let requestData: [String: Any] = [
+            "requestorId": user.id,
+            "requestorName": user.name,
+            "createdAt": FieldValue.serverTimestamp()
+        ]
+        requestDoc.setData(requestData) { [weak self] error in
             if let error = error {
                 print("❌ Failed to send join request: \(error)")
-            } else {
-                self?.updateGroupChatDoc(for: group) {
-                    let adminIds = group.admins.isEmpty ? [group.creator.id] : group.admins
-                    for adminId in adminIds {
-                        NotificationsViewModel.sendNotification(
-                            to: adminId,
-                            type: "join_request",
-                            groupId: group.id,
-                            title: "New Join Request",
-                            message: "\(user.name) requested to join '\(group.name)'"
-                        )
-                    }
+                DispatchQueue.main.async {
+                    self?.errorMessage = "Failed to send join request: \(error.localizedDescription)"
+                }
+                completion?()
+                return
+            }
+            print("✅ Join request sent to groupChats/\(group.id)/requests/\(user.id)")
+            // PATCH: also update group doc joinRequests and requests
+            let groupRef = self?.db.collection(self?.groupsCollection ?? "groups").document(group.id)
+            groupRef?.updateData([
+                "joinRequests": FieldValue.arrayUnion([user.id]),
+                "requests": FieldValue.arrayUnion([user.toDict()])
+            ]) { err in
+                if let err = err {
+                    print("❌ Failed to update group joinRequests: \(err)")
+                }
+                self?.fetchGroup(groupId: group.id) { _ in
+                    completion?()
                 }
             }
         }
     }
 
-    public func cancelJoinRequest(group: GroupTrip, userId: String) {
-        let ref = db.collection(groupsCollection).document(group.id)
-        if let userProfile = group.requests.first(where: { $0.id == userId }) {
-            ref.updateData([
-                "joinRequests": FieldValue.arrayRemove([userId]),
-                "requests": FieldValue.arrayRemove([userProfile.toDict()])
-            ]) { [weak self] error in
-                if let error = error {
-                    print("❌ Failed to cancel join request: \(error)")
+    public func cancelJoinRequest(group: GroupTrip, userId: String, completion: (() -> Void)? = nil) {
+        let groupChatRef = db.collection("groupChats").document(group.id)
+        let requestDoc = groupChatRef.collection("requests").document(userId)
+        requestDoc.delete { [weak self] error in
+            if let error = error {
+                print("❌ Failed to cancel join request: \(error)")
+                DispatchQueue.main.async {
+                    self?.errorMessage = "Failed to cancel join request: \(error.localizedDescription)"
                 }
-                self?.updateGroupChatDoc(for: group)
+                completion?()
+                return
             }
-        } else {
-            ref.updateData([
-                "joinRequests": FieldValue.arrayRemove([userId])
-            ]) { [weak self] error in
-                if let error = error {
-                    print("❌ Failed to cancel join request: \(error)")
+            print("✅ Join request cancelled from groupChats/\(group.id)/requests/\(userId)")
+            let groupRef = self?.db.collection(self?.groupsCollection ?? "groups").document(group.id)
+            // Remove from requests if present (find UserProfile in group.requests)
+            let removedProfiles = group.requests.filter { $0.id == userId }.map { $0.toDict() }
+            groupRef?.updateData([
+                "joinRequests": FieldValue.arrayRemove([userId]),
+                "requests": FieldValue.arrayRemove(removedProfiles)
+            ]) { err in
+                if let err = err {
+                    print("❌ Failed to update group joinRequests: \(err)")
                 }
-                self?.updateGroupChatDoc(for: group)
+                self?.fetchGroup(groupId: group.id) { _ in
+                    completion?()
+                }
             }
         }
     }
@@ -226,15 +251,7 @@ public class GroupViewModel: ObservableObject {
                 print("❌ Failed to approve all requests: \(error)")
             }
             self?.updateGroupChatDoc(for: updatedGroup) {
-                for user in group.requests {
-                    NotificationsViewModel.sendNotification(
-                        to: user.id,
-                        type: "join_approved",
-                        groupId: group.id,
-                        title: "Request Approved",
-                        message: "You are now a member of '\(group.name)'!"
-                    )
-                }
+                // Notification for other users is now handled by Cloud Functions
             }
         }
     }
@@ -252,13 +269,7 @@ public class GroupViewModel: ObservableObject {
                 print("❌ Failed to approve request: \(error)")
             } else {
                 self?.updateGroupChatDoc(for: updatedGroup) {
-                    NotificationsViewModel.sendNotification(
-                        to: user.id,
-                        type: "join_approved",
-                        groupId: group.id,
-                        title: "Request Approved",
-                        message: "You are now a member of '\(group.name)'!"
-                    )
+                    // Notification for other users is now handled by Cloud Functions
                 }
             }
         }
@@ -274,13 +285,7 @@ public class GroupViewModel: ObservableObject {
                 print("❌ Failed to decline request: \(error)")
             } else {
                 self?.updateGroupChatDoc(for: group) {
-                    NotificationsViewModel.sendNotification(
-                        to: user.id,
-                        type: "join_denied",
-                        groupId: group.id,
-                        title: "Request Denied",
-                        message: "Your join request for '\(group.name)' was denied."
-                    )
+                    // Notification for other users is now handled by Cloud Functions
                 }
             }
         }
@@ -296,13 +301,7 @@ public class GroupViewModel: ObservableObject {
             } else {
                 print("✅ \(member.name) promoted to admin")
                 self?.updateGroupChatDoc(for: group) {
-                    NotificationsViewModel.sendNotification(
-                        to: member.id,
-                        type: "promoted",
-                        groupId: group.id,
-                        title: "Promoted to Admin",
-                        message: "You have been promoted to admin in '\(group.name)'."
-                    )
+                    // Notification for other users is now handled by Cloud Functions
                 }
             }
         }
@@ -318,13 +317,7 @@ public class GroupViewModel: ObservableObject {
             } else {
                 print("✅ \(member.name) demoted from admin")
                 self?.updateGroupChatDoc(for: group) {
-                    NotificationsViewModel.sendNotification(
-                        to: member.id,
-                        type: "demoted",
-                        groupId: group.id,
-                        title: "Demoted from Admin",
-                        message: "You have been demoted from admin in '\(group.name)'."
-                    )
+                    // Notification for other users is now handled by Cloud Functions
                 }
             }
         }
@@ -343,13 +336,7 @@ public class GroupViewModel: ObservableObject {
             } else {
                 print("✅ \(member.name) removed from group")
                 self?.updateGroupChatDoc(for: updatedGroup) {
-                    NotificationsViewModel.sendNotification(
-                        to: member.id,
-                        type: "removed",
-                        groupId: group.id,
-                        title: "Removed from Group",
-                        message: "You have been removed from '\(group.name)'."
-                    )
+                    // Notification for other users is now handled by Cloud Functions
                 }
             }
         }
@@ -388,20 +375,7 @@ public class GroupViewModel: ObservableObject {
                         } else {
                             print("✅ Ownership transferred to \(newCreator.name), previous creator removed")
                             self?.updateGroupChatDoc(for: updatedGroup) {
-                                NotificationsViewModel.sendNotification(
-                                    to: newCreator.id,
-                                    type: "ownership_transferred",
-                                    groupId: group.id,
-                                    title: "Ownership Transferred",
-                                    message: "You are now the owner of '\(group.name)'."
-                                )
-                                NotificationsViewModel.sendNotification(
-                                    to: previousCreatorId,
-                                    type: "left_group",
-                                    groupId: group.id,
-                                    title: "You Left the Group",
-                                    message: "You transferred ownership and left '\(group.name)'."
-                                )
+                                // Notification for other users is now handled by Cloud Functions
                             }
                         }
                     }
@@ -430,15 +404,7 @@ public class GroupViewModel: ObservableObject {
                                 }
                                 print("❌ Failed to delete group: \(error.localizedDescription)")
                             } else {
-                                for member in group.members {
-                                    NotificationsViewModel.sendNotification(
-                                        to: member.id,
-                                        type: "group_deleted",
-                                        groupId: group.id,
-                                        title: "Group Deleted",
-                                        message: "The group '\(group.name)' has been deleted."
-                                    )
-                                }
+                                // Notification for other users is now handled by Cloud Functions
                                 print("✅ Group deleted: \(group.id)")
                                 DispatchQueue.main.async {
                                     completion?()
@@ -456,15 +422,7 @@ public class GroupViewModel: ObservableObject {
                             }
                             print("❌ Failed to delete group: \(error.localizedDescription)")
                         } else {
-                            for member in group.members {
-                                NotificationsViewModel.sendNotification(
-                                    to: member.id,
-                                    type: "group_deleted",
-                                    groupId: group.id,
-                                    title: "Group Deleted",
-                                    message: "The group '\(group.name)' has been deleted."
-                                )
-                            }
+                            // Notification for other users is now handled by Cloud Functions
                             print("✅ Group deleted: \(group.id)")
                             DispatchQueue.main.async {
                                 completion?()
@@ -474,5 +432,27 @@ public class GroupViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    // --- Optionally add this for real-time join requests subscription ---
+    public func observeJoinRequests(
+        for groupId: String,
+        onUpdate: @escaping ([JoinRequest]) -> Void
+    ) {
+        // Remove old if present
+        joinRequestsListeners[groupId]?.remove()
+        let listener = db.collection("groupChats")
+            .document(groupId)
+            .collection("requests")
+            .addSnapshotListener { snapshot, error in
+                if let error = error {
+                    print("❌ Error observing join requests: \(error)")
+                    onUpdate([])
+                    return
+                }
+                let requests = snapshot?.documents.compactMap { JoinRequest.fromDict($0.data()) } ?? []
+                onUpdate(requests)
+            }
+        joinRequestsListeners[groupId] = listener
     }
 }

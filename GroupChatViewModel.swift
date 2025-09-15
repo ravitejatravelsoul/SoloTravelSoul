@@ -5,8 +5,13 @@ class GroupChatViewModel: ObservableObject {
     @Published var messages: [GroupMessage] = []
     private var listener: ListenerRegistration?
     private let db = Firestore.firestore()
+    private(set) var groupId: String = ""
+    private(set) var userId: String = ""
 
-    func setup(groupId: String) {
+    // Call this when opening the chat screen
+    func setup(groupId: String, userId: String) {
+        self.groupId = groupId
+        self.userId = userId
         listener?.remove()
         messages.removeAll()
         listener = db.collection("groupChats")
@@ -15,14 +20,20 @@ class GroupChatViewModel: ObservableObject {
             .order(by: "timestamp")
             .addSnapshotListener { [weak self] snapshot, error in
                 guard let self = self else { return }
-                if let docs = snapshot?.documents {
-                    self.messages = docs.compactMap { GroupMessage(dict: $0.data()) }
-                }
+                guard let docs = snapshot?.documents else { return }
+                self.messages = docs.compactMap { GroupMessage(dict: $0.data()) }
+                self.markAllMessagesAsRead()
             }
     }
 
     func sendMessage(sender: UserProfile, text: String, groupId: String) {
-        let message = GroupMessage(groupId: groupId, senderId: sender.id, senderName: sender.name, text: text)
+        let message = GroupMessage(
+            groupId: groupId,
+            senderId: sender.id,
+            senderName: sender.name,
+            text: text,
+            isReadBy: [sender.id] // sender has read their own message
+        )
 
         // Fetch group info from /groups in order to update /groupChats
         let groupRef = db.collection("groups").document(groupId)
@@ -43,7 +54,7 @@ class GroupChatViewModel: ObservableObject {
                 "members": memberIds
             ], merge: true)
 
-            // Send the message
+            // Send the message with isReadBy field
             self.db.collection("groupChats")
                 .document(groupId)
                 .collection("messages")
@@ -56,16 +67,21 @@ class GroupChatViewModel: ObservableObject {
                     }
                 }
 
-            // Notify everyone except sender
-            for memberId in memberIds where memberId != sender.id {
-                NotificationsViewModel.sendNotification(
-                    to: memberId,
-                    type: "group_chat",
-                    groupId: groupId,
-                    title: "New message in \(groupName)",
-                    message: "\(sender.name): \(text.prefix(100))"
-                )
-            }
+            // Notification for other users is now handled by Cloud Functions
+        }
+    }
+
+    // MARK: - Mark all unread messages as read for this user
+    func markAllMessagesAsRead() {
+        let unreadMsgs = messages.filter { !($0.isReadBy?.contains(userId) ?? false) }
+        for msg in unreadMsgs {
+            db.collection("groupChats")
+                .document(groupId)
+                .collection("messages")
+                .document(msg.id)
+                .updateData([
+                    "isReadBy": FieldValue.arrayUnion([userId])
+                ])
         }
     }
 

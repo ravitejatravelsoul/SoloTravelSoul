@@ -8,7 +8,7 @@ public struct GroupTrip: Identifiable, Equatable {
     public var endDate: Date
     public var description: String?
     public var activities: [String]?
-    public var languages: [String]? // <-- Added languages
+    public var languages: [String]?
     public var creator: UserProfile
     public var members: [UserProfile]
     public var admins: [String]
@@ -23,7 +23,7 @@ public struct GroupTrip: Identifiable, Equatable {
         endDate: Date,
         description: String? = nil,
         activities: [String]? = nil,
-        languages: [String]? = nil, // <-- Added languages
+        languages: [String]? = nil,
         creator: UserProfile,
         members: [UserProfile] = [],
         admins: [String] = [],
@@ -37,7 +37,7 @@ public struct GroupTrip: Identifiable, Equatable {
         self.endDate = endDate
         self.description = description
         self.activities = activities
-        self.languages = languages // <-- Added languages
+        self.languages = languages
         self.creator = creator
         self.members = members
         self.admins = admins
@@ -60,7 +60,7 @@ public struct GroupTrip: Identifiable, Equatable {
         ]
         if let desc = description { dict["description"] = desc }
         if let acts = activities { dict["activities"] = acts }
-        if let langs = languages { dict["languages"] = langs } // <-- Added languages
+        if let langs = languages { dict["languages"] = langs }
         return dict
     }
 
@@ -80,7 +80,7 @@ public struct GroupTrip: Identifiable, Equatable {
         else { return nil }
         let description = dict["description"] as? String
         let activities = dict["activities"] as? [String]
-        let languages = dict["languages"] as? [String] // <-- Added languages
+        let languages = dict["languages"] as? [String]
         let members = membersArray.compactMap { UserProfile.fromDict($0) }
         let requests = requestsArray.compactMap { UserProfile.fromDict($0) }
         return GroupTrip(
@@ -91,7 +91,7 @@ public struct GroupTrip: Identifiable, Equatable {
             endDate: Date(timeIntervalSince1970: endTimestamp),
             description: description,
             activities: activities,
-            languages: languages, // <-- Added languages
+            languages: languages,
             creator: creator,
             members: members,
             admins: admins,

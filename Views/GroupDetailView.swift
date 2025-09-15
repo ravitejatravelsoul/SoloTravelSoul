@@ -1,4 +1,5 @@
 import SwiftUI
+import FirebaseFirestore
 
 struct GroupDetailView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
@@ -10,7 +11,6 @@ struct GroupDetailView: View {
     @State private var showMembers = false
     @State private var showChat = false
 
-    // For delete/transfer/make admin logic:
     @State private var showDeleteActionSheet = false
     @State private var showAdminPicker = false
     @State private var showTransferPicker = false
@@ -18,6 +18,8 @@ struct GroupDetailView: View {
     @State private var selectedTransferUserId: String? = nil
     @State private var showDeleteFinalAlert = false
     @State private var isPerformingAction = false
+
+    @State private var requestsListener: ListenerRegistration? = nil
 
     init(groupViewModel: GroupViewModel, group: GroupTrip) {
         self.groupViewModel = groupViewModel
@@ -29,10 +31,12 @@ struct GroupDetailView: View {
         let creatorId = group.creator.id
         return myUid == creatorId
     }
+
     var isMember: Bool {
         guard let uid = authViewModel.user?.uid else { return false }
         return group.members.contains(where: { $0.id == uid })
     }
+
     var hasRequested: Bool {
         guard let uid = authViewModel.user?.uid else { return false }
         let inRequests = group.requests.contains(where: { $0.id == uid })
@@ -56,7 +60,6 @@ struct GroupDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .center, spacing: 28) {
-                // --- Centered Group Header ---
                 VStack(spacing: 8) {
                     Text(group.name)
                         .font(.largeTitle.bold())
@@ -81,7 +84,6 @@ struct GroupDetailView: View {
                 .padding(.vertical, 8)
                 .padding(.horizontal)
 
-                // --- Activities Card ---
                 if let activities = group.activities, !activities.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Activities")
@@ -106,7 +108,6 @@ struct GroupDetailView: View {
                     .padding(.horizontal)
                 }
 
-                // --- Members & Chat Buttons ---
                 HStack(spacing: 16) {
                     Button {
                         showMembers = true
@@ -135,7 +136,6 @@ struct GroupDetailView: View {
                 }
                 .padding(.horizontal)
 
-                // --- Admin/Join Controls Section ---
                 VStack(alignment: .leading, spacing: 16) {
                     if isCreator {
                         creatorRequestSection
@@ -188,7 +188,14 @@ struct GroupDetailView: View {
                 }
             }
         }
-        .onAppear { reloadGroup() }
+        .onAppear {
+            reloadGroup()
+            setupRequestsListener()
+        }
+        .onDisappear {
+            requestsListener?.remove()
+            requestsListener = nil
+        }
         .actionSheet(isPresented: $showDeleteActionSheet) {
             var buttons: [ActionSheet.Button] = []
             if isLastMember {
@@ -227,7 +234,6 @@ struct GroupDetailView: View {
         }, message: {
             Text("Are you sure you want to delete this group? This cannot be undone.")
         })
-
         .sheet(isPresented: $showAdminPicker, onDismiss: {
             selectedAdminId = nil
         }) {
@@ -283,7 +289,6 @@ struct GroupDetailView: View {
                 }
             }
         }
-
         .sheet(isPresented: $showTransferPicker, onDismiss: {
             selectedTransferUserId = nil
         }) {
@@ -430,19 +435,22 @@ struct GroupDetailView: View {
                 GroupBadge(title: "Join request pending", systemImage: "hourglass", color: .orange)
                 Button("Cancel Request") {
                     if let uid = authViewModel.user?.uid {
-                        groupViewModel.cancelJoinRequest(group: group, userId: uid)
-                        reloadGroup()
+                        groupViewModel.cancelJoinRequest(group: group, userId: uid) {
+                            reloadGroup()
+                        }
                     }
                 }
                 .foregroundColor(.orange)
             } else {
                 Button {
                     if let profile = authViewModel.profile {
-                        groupViewModel.requestToJoin(group: group, user: profile)
-                        reloadGroup()
+                        groupViewModel.requestToJoin(group: group, user: profile) {
+                            reloadGroup()
+                        }
                     } else if let fallback = authViewModel.currentUserProfile {
-                        groupViewModel.requestToJoin(group: group, user: fallback)
-                        reloadGroup()
+                        groupViewModel.requestToJoin(group: group, user: fallback) {
+                            reloadGroup()
+                        }
                     }
                 } label: {
                     Label("Request to Join", systemImage: "person.badge.plus")
@@ -477,6 +485,35 @@ struct GroupDetailView: View {
             } else {
                 presentationMode.wrappedValue.dismiss()
             }
+        }
+    }
+
+    // --- Real-time join requests sync ---
+    private func setupRequestsListener() {
+        requestsListener?.remove()
+        groupViewModel.observeJoinRequests(for: group.id) { joinRequests in
+            let pendingUsers: [UserProfile] = joinRequests.map {
+                UserProfile(
+                    id: $0.id,
+                    name: $0.name,
+                    email: "",
+                    phone: "",
+                    birthday: "",
+                    gender: "",
+                    country: "",
+                    city: "",
+                    bio: "",
+                    preferences: [],
+                    favoriteDestinations: [],
+                    languages: [],
+                    emergencyContact: "",
+                    socialLinks: "",
+                    privacyEnabled: false
+                )
+            }
+            var updated = group
+            updated.requests = pendingUsers
+            self.group = updated
         }
     }
 }
