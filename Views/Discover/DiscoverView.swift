@@ -215,42 +215,6 @@ struct DiscoverFilters: Equatable {
     var maxResults: Int = 50
     var sortBy: SortBy = .distance
 }
-
-final class DiscoverLocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
-    @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
-    @Published var userLocation: CLLocation?
-    private let manager = CLLocationManager()
-    override init() {
-        super.init()
-        manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyBest
-    }
-    func requestAuthorization() {
-        if CLLocationManager.locationServicesEnabled() {
-            // Only request if status is notDetermined
-            if manager.authorizationStatus == .notDetermined {
-                manager.requestWhenInUseAuthorization()
-            }
-        }
-    }
-    func startUpdating() {
-        if authorizationStatus == .authorizedAlways || authorizationStatus == .authorizedWhenInUse {
-            manager.startUpdatingLocation()
-        }
-    }
-    func stopUpdating() { manager.stopUpdatingLocation() }
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        authorizationStatus = manager.authorizationStatus
-        if authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways {
-            startUpdating()
-        }
-    }
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let loc = locations.last else { return }
-        userLocation = loc
-    }
-}
-
 final class STSGooglePlacesService {
     private let apiKey: String
     init(apiKey: String) { self.apiKey = apiKey }
@@ -629,8 +593,7 @@ struct DiscoverView: View {
                 }
                 .onAppear {
                     if locationManager.authorizationStatus == .notDetermined {
-                        locationManager.requestAuthorization()
-                    }
+                        locationManager.requestAuthorizationAndMaybeStartUpdating()                    }
                     updatePlacesForRegion()
                 }
                 .modifier(CameraChangeModifier(
@@ -873,7 +836,7 @@ struct DiscoverView: View {
                 locationManager.startUpdating()
             }
         case .notDetermined:
-            locationManager.requestAuthorization()
+            locationManager.requestAuthorizationAndMaybeStartUpdating()
         default:
             break
         }

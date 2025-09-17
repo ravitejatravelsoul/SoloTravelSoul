@@ -14,6 +14,8 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var city: String?
     @Published var recommendationsForCity: [PersonalizedRecommendation] = []
     @Published var googleSuggestions: [GooglePlaceSuggestion] = []
+    private var shouldRequestLocationWhenAuthorized = false
+    private var shouldFetchGoogleSuggestionsAfterLocation = false
 
     override init() {
         super.init()
@@ -22,31 +24,63 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         print("LocationManager: Initialized")
     }
 
-    func requestLocation() {
-        print("LocationManager: requestLocation called")
-        // Only request authorization if status is notDetermined
+    /// Call this from your view or controller to start the location flow + suggestions
+    func requestLocationAndMaybeFetchSuggestions() {
+        print("LocationManager: requestLocationAndMaybeFetchSuggestions called")
         let status = manager.authorizationStatus
-        if status == .notDetermined {
+        switch status {
+        case .authorizedWhenInUse, .authorizedAlways:
+            self.requestLocation()
+            self.fetchGoogleSuggestions()
+        case .notDetermined:
+            // Set flags so after auth, we proceed
+            shouldRequestLocationWhenAuthorized = true
+            shouldFetchGoogleSuggestionsAfterLocation = true
             manager.requestWhenInUseAuthorization()
-            // Do not call manager.requestLocation() until authorized!
-        } else if status == .authorizedWhenInUse || status == .authorizedAlways {
-            manager.requestLocation()
-        } else if status == .denied || status == .restricted {
-            // Optionally, handle denied state here if needed
+        case .denied, .restricted:
             DispatchQueue.main.async {
                 self.city = "your area"
                 self.fetchRecommendations(for: self.city ?? "your area")
             }
+        @unknown default:
+            break
         }
     }
 
-    // Called when authorization status changes
+    /// Only call this standalone if you just want location, not suggestions
+    func requestLocation() {
+        print("LocationManager: requestLocation called")
+        let status = manager.authorizationStatus
+        switch status {
+        case .notDetermined:
+            shouldRequestLocationWhenAuthorized = true
+            manager.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse, .authorizedAlways:
+            manager.requestLocation()
+        case .denied, .restricted:
+            DispatchQueue.main.async {
+                self.city = "your area"
+                self.fetchRecommendations(for: self.city ?? "your area")
+            }
+        @unknown default:
+            break
+        }
+    }
+
+    // Only here do we request location if authorized, and only if we previously set the flag
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         let status = manager.authorizationStatus
         print("LocationManager: Authorization status changed: \(status.rawValue)")
-        if status == .authorizedWhenInUse || status == .authorizedAlways {
+        if (status == .authorizedWhenInUse || status == .authorizedAlways) && shouldRequestLocationWhenAuthorized {
+            shouldRequestLocationWhenAuthorized = false
             manager.requestLocation()
+            if shouldFetchGoogleSuggestionsAfterLocation {
+                shouldFetchGoogleSuggestionsAfterLocation = false
+                // We'll call fetchGoogleSuggestions after city is set in didUpdateLocations for best results
+            }
         } else if status == .denied || status == .restricted {
+            shouldRequestLocationWhenAuthorized = false
+            shouldFetchGoogleSuggestionsAfterLocation = false
             DispatchQueue.main.async {
                 self.city = "your area"
                 self.fetchRecommendations(for: self.city ?? "your area")
@@ -72,11 +106,19 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
                     self.city = locality
                     print("LocationManager: City set to \(locality)")
                     self.fetchRecommendations(for: locality)
+                    if self.shouldFetchGoogleSuggestionsAfterLocation || self.googleSuggestions.isEmpty {
+                        self.shouldFetchGoogleSuggestionsAfterLocation = false
+                        self.fetchGoogleSuggestions()
+                    }
                 }
             } else {
                 DispatchQueue.main.async {
                     self.city = "your area"
                     self.fetchRecommendations(for: self.city ?? "your area")
+                    if self.shouldFetchGoogleSuggestionsAfterLocation || self.googleSuggestions.isEmpty {
+                        self.shouldFetchGoogleSuggestionsAfterLocation = false
+                        self.fetchGoogleSuggestions()
+                    }
                 }
             }
         }
@@ -87,6 +129,10 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         DispatchQueue.main.async {
             self.city = "your area"
             self.fetchRecommendations(for: self.city ?? "your area")
+            if self.shouldFetchGoogleSuggestionsAfterLocation || self.googleSuggestions.isEmpty {
+                self.shouldFetchGoogleSuggestionsAfterLocation = false
+                self.fetchGoogleSuggestions()
+            }
         }
     }
 

@@ -66,8 +66,7 @@ struct TripsTabView: View {
                     tripViewModel.loadTrips()
                 }
                 if locationManager.googleSuggestions.isEmpty {
-                    locationManager.requestLocation()
-                    locationManager.fetchGoogleSuggestions()
+                    locationManager.requestLocationAndMaybeFetchSuggestions()
                 }
             }
             .onChange(of: editTripID) { _, newValue in
