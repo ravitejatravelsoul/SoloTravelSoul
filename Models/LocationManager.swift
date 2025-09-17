@@ -24,8 +24,34 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     func requestLocation() {
         print("LocationManager: requestLocation called")
-        manager.requestWhenInUseAuthorization()
-        manager.requestLocation()
+        // Only request authorization if status is notDetermined
+        let status = manager.authorizationStatus
+        if status == .notDetermined {
+            manager.requestWhenInUseAuthorization()
+            // Do not call manager.requestLocation() until authorized!
+        } else if status == .authorizedWhenInUse || status == .authorizedAlways {
+            manager.requestLocation()
+        } else if status == .denied || status == .restricted {
+            // Optionally, handle denied state here if needed
+            DispatchQueue.main.async {
+                self.city = "your area"
+                self.fetchRecommendations(for: self.city ?? "your area")
+            }
+        }
+    }
+
+    // Called when authorization status changes
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
+        print("LocationManager: Authorization status changed: \(status.rawValue)")
+        if status == .authorizedWhenInUse || status == .authorizedAlways {
+            manager.requestLocation()
+        } else if status == .denied || status == .restricted {
+            DispatchQueue.main.async {
+                self.city = "your area"
+                self.fetchRecommendations(for: self.city ?? "your area")
+            }
+        }
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
@@ -33,18 +59,35 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         guard let location = locations.first else { return }
         let geo = CLGeocoder()
         geo.reverseGeocodeLocation(location) { placemarks, error in
-            if let placemark = placemarks?.first {
-                self.city = placemark.locality ?? "your area"
-                print("LocationManager: City set to \(self.city!)")
-                self.fetchRecommendations(for: self.city!)
+            if let error = error {
+                print("LocationManager: Reverse geocode failed: \(error)")
+                DispatchQueue.main.async {
+                    self.city = "your area"
+                    self.fetchRecommendations(for: self.city ?? "your area")
+                }
+                return
+            }
+            if let placemark = placemarks?.first, let locality = placemark.locality {
+                DispatchQueue.main.async {
+                    self.city = locality
+                    print("LocationManager: City set to \(locality)")
+                    self.fetchRecommendations(for: locality)
+                }
+            } else {
+                DispatchQueue.main.async {
+                    self.city = "your area"
+                    self.fetchRecommendations(for: self.city ?? "your area")
+                }
             }
         }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         print("LocationManager: didFailWithError: \(error)")
-        self.city = "your area"
-        self.fetchRecommendations(for: self.city!)
+        DispatchQueue.main.async {
+            self.city = "your area"
+            self.fetchRecommendations(for: self.city ?? "your area")
+        }
     }
 
     func fetchRecommendations(for city: String) {

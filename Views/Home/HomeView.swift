@@ -7,9 +7,11 @@ struct HomeView: View {
     @Binding var selectedTab: Int
     @Binding var editTripID: UUID?
 
-    // Add these properties:
     @ObservedObject var groupViewModel: GroupViewModel
     let currentUser: UserProfile
+
+    @Binding var showNotifications: Bool
+    @EnvironmentObject var appState: AppState
 
     @State private var showAddTrip = false
     @State private var showDiscover = false
@@ -79,7 +81,6 @@ struct HomeView: View {
                     }
                     .padding(.horizontal)
 
-                    // --- YOUR ORIGINAL CONTENT BELOW ---
                     // Next Trip Card
                     if let nextTrip = tripViewModel.trips.first {
                         NextTripOverviewCard(
@@ -118,19 +119,37 @@ struct HomeView: View {
                 }
                 .padding(.horizontal)
             }
-            .navigationTitle("") // Hide default nav title, since we're showing it in content
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showNotifications = true
+                    } label: {
+                        ZStack {
+                            Image(systemName: "bell")
+                                .imageScale(.large)
+                            if appState.unreadNotificationCount > 0 {
+                                Circle()
+                                    .fill(Color.red)
+                                    .frame(width: 10, height: 10)
+                                    .offset(x: 8, y: -8)
+                            }
+                        }
+                    }
+                }
+            }
             .sheet(isPresented: $showAddTrip) {
                 AddTripView { newTrip in
                     tripViewModel.addTrip(newTrip)
                 }
             }
             .sheet(isPresented: $showDiscover) {
-                // Pass groupViewModel and currentUser here!
+                // Restored: Pass planned dependencies to DiscoverView
                 DiscoverView(
-                    tripViewModel: tripViewModel,
                     groupViewModel: groupViewModel,
-                    currentUser: currentUser
+                    currentUser: currentUser,
+                    showNotifications: $showNotifications
                 )
                 .environmentObject(tripViewModel)
             }

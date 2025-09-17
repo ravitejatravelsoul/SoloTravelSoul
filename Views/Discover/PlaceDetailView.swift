@@ -26,7 +26,6 @@ struct PlaceDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                // --- Fix: Use .background and .clipped for proper image display & fallback ---
                 if let photos = place.photoReferences, !photos.isEmpty {
                     TabView {
                         ForEach(photos, id: \.self) { ref in
@@ -68,12 +67,12 @@ struct PlaceDetailView: View {
                 if let address = place.address {
                     Text(address).font(.callout)
                 }
-                if let open = place.openingHours?.open_now {
+                if let open = place.openingHours?.openNow {
                     Text(open ? "Open now" : "Closed")
                         .font(.caption)
                         .foregroundColor(open ? .green : .red)
                 }
-                if let hours = place.openingHours?.weekday_text {
+                if let hours = place.openingHours?.weekdayText {
                     ForEach(hours, id: \.self) { line in
                         Text(line).font(.caption2).foregroundColor(.secondary)
                     }
@@ -99,16 +98,16 @@ struct PlaceDetailView: View {
 
                 if let reviews = place.reviews, !reviews.isEmpty {
                     Text("Reviews").font(.headline)
-                    ForEach(reviews.prefix(3), id: \.self) { review in
+                    ForEach(reviews.prefix(3)) { review in
                         VStack(alignment: .leading) {
-                            if let author = review.author_name {
+                            if let author = review.authorName {
                                 Text(author).font(.subheadline).bold()
                             }
                             if let text = review.text {
                                 Text("\"\(text)\"")
                                     .foregroundColor(.secondary)
                             }
-                            if let desc = review.relative_time_description {
+                            if let desc = review.relativeTimeDescription {
                                 Text(desc).font(.caption2).foregroundColor(.gray)
                             }
                             Divider()

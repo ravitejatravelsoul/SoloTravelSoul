@@ -1,288 +1,993 @@
 import SwiftUI
 import MapKit
+import CoreLocation
 
-struct DiscoverView: View {
-    @EnvironmentObject var tripViewModel: TripViewModel
-    @ObservedObject var searchViewModel: PlaceSearchViewModel
-    @ObservedObject var groupViewModel: GroupViewModel
-    let currentUser: UserProfile
+private let GOOGLE_PLACES_API_KEY = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU"
 
-    @State private var selectedPlace: Place? = nil
-    @State private var loadingDetail: Bool = false
-    @State private var detailError: String? = nil
-
-    let gridColumns: [GridItem] = [GridItem(.flexible()), GridItem(.flexible())]
-
-    // Region and activity filters
-    @State private var selectedRegion: String = "Paris"
-    @State private var selectedActivity: String = "All"
-    let regions = ["Paris", "London", "New York", "Tokyo", "Rome", "Sydney"]
-    let suggestedActivities = ["All", "Restaurant", "Beach", "Museum", "Hiking", "Park", "Shopping", "Nightlife", "Cafe"]
-
-    init(tripViewModel: TripViewModel, groupViewModel: GroupViewModel, currentUser: UserProfile) {
-        self._searchViewModel = ObservedObject(wrappedValue: PlaceSearchViewModel(tripViewModel: tripViewModel))
-        self._groupViewModel = ObservedObject(wrappedValue: groupViewModel)
-        self.currentUser = currentUser
+fileprivate func googlePlacePhotoURL(photoReference: String, maxWidth: Int = 400) -> URL? {
+    let apiKey = GOOGLE_PLACES_API_KEY
+    if photoReference.starts(with: "places/") {
+        var components = URLComponents(string: "https://places.googleapis.com/v1/\(photoReference)/media")
+        components?.queryItems = [
+            URLQueryItem(name: "key", value: apiKey),
+            URLQueryItem(name: "maxWidthPx", value: "\(maxWidth)")
+        ]
+        return components?.url
+    } else {
+        var components = URLComponents(string: "https://maps.googleapis.com/maps/api/place/photo")
+        components?.queryItems = [
+            URLQueryItem(name: "maxwidth", value: "\(maxWidth)"),
+            URLQueryItem(name: "photoreference", value: photoReference),
+            URLQueryItem(name: "key", value: apiKey)
+        ]
+        return components?.url
     }
+}
 
-    private func handlePlaceTap(place: Place) {
-        loadingDetail = true
-        detailError = nil
-        searchViewModel.fetchPlaceDetails(placeID: place.id) { detailedPlace, error in
-            DispatchQueue.main.async {
-                loadingDetail = false
-                if let detailedPlace = detailedPlace {
-                    self.selectedPlace = detailedPlace
-                } else {
-                    self.detailError = error ?? "Failed to load details"
-                }
-            }
-        }
-    }
-
-    // --- Region/City Filter Bar ---
-    var regionFilterBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(regions, id: \.self) { region in
-                    Button(action: {
-                        selectedRegion = region
-                        Task {
-                            await searchViewModel.fetchTopPlaces(for: "tourist attractions in \(region)")
-                        }
-                    }) {
-                        Text(region)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(selectedRegion == region ? Color.blue : Color.gray.opacity(0.2))
-                            .foregroundColor(selectedRegion == region ? .white : .primary)
-                            .font(.callout.bold())
-                            .cornerRadius(16)
-                    }
-                }
-            }
-            .padding(.horizontal)
-        }
-        .padding(.top, 8)
-    }
-
-    // --- Suggested Activities Filter Bar ---
-    var activityFilterBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(suggestedActivities, id: \.self) { activity in
-                    Button(action: {
-                        selectedActivity = activity
-                        searchViewModel.filterActivity = activity == "All" ? nil : activity
-                        searchViewModel.applyActivityFilter()
-                    }) {
-                        Text(activity)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(selectedActivity == activity ? Color.purple : Color.gray.opacity(0.15))
-                            .foregroundColor(selectedActivity == activity ? .white : .primary)
-                            .font(.callout)
-                            .cornerRadius(15)
-                    }
-                }
-            }
-            .padding(.horizontal)
-        }
-        .padding(.top, 8)
-    }
-
-    // --- Places Grid ---
-    var placesGrid: some View {
-        let places = searchViewModel.filteredResults
-        return ScrollView {
-            LazyVGrid(columns: gridColumns, spacing: 16) {
-                if places.isEmpty && !searchViewModel.isLoading {
-                    Text("No places found for selected filters.")
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 40)
-                }
-                ForEach(places) { place in
-                    DiscoverPlaceCell(place: place, handlePlaceTap: handlePlaceTap)
-                }
-            }
-            .padding([.horizontal, .bottom])
-        }
-    }
-
+struct LocationPermissionView: View {
     var body: some View {
-        VStack(spacing: 0) {
-            // --- Centered Discover Title ---
-            HStack {
-                Spacer()
-                Text("Discover")
-                    .font(.largeTitle.bold())
-                    .foregroundColor(.primary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                Spacer()
+        VStack(spacing: 16) {
+            Image(systemName: "location.slash")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 48, height: 48)
+                .foregroundColor(.red)
+            Text("Location Permission Denied")
+                .font(.title2).bold()
+            Text("To see places near you, enable location access in Settings > Privacy > Location Services.")
+                .multilineTextAlignment(.center)
+                .font(.body)
+                .foregroundColor(.secondary)
+            Spacer().frame(height: 10)
+            Button(action: {
+                if let appSettings = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(appSettings)
+                }
+            }) {
+                Text("Open Settings")
+                    .bold()
+                    .padding()
+                    .background(Capsule().fill(Color.accentColor))
+                    .foregroundColor(.white)
             }
-            .padding(.top, 24)
-            .padding(.bottom, 2)
-
-            regionFilterBar
-            activityFilterBar
-
-            // --- Modern Search Bar ---
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-                TextField("Search places...", text: $searchViewModel.searchText)
-                    .font(.body)
-                    .foregroundColor(.primary)
-            }
-            .padding()
-            .background(Color(.systemGray6))
-            .cornerRadius(16)
-            .shadow(color: .black.opacity(0.04), radius: 2, x: 0, y: 1)
-            .padding(.horizontal)
-            .padding(.top, 8)
-
-            if searchViewModel.isLoading {
-                ProgressView("Searching...")
-                    .padding(.top)
-            }
-
-            if let error = searchViewModel.errorMessage {
-                Text(error)
-                    .foregroundColor(.red)
-                    .padding(.top)
-            }
-
-            placesGrid
-                .padding(.top, 4)
         }
-        .background(Color(.systemBackground).ignoresSafeArea())
-        .sheet(item: $selectedPlace) { place in
-            DestinationDetailView(
-                place: place,
-                groupViewModel: groupViewModel,
-                currentUser: currentUser
-            )
+        .padding()
+        .background(Color(.systemBackground).opacity(0.95))
+        .cornerRadius(18)
+        .padding()
+    }
+}
+
+enum PlaceType: String, CaseIterable, Identifiable {
+    case restaurant, cafe, bar, attraction, trail
+
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .restaurant: return "Restaurants"
+        case .cafe: return "Cafes"
+        case .bar: return "Bars"
+        case .attraction: return "Attractions"
+        case .trail: return "Trails"
         }
-        .alert(isPresented: .constant(detailError != nil)) {
-            Alert(title: Text("Error"), message: Text(detailError ?? ""), dismissButton: .default(Text("OK")))
+    }
+    var systemImage: String {
+        switch self {
+        case .restaurant: return "fork.knife"
+        case .cafe: return "cup.and.saucer"
+        case .bar: return "wineglass"
+        case .attraction: return "star.fill"
+        case .trail: return "figure.hiking"
         }
-        .overlay(
-            loadingDetail ? ProgressView("Loading details...").padding().background(.ultraThinMaterial).cornerRadius(10) : nil
+    }
+    var color: Color {
+        switch self {
+        case .restaurant: return .red
+        case .cafe: return .brown
+        case .bar: return .purple
+        case .attraction: return .orange
+        case .trail: return .green
+        }
+    }
+    var googleType: String? {
+        switch self {
+        case .restaurant: return "restaurant"
+        case .cafe: return "cafe"
+        case .bar: return "bar"
+        case .attraction: return "tourist_attraction"
+        case .trail: return nil
+        }
+    }
+    var googleKeyword: String? {
+        switch self {
+        case .trail: return "trail"
+        default: return nil
+        }
+    }
+}
+
+struct DiscoverPlace: Identifiable, Equatable {
+    let id: UUID
+    let name: String
+    let coordinate: CLLocationCoordinate2D
+    let type: PlaceType
+    let rating: Double
+    let placeID: String
+    var isOpen: Bool?
+    var openHours: [String] = []
+    var overview: String?
+    var photos: [String] = []
+    var reviews: [PlaceReview] = []
+    var detailsLoaded: Bool = false // <-- ADD THIS LINE
+
+    static func == (lhs: DiscoverPlace, rhs: DiscoverPlace) -> Bool { lhs.id == rhs.id }
+}
+
+final class ObservablePlace: ObservableObject, Identifiable {
+    @Published var id: UUID
+    @Published var name: String
+    @Published var coordinate: CLLocationCoordinate2D
+    @Published var type: PlaceType
+    @Published var rating: Double
+    @Published var placeID: String
+    @Published var isOpen: Bool?
+    @Published var openHours: [String]
+    @Published var overview: String?
+    @Published var photos: [String]
+    @Published var reviews: [PlaceReview]
+
+    init(from place: DiscoverPlace) {
+        self.id = place.id
+        self.name = place.name
+        self.coordinate = place.coordinate
+        self.type = place.type
+        self.rating = place.rating
+        self.placeID = place.placeID
+        self.isOpen = place.isOpen
+        self.openHours = place.openHours
+        self.overview = place.overview
+        self.photos = place.photos
+        self.reviews = place.reviews
+        print("ObservablePlace initialized for \(name) with \(reviews.count) reviews")
+    }
+
+    func update(from place: DiscoverPlace) {
+        guard place.id == self.id else { return }
+        self.isOpen = place.isOpen
+        self.openHours = place.openHours
+        self.overview = place.overview
+        self.photos = place.photos
+        self.reviews = place.reviews
+        self.rating = place.rating
+        print("ObservablePlace updated for \(name) with \(reviews.count) reviews")
+    }
+}
+
+extension MKCoordinateRegion {
+    static var defaultRegion: MKCoordinateRegion {
+        MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
+            span: MKCoordinateSpan(latitudeDelta: 0.12, longitudeDelta: 0.12)
         )
-        .sheet(isPresented: $searchViewModel.showAddToItinerarySheet) {
-            if let place = searchViewModel.selectedPlace {
-                AddToItinerarySheet(
-                    trips: searchViewModel.trips,
-                    place: place,
-                    selectedTrip: .constant(nil),
-                    selectedDate: .constant(Date()),
-                    onAddExisting: { trip, date, place in
-                        searchViewModel.addPlaceToTrip(trip: trip, date: date, place: place)
-                        searchViewModel.showAddToItinerarySheet = false
-                    },
-                    onAddNew: { name, notes, date, place in
-                        searchViewModel.createTripAndAddPlace(name: name, notes: notes, date: date, place: place)
-                        searchViewModel.showAddToItinerarySheet = false
+    }
+}
+func regionsAreEqual(_ lhs: MKCoordinateRegion, _ rhs: MKCoordinateRegion) -> Bool {
+    lhs.center.latitude == rhs.center.latitude &&
+    lhs.center.longitude == rhs.center.longitude &&
+    lhs.span.latitudeDelta == rhs.span.latitudeDelta &&
+    lhs.span.longitudeDelta == rhs.span.longitudeDelta
+}
+func approximateRadius(from region: MKCoordinateRegion) -> Double {
+    let latMeters = region.span.latitudeDelta * 111_000.0
+    let lonMeters = region.span.longitudeDelta * 111_000.0 * cos(region.center.latitude * .pi / 180)
+    let diameter = max(abs(latMeters), abs(lonMeters))
+    return max(100, min(50_000, diameter / 2))
+}
+
+enum CustomMapCameraPosition {
+    case region(MKCoordinateRegion)
+}
+extension CustomMapCameraPosition: Equatable {
+    static func == (lhs: CustomMapCameraPosition, rhs: CustomMapCameraPosition) -> Bool {
+        switch (lhs, rhs) {
+        case let (.region(r1), .region(r2)):
+            return regionsAreEqual(r1, r2)
+        }
+    }
+}
+extension CustomMapCameraPosition {
+    var regionValue: MKCoordinateRegion? {
+        switch self {
+        case let .region(region): return region
+        }
+    }
+}
+
+struct DiscoverFilters: Equatable {
+    enum SortBy: String, CaseIterable, Identifiable {
+        case distance = "Distance"
+        case rating = "Rating"
+        case name = "Name"
+        var id: String { rawValue }
+    }
+    var minRating: Double = 0.0
+    var onlyOpenNow: Bool = false
+    var maxResults: Int = 50
+    var sortBy: SortBy = .distance
+}
+
+final class DiscoverLocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+    @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    @Published var userLocation: CLLocation?
+    private let manager = CLLocationManager()
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyBest
+    }
+    func requestAuthorization() {
+        if CLLocationManager.locationServicesEnabled() {
+            // Only request if status is notDetermined
+            if manager.authorizationStatus == .notDetermined {
+                manager.requestWhenInUseAuthorization()
+            }
+        }
+    }
+    func startUpdating() {
+        if authorizationStatus == .authorizedAlways || authorizationStatus == .authorizedWhenInUse {
+            manager.startUpdatingLocation()
+        }
+    }
+    func stopUpdating() { manager.stopUpdatingLocation() }
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        authorizationStatus = manager.authorizationStatus
+        if authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways {
+            startUpdating()
+        }
+    }
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let loc = locations.last else { return }
+        userLocation = loc
+    }
+}
+
+final class STSGooglePlacesService {
+    private let apiKey: String
+    init(apiKey: String) { self.apiKey = apiKey }
+
+    func nearbySearch(center: CLLocationCoordinate2D,
+                      radius: Double,
+                      type: String?,
+                      keyword: String?,
+                      openNow: Bool) async throws -> [STSPlace] {
+        var components = URLComponents(string: "https://maps.googleapis.com/maps/api/place/nearbysearch/json")!
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "key", value: apiKey),
+            URLQueryItem(name: "location", value: "\(center.latitude),\(center.longitude)")
+        ]
+        if openNow {
+            queryItems.append(URLQueryItem(name: "opennow", value: "true"))
+        }
+        if let type = type {
+            queryItems.append(URLQueryItem(name: "type", value: type))
+            queryItems.append(URLQueryItem(name: "radius", value: String(Int(radius))))
+        } else if let keyword = keyword {
+            queryItems.append(URLQueryItem(name: "rankby", value: "distance"))
+            queryItems.append(URLQueryItem(name: "keyword", value: keyword))
+        } else {
+            queryItems.append(URLQueryItem(name: "radius", value: String(Int(radius))))
+        }
+        components.queryItems = queryItems
+        let url = components.url!
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let (data, _) = try await URLSession.shared.data(from: url)
+        let decoded = try decoder.decode(STSNearbyResponse.self, from: data)
+        return decoded.results
+    }
+    func placeDetails(placeID: String) async throws -> STSPlaceDetails? {
+        var components = URLComponents(string: "https://maps.googleapis.com/maps/api/place/details/json")!
+        components.queryItems = [
+            URLQueryItem(name: "key", value: apiKey),
+            URLQueryItem(name: "place_id", value: placeID),
+            URLQueryItem(name: "fields", value: "rating,reviews,user_ratings_total,photos,opening_hours,editorial_summary")
+        ]
+        let url = components.url!
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let (data, _) = try await URLSession.shared.data(from: url)
+        let decoded = try decoder.decode(STSPlaceDetailsResponse.self, from: data)
+        return decoded.result
+    }
+}
+
+struct STSNearbyResponse: Decodable {
+    let results: [STSPlace]
+    let status: String
+    let nextPageToken: String?
+}
+struct STSPlace: Decodable {
+    let placeId: String
+    let name: String
+    let geometry: STSGeometry
+    let rating: Double?
+    let types: [String]?
+    let photos: [STSPhoto]?
+}
+struct STSGeometry: Decodable {
+    let location: STSLocation
+}
+struct STSLocation: Decodable {
+    let lat: Double
+    let lng: Double
+}
+struct STSPlaceDetailsResponse: Decodable {
+    let result: STSPlaceDetails?
+    let status: String
+}
+struct STSPlaceDetails: Decodable {
+    let rating: Double?
+    let userRatingsTotal: Int?
+    let reviews: [PlaceReview]? // <--- use your model!
+    let photos: [STSPhoto]?
+    let openingHours: STSOpeningHours?
+    let editorialSummary: STSEditorialSummary?
+}
+struct STSEditorialSummary: Decodable {
+    let overview: String?
+}
+struct STSPhoto: Decodable {
+    let photoReference: String
+}
+struct STSOpeningHours: Decodable {
+    let openNow: Bool?
+    let weekdayText: [String]?
+}
+
+private struct NotificationBellButton: View {
+    let unreadCount: Int
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Image(systemName: "bell").imageScale(.large)
+                if unreadCount > 0 {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 10, height: 10)
+                        .offset(x: 8, y: -8)
+                }
+            }
+        }
+    }
+}
+
+private struct DiscoverPlaceDetailSheet: View {
+    @ObservedObject var place: ObservablePlace
+    var isLoading: Bool = false
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                Capsule().fill(Color.secondary.opacity(0.4)).frame(width: 40, height: 5).padding(.top, 8)
+                HStack(spacing: 10) {
+                    Image(systemName: place.type.systemImage)
+                        .foregroundColor(.white)
+                        .frame(width: 44, height: 44)
+                        .background(Circle().fill(place.type.color))
+                    VStack(alignment: .leading) {
+                        Text(place.name).font(.headline)
+                        HStack(spacing: 6) {
+                            Image(systemName: "star.fill").foregroundColor(.yellow)
+                            Text(String(format: "%.1f", place.rating)).foregroundColor(.secondary)
+                        }
                     }
-                )
+                    Spacer()
+                }
+                .padding(.horizontal)
+
+                if let isOpen = place.isOpen {
+                    Text(isOpen ? "Open Now" : "Closed")
+                        .font(.callout.bold())
+                        .foregroundColor(isOpen ? .green : .red)
+                        .padding(.horizontal)
+                }
+
+                if !place.openHours.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Hours")
+                            .font(.subheadline.bold())
+                            .padding(.bottom, 2)
+                        ForEach(place.openHours, id: \.self) { line in
+                            Text(line)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+
+                if let overview = place.overview {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Overview").font(.subheadline.bold())
+                        Text(overview)
+                            .font(.callout)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal)
+                }
+
+                if !place.photos.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack {
+                            ForEach(place.photos, id: \.self) { ref in
+                                if let url = googlePlacePhotoURL(photoReference: ref) {
+                                    AsyncImage(url: url) { phase in
+                                        if let img = phase.image {
+                                            img.resizable().aspectRatio(contentMode: .fill)
+                                        } else if phase.error != nil {
+                                            Color.red
+                                        } else {
+                                            ProgressView()
+                                        }
+                                    }
+                                    .frame(width: 120, height: 90)
+                                    .cornerRadius(10)
+                                    .clipped()
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+                } else {
+                    Text("No photos available.")
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
+                }
+
+                Divider().padding(.horizontal)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Reviews").font(.subheadline.bold())
+                    Text("DEBUG: \(place.reviews.count) reviews loaded for \(place.name)")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    if place.reviews.isEmpty {
+                        Text("No reviews found.")
+                            .foregroundColor(.secondary)
+                            .font(.callout)
+                    } else {
+                        ForEach(place.reviews) { review in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    if let name = review.authorName {
+                                        Text(name).font(.caption.bold())
+                                    }
+                                    if let rating = review.rating {
+                                        HStack(spacing: 2) {
+                                            Image(systemName: "star.fill")
+                                                .resizable()
+                                                .frame(width: 10, height: 10)
+                                                .foregroundColor(.yellow)
+                                            Text("\(rating)")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+                                    if let time = review.relativeTimeDescription {
+                                        Text("· \(time)")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                if let text = review.text {
+                                    Text("\"\(text)\"")
+                                        .font(.callout)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            .padding(.bottom, 6)
+                        }
+                    }
+                }
+                .padding(.horizontal)
+                Spacer()
             }
         }
         .onAppear {
-            if searchViewModel.results.isEmpty && searchViewModel.searchText.isEmpty {
-                Task { await searchViewModel.fetchTopPlaces(for: "tourist attractions in \(selectedRegion)") }
+            print("Sheet appears for \(place.name) with \(place.reviews.count) reviews")
+        }
+    }
+}
+
+private struct FilterSheetView: View {
+    @Binding var filters: DiscoverFilters
+    @Environment(\.dismiss) var dismiss
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Sort & Filter")) {
+                    Picker("Sort By", selection: $filters.sortBy) {
+                        ForEach(DiscoverFilters.SortBy.allCases) { sortBy in
+                            Text(sortBy.rawValue).tag(sortBy)
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Minimum Rating: \(String(format: "%.1f", filters.minRating))")
+                        Slider(value: $filters.minRating, in: 0...5, step: 0.5)
+                    }
+                    .padding(.vertical, 8)
+                    Toggle("Open Now", isOn: $filters.onlyOpenNow)
+                    Stepper("Max Results: \(filters.maxResults)", value: $filters.maxResults, in: 10...100, step: 10)
+                }
+            }
+            .navigationTitle("Filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
             }
         }
     }
 }
 
-// --- Place cell, always show name and address ---
-fileprivate struct DiscoverPlaceCell: View {
-    let place: Place
-    let handlePlaceTap: (Place) -> Void
+struct DiscoverView: View {
+    @ObservedObject var groupViewModel: GroupViewModel
+    let currentUser: UserProfile
+    @Binding var showNotifications: Bool
+    @EnvironmentObject var appState: AppState
+
+    @State private var cameraPositioniOS16: CustomMapCameraPosition = .region(.defaultRegion)
+    @State private var cameraPositioniOS17: MapCameraPosition = .region(.defaultRegion)
+    @State private var selectedType: PlaceType = .restaurant
+    @State private var selectedPlace: DiscoverPlace?
+    @State private var lastRegion: MKCoordinateRegion = .defaultRegion
+    @State private var showFilterSheet = false
+    @State private var filters = DiscoverFilters()
+    @State private var isLoading = false
+    @State private var isDetailLoading = false
+    @State private var detailSheetPlace: ObservablePlace? = nil
+
+    @StateObject private var locationManager = DiscoverLocationManager()
+    @State private var places: [DiscoverPlace] = []
+
+    private let placesService: STSGooglePlacesService
+    @State private var fetchTask: Task<Void, Never>?
+
+    init(groupViewModel: GroupViewModel, currentUser: UserProfile, showNotifications: Binding<Bool>) {
+        self._groupViewModel = ObservedObject(wrappedValue: groupViewModel)
+        self.currentUser = currentUser
+        self._showNotifications = showNotifications
+        self.placesService = STSGooglePlacesService(apiKey: GOOGLE_PLACES_API_KEY)
+    }
+
+    private var filteredPlaces: [DiscoverPlace] {
+        var items = places.filter { $0.rating >= filters.minRating }
+        switch filters.sortBy {
+        case .distance:
+            let center = CLLocation(latitude: lastRegion.center.latitude, longitude: lastRegion.center.longitude)
+            items.sort {
+                let a = CLLocation(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude)
+                let b = CLLocation(latitude: $1.coordinate.latitude, longitude: $1.coordinate.longitude)
+                return a.distance(from: center) < b.distance(from: center)
+            }
+        case .rating:
+            items.sort { $0.rating > $1.rating }
+        case .name:
+            items.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        }
+        if items.count > filters.maxResults {
+            items = Array(items.prefix(filters.maxResults))
+        }
+        return items
+    }
 
     var body: some View {
-        Button(action: {
-            handlePlaceTap(place)
-        }) {
-            VStack(spacing: 0) {
-                if let photoRef = place.photoReferences?.first,
-                   let url = googlePlacePhotoURL(photoReference: photoRef, maxWidth: 400) {
-                    AsyncImage(url: url) { phase in
-                        if let image = phase.image {
-                            image
-                                .resizable()
-                                .scaledToFill()
-                                .frame(height: 110)
-                                .frame(maxWidth: .infinity)
-                                .clipped()
-                                .cornerRadius(14, corners: [.topLeft, .topRight])
-                        } else if phase.error != nil {
-                            Color.gray.opacity(0.1)
-                                .frame(height: 110)
-                                .overlay(Image(systemName: "exclamationmark.triangle").foregroundColor(.red))
-                                .cornerRadius(14, corners: [.topLeft, .topRight])
-                        } else {
-                            Color.gray.opacity(0.1)
-                                .frame(height: 110)
-                                .overlay(ProgressView())
-                                .cornerRadius(14, corners: [.topLeft, .topRight])
+            NavigationStack {
+                ZStack {
+                    mapView
+                    VStack(spacing: 0) {
+                        filterRow
+                        Spacer()
+                    }
+                    .padding(.top, 8)
+                    .padding(.horizontal, 8)
+                    VStack {
+                        Spacer()
+                        HStack {
+                            CircleIconButton(systemName: "location.fill") { focusOnUser() }
+                            Spacer()
+                            CircleIconButton(systemName: "line.3.horizontal.decrease.circle.fill") { showFilterSheet = true }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 16 + 120)
+                    }
+                    VStack(spacing: 8) {
+                        Spacer()
+                        carouselHeader
+                        placesCarousel
+                    }
+                    .padding(.bottom, 12)
+                    if isLoading {
+                        ProgressView().padding(.bottom, 180)
+                    }
+                    if locationManager.authorizationStatus == .denied || locationManager.authorizationStatus == .restricted {
+                        LocationPermissionView()
+                            .zIndex(10)
+                    }
+                }
+                .navigationTitle("Discover")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItemGroup(placement: .navigationBarTrailing) {
+                        NotificationBellButton(unreadCount: appState.unreadNotificationCount) {
+                            showNotifications = true
                         }
                     }
-                } else {
-                    Color.gray.opacity(0.1)
-                        .frame(height: 110)
-                        .overlay(Image(systemName: "photo").foregroundColor(.gray))
-                        .cornerRadius(14, corners: [.topLeft, .topRight])
                 }
-                VStack(alignment: .leading, spacing: 6) {
+                .onAppear {
+                    if locationManager.authorizationStatus == .notDetermined {
+                        locationManager.requestAuthorization()
+                    }
+                    updatePlacesForRegion()
+                }
+                .modifier(CameraChangeModifier(
+                    cameraPositioniOS16: $cameraPositioniOS16,
+                    lastRegion: $lastRegion,
+                    onRegionChanged: { updatePlacesForRegion() }
+                ))
+                .sheet(item: $detailSheetPlace) { obsPlace in
+                    DiscoverPlaceDetailSheet(place: obsPlace, isLoading: isDetailLoading)
+                        .onAppear {
+                            print("Sheet onAppear for \(obsPlace.name), reviews: \(obsPlace.reviews.count)")
+                            // Only load details if we haven't loaded them yet and aren't loading
+                            if let selected = selectedPlace,
+                               let idx = places.firstIndex(where: { $0.id == selected.id }),
+                               !places[idx].detailsLoaded,
+                               !isDetailLoading
+                            {
+                                isDetailLoading = true
+                                Task { await loadDetailsForSelectedPlace() }
+                            }
+                        }
+                        .presentationDetents([.medium, .large])
+                }
+            }
+        }
+    @ViewBuilder
+    private var mapView: some View {
+        if #available(iOS 17.0, *) {
+            MapReader { _ in
+                Map(position: $cameraPositioniOS17) {
+                    UserAnnotation()
+                    ForEach(filteredPlaces) { place in
+                        Annotation("", coordinate: place.coordinate) {
+                            PinView(place: place, selected: place.id == selectedPlace?.id)
+                                .onTapGesture { handlePlaceTap(place) }
+                        }
+                    }
+                }
+                .ignoresSafeArea()
+                .onMapCameraChange(frequency: .onEnd) { context in
+                    let region = context.region
+                    if !regionsAreEqual(region, lastRegion) {
+                        lastRegion = region
+                        updatePlacesForRegion()
+                    }
+                }
+            }
+        } else {
+            Map(
+                coordinateRegion: Binding(
+                    get: { cameraPositioniOS16.regionValue ?? .defaultRegion },
+                    set: { newValue in cameraPositioniOS16 = .region(newValue) }
+                ),
+                interactionModes: .all,
+                showsUserLocation: true,
+                userTrackingMode: .none,
+                annotationItems: filteredPlaces
+            ) { place in
+                MapAnnotation(coordinate: place.coordinate) {
+                    PinView(place: place, selected: place.id == selectedPlace?.id)
+                        .onTapGesture { handlePlaceTap(place) }
+                }
+            }
+            .ignoresSafeArea()
+        }
+    }
+
+    private func handlePlaceTap(_ place: DiscoverPlace) {
+        isDetailLoading = true
+        selectedPlace = place
+        detailSheetPlace = ObservablePlace(from: place)
+        print("handlePlaceTap: Open sheet for \(place.name), initial reviews: \(place.reviews.count)")
+    }
+
+    private func updatePlacesForRegion() {
+        fetchTask?.cancel()
+        let region = lastRegion
+        let center = region.center
+        let radius = approximateRadius(from: region)
+        let typeParam = selectedType.googleType
+        let keywordParam = selectedType.googleKeyword
+        let openNow = filters.onlyOpenNow
+
+        isLoading = true
+
+        fetchTask = Task {
+            do {
+                let results = try await placesService.nearbySearch(center: center,
+                                                                   radius: radius,
+                                                                   type: typeParam,
+                                                                   keyword: keywordParam,
+                                                                   openNow: openNow)
+                let mapped: [DiscoverPlace] = results.map { gp in
+                    let coord = CLLocationCoordinate2D(latitude: gp.geometry.location.lat, longitude: gp.geometry.location.lng)
+                    let photoRefs = (gp.photos ?? []).compactMap { $0.photoReference }
+                    print("Nearby photos for \"\(gp.name)\": \(photoRefs.count)")
+                    return DiscoverPlace(
+                        id: UUID(),
+                        name: gp.name,
+                        coordinate: coord,
+                        type: selectedType,
+                        rating: gp.rating ?? 0.0,
+                        placeID: gp.placeId,
+                        photos: photoRefs
+                    )
+                }
+                await MainActor.run {
+                    self.places = mapped
+                    self.isLoading = false
+                    print("updatePlacesForRegion: Loaded \(mapped.count) places")
+                }
+            } catch is CancellationError {
+            } catch {
+                await MainActor.run {
+                    self.isLoading = false
+                    print("updatePlacesForRegion: Error: \(error)")
+                }
+            }
+        }
+    }
+
+    private func loadDetailsForSelectedPlace() async {
+            guard let selected = selectedPlace else { return }
+            do {
+                if let details = try await placesService.placeDetails(placeID: selected.placeID) {
+                    let reviews: [PlaceReview] = details.reviews ?? []
+                    let overview = details.editorialSummary?.overview
+                    let photoRefs = (details.photos ?? []).compactMap { $0.photoReference }
+                    let isOpen = details.openingHours?.openNow
+                    let openHours = details.openingHours?.weekdayText ?? []
+                    print("Details photos for \"\(selected.name)\": \(photoRefs.count)")
+                    print("Details reviews for \"\(selected.name)\": \(reviews.count)")
+                    await MainActor.run {
+                        if let idx = places.firstIndex(where: { $0.id == selected.id }) {
+                            places[idx].reviews = reviews
+                            places[idx].overview = overview
+                            places[idx].photos = photoRefs
+                            places[idx].isOpen = isOpen
+                            places[idx].openHours = openHours
+                            places[idx].detailsLoaded = true // <-- SET LOADED FLAG
+                            selectedPlace = places[idx]
+                            // Fix: close and reopen sheet to force SwiftUI update
+                            detailSheetPlace = nil
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                detailSheetPlace = ObservablePlace(from: places[idx])
+                                print("loadDetailsForSelectedPlace: Reopened sheet for \(places[idx].name) with \(reviews.count) reviews")
+                            }
+                        }
+                    }
+                }
+            } catch {
+                print("Details API FAILED for \(selected.name): \(error)")
+            }
+            await MainActor.run { self.isDetailLoading = false }
+        }
+
+    private var filterRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(PlaceType.allCases) { type in
+                    Button {
+                        selectedType = type
+                        updatePlacesForRegion()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: type.systemImage)
+                            Text(type.displayName)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule().fill(type == selectedType ? type.color : Color(.systemGray5))
+                        )
+                        .foregroundColor(type == selectedType ? .white : .primary)
+                    }
+                }
+                Button {
+                    showFilterSheet = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "slider.horizontal.3")
+                        Text("More")
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(Color(.systemGray5)))
+                    .foregroundColor(.primary)
+                }
+            }
+            .padding(8)
+            .background(.ultraThinMaterial, in: Capsule())
+        }
+    }
+
+    private var carouselHeader: some View {
+        HStack {
+            Text("SUGGESTIONS (\(filteredPlaces.count))")
+                .font(.footnote.bold())
+                .foregroundColor(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 4)
+    }
+
+    private var placesCarousel: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(filteredPlaces) { place in
+                    PlaceCard(place: place, isSelected: place.id == selectedPlace?.id)
+                        .onTapGesture {
+                            handlePlaceTap(place)
+                        }
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .frame(height: 120)
+        .background(
+            LinearGradient(gradient: Gradient(colors: [Color.clear, Color(.systemBackground)]),
+                           startPoint: .top, endPoint: .bottom)
+                .opacity(0.8)
+        )
+    }
+
+    private func focusOnUser() {
+        switch locationManager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            if let loc = locationManager.userLocation {
+                let span = MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08)
+                let region = MKCoordinateRegion(center: loc.coordinate, span: span)
+                if #available(iOS 17.0, *) {
+                    cameraPositioniOS17 = .region(region)
+                } else {
+                    cameraPositioniOS16 = .region(region)
+                }
+                lastRegion = region
+                updatePlacesForRegion()
+            } else {
+                locationManager.startUpdating()
+            }
+        case .notDetermined:
+            locationManager.requestAuthorization()
+        default:
+            break
+        }
+    }
+
+    private struct CircleIconButton: View {
+        let systemName: String
+        let action: () -> Void
+        var body: some View {
+            Button(action: action) {
+                Image(systemName: systemName)
+                    .imageScale(.large)
+                    .foregroundColor(.primary)
+                    .frame(width: 44, height: 44)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .shadow(radius: 2)
+        }
+    }
+
+    private struct PinView: View {
+        let place: DiscoverPlace
+        let selected: Bool
+        var body: some View {
+            VStack(spacing: 2) {
+                Image(systemName: place.type.systemImage)
+                    .font(.system(size: selected ? 16 : 14, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(8)
+                    .background(Circle().fill(place.type.color))
+                    .overlay(
+                        Circle().stroke(Color.white, lineWidth: selected ? 3 : 2)
+                    )
+                    .shadow(radius: selected ? 6 : 4)
+                if selected {
+                    Text(String(format: "%.1f", place.rating))
+                        .font(.caption2.bold())
+                        .padding(3)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(Color(.systemBackground).opacity(0.9)))
+                }
+            }
+        }
+    }
+
+    private struct PlaceCard: View {
+        let place: DiscoverPlace
+        let isSelected: Bool
+        var body: some View {
+            HStack(spacing: 10) {
+                if let firstPhotoRef = place.photos.first,
+                   let url = googlePlacePhotoURL(photoReference: firstPhotoRef) {
+                    AsyncImage(url: url) { phase in
+                        if let img = phase.image {
+                            img.resizable().aspectRatio(contentMode: .fill)
+                        } else if phase.error != nil {
+                            Color.red
+                        } else {
+                            ProgressView()
+                        }
+                    }
+                    .frame(width: 36, height: 36)
+                    .clipShape(Circle())
+                } else {
+                    Image(systemName: place.type.systemImage)
+                        .foregroundColor(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(place.type.color))
+                }
+                VStack(alignment: .leading, spacing: 4) {
                     Text(place.name)
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                        .lineLimit(2)
-                        .padding(.top, 8)
-                        .padding(.horizontal, 6)
-                    if let address = place.address {
-                        Text(address)
+                        .font(.subheadline).bold()
+                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Image(systemName: "star.fill").foregroundColor(.yellow).font(.caption2)
+                        Text(String(format: "%.1f", place.rating))
                             .font(.caption)
                             .foregroundColor(.secondary)
-                            .lineLimit(2)
-                            .padding(.horizontal, 6)
-                    }
-                    if let rating = place.rating {
-                        HStack(spacing: 2) {
-                            Image(systemName: "star.fill").foregroundColor(.yellow)
-                            Text(String(format: "%.1f", rating))
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.bottom, 6)
-                    } else {
-                        Spacer().frame(height: 6)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.clear)
+                Spacer()
             }
+            .padding(12)
+            .frame(width: 240, height: 100)
             .background(
                 RoundedRectangle(cornerRadius: 14)
                     .fill(Color(.systemBackground))
-                    .shadow(color: .black.opacity(0.04), radius: 3, x: 0, y: 2)
+                    .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 2)
             )
-            .frame(height: 190)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+            )
         }
-        .buttonStyle(PlainButtonStyle())
     }
-}
 
-// Helper for Google Photos API
-fileprivate func googlePlacePhotoURL(photoReference: String, maxWidth: Int = 400) -> URL? {
-    let apiKey = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU"
-    var components = URLComponents(string: "https://places.googleapis.com/v1/\(photoReference)/media")
-    components?.queryItems = [
-        URLQueryItem(name: "key", value: apiKey),
-        URLQueryItem(name: "maxWidthPx", value: "\(maxWidth)")
-    ]
-    return components?.url
+    struct CameraChangeModifier: ViewModifier {
+        @Binding var cameraPositioniOS16: CustomMapCameraPosition
+        @Binding var lastRegion: MKCoordinateRegion
+        var onRegionChanged: () -> Void
+
+        func body(content: Content) -> some View {
+            if #available(iOS 17.0, *) {
+                content
+            } else {
+                content.onChange(of: cameraPositioniOS16) { newValue in
+                    switch newValue {
+                    case let .region(region):
+                        if !regionsAreEqual(region, lastRegion) {
+                            lastRegion = region
+                            onRegionChanged()
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

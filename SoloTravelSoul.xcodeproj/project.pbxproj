@@ -195,7 +195,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		3AB555322E568E7800074CC0 /* Exceptions for "SoloTravelSoul" folder in "SoloTravelSoul" target */ = {
+		3A8A826D2E7AF603000D00DB /* Exceptions for "SoloTravelSoul" folder in "SoloTravelSoul" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -208,7 +208,7 @@
 		8C714BEA2E25EB480002CDCD /* SoloTravelSoul */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				3AB555322E568E7800074CC0 /* Exceptions for "SoloTravelSoul" folder in "SoloTravelSoul" target */,
+				3A8A826D2E7AF603000D00DB /* Exceptions for "SoloTravelSoul" folder in "SoloTravelSoul" target */,
 			);
 			path = SoloTravelSoul;
 			sourceTree = "<group>";

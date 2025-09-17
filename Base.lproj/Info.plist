@@ -2,8 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>his app needs your location to search for places nearby.</string>
 	<key>GMSApiKey</key>
 	<string>AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU</string>
 	<key>LSApplicationCategoryType</key>
@@ -38,5 +36,11 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>We use your location to show places near you.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>We use your location to show places near you, even in the background.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>We need your location always for the best experience.</string>
 </dict>
 </plist>

@@ -5,7 +5,7 @@ struct RootTabView: View {
     @StateObject var groupViewModel = GroupViewModel()
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var notificationsVM: NotificationsViewModel
-    @EnvironmentObject var appState: AppState // NEW
+    @EnvironmentObject var appState: AppState
 
     @AppStorage("profileImageData") var profileImageData: Data = Data()
 
@@ -14,6 +14,7 @@ struct RootTabView: View {
     @State private var showDrawer = false
     @State private var drawerDestination: DrawerDestination? = nil
     @State private var showProfileSheet = false
+    @State private var showNotifications = false
 
     enum DrawerDestination: Identifiable {
         case notifications
@@ -37,21 +38,26 @@ struct RootTabView: View {
                         selectedTab: $selectedTab,
                         editTripID: $editTripID,
                         groupViewModel: groupViewModel,
-                        currentUser: userProfile
+                        currentUser: userProfile,
+                        showNotifications: $showNotifications
                     )
                     .environmentObject(tripViewModel)
                     .tabItem { Label("Home", systemImage: "house") }
                     .tag(0)
 
-                    TripsTabView(editTripID: $editTripID)
-                        .environmentObject(tripViewModel)
-                        .tabItem { Label("Trips", systemImage: "airplane") }
-                        .tag(1)
+                    TripsTabView(
+                        editTripID: $editTripID,
+                        showNotifications: $showNotifications
+                    )
+                    .environmentObject(tripViewModel)
+                    .tabItem { Label("Trips", systemImage: "airplane") }
+                    .tag(1)
 
+                    // Restored: Pass planned dependencies to DiscoverView
                     DiscoverView(
-                        tripViewModel: tripViewModel,
                         groupViewModel: groupViewModel,
-                        currentUser: userProfile
+                        currentUser: userProfile,
+                        showNotifications: $showNotifications
                     )
                     .environmentObject(tripViewModel)
                     .tabItem { Label("Discover", systemImage: "magnifyingglass") }
@@ -59,27 +65,20 @@ struct RootTabView: View {
 
                     GroupListView(
                         groupViewModel: groupViewModel,
-                        currentUser: userProfile
+                        currentUser: userProfile,
+                        showNotifications: $showNotifications
                     )
                     .tabItem {
                         Label("Groups", systemImage: "person.3.fill")
-                            .badge(appState.unreadChatCount) // NEW: group chat badge
+                            .badge(appState.unreadChatCount)
                     }
                     .tag(3)
-
-                    NotificationsScreen()
-                        .tabItem {
-                            Label("Notifications", systemImage: "bell")
-                                .badge(appState.unreadNotificationCount) // NEW: notifications badge
-                        }
-                        .tag(4)
                 } else {
                     ProgressView("Loading profile...")
                         .tabItem { Label("Home", systemImage: "house") }
                         .tag(0)
                 }
             }
-            // Only burger menu icon at top left now, hide if a sheet/drawer is open!
             .overlay(alignment: .topLeading) {
                 if let _ = authViewModel.currentUserProfile,
                    drawerDestination == nil,
@@ -95,7 +94,6 @@ struct RootTabView: View {
                     .padding(.leading, 12)
                 }
             }
-            // Animated Drawer
             if showDrawer, let userProfile = authViewModel.currentUserProfile {
                 AnimatedDrawer(
                     user: userProfile,
@@ -126,7 +124,6 @@ struct RootTabView: View {
                 .zIndex(2)
             }
         }
-        // Present destinations as sheets
         .sheet(item: $drawerDestination) { destination in
             switch destination {
             case .notifications:
@@ -147,6 +144,9 @@ struct RootTabView: View {
             } else {
                 ProgressView("Loading...")
             }
+        }
+        .sheet(isPresented: $showNotifications) {
+            NotificationsScreen()
         }
     }
 }

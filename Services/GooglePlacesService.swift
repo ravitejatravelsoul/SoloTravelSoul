@@ -1,7 +1,9 @@
 import Foundation
 import CoreLocation
 
-// Only use these PRIVATE response-mapping structs for JSON parsing!
+// Make sure to import your models if in a separate module:
+// import Models
+
 private struct PlacesSearchResponse: Codable {
     let places: [PlaceResult]?
 }
@@ -30,8 +32,8 @@ private struct PlaceDetailsResult: Codable {
     let rating: Double?
     let user_ratings_total: Int?
     let photos: [PlacePhoto]?
-    let reviews: [PlaceReview]? // Uses your shared PlaceReview
-    let opening_hours: PlaceOpeningHours? // Uses your shared PlaceOpeningHours
+    let reviews: [PlaceReview]? // <- Use your model directly!
+    let opening_hours: PlaceOpeningHours? // <- Use your model directly!
     let formatted_phone_number: String?
     let website: String?
 }
@@ -80,13 +82,6 @@ final class GooglePlacesService {
         }
         let decoded = try JSONDecoder().decode(PlacesSearchResponse.self, from: data)
         let results = decoded.places ?? []
-        // --- Debugger: Print photoReferences for each place being mapped for grid ---
-        for result in results {
-            let refs = result.photos?.compactMap { $0.name }
-            print("Grid Debug - Place: \(result.displayName?.text ?? "NO_NAME"), photoReferences: \(String(describing: refs))")
-        }
-        // ---
-        // Fix: Break up the Place mapping for better compile-time performance
         var places: [Place] = []
         for result in results {
             let id = result.id

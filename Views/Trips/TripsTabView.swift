@@ -5,7 +5,10 @@ import FirebaseAuth
 struct TripsTabView: View {
     @EnvironmentObject var tripViewModel: TripViewModel
     @EnvironmentObject var locationManager: LocationManager
+    @EnvironmentObject var appState: AppState // <-- Add this for notification badge
+
     @Binding var editTripID: UUID?
+    @Binding var showNotifications: Bool // <-- Add this for notification handling
 
     struct SheetTrip: Identifiable {
         let id: UUID
@@ -73,6 +76,30 @@ struct TripsTabView: View {
                     editTripID = nil
                 }
             }
+            .toolbar {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button(action: { showCreateTrip = true }) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title)
+                            .foregroundColor(AppTheme.primary)
+                    }
+                    .accessibilityLabel("Add Trip")
+                    Button {
+                        showNotifications = true
+                    } label: {
+                        ZStack {
+                            Image(systemName: "bell")
+                                .imageScale(.large)
+                            if appState.unreadNotificationCount > 0 {
+                                Circle()
+                                    .fill(Color.red)
+                                    .frame(width: 10, height: 10)
+                                    .offset(x: 8, y: -8)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -86,12 +113,7 @@ struct TripsTabView: View {
                 .foregroundColor(.primary)
                 .frame(maxWidth: .infinity, alignment: .center)
             Spacer()
-            Button(action: { showCreateTrip = true }) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.title)
-                    .foregroundColor(AppTheme.primary)
-            }
-            .accessibilityLabel("Add Trip")
+            // Plus icon moved to toolbar for unified logic
         }
         .padding(.horizontal)
         .padding(.top, 24)

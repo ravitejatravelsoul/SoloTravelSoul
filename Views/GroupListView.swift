@@ -4,10 +4,12 @@ struct GroupListView: View {
     @ObservedObject var groupViewModel: GroupViewModel
     let currentUser: UserProfile
     @EnvironmentObject var authViewModel: AuthViewModel
+    @EnvironmentObject var appState: AppState
 
     @State private var showCreate = false
     @State private var search = ""
     @State private var selectedGroup: GroupTrip?
+    @Binding var showNotifications: Bool // <-- Add this binding!
 
     // --- Sectioned Group Logic ---
     private var recommendedGroups: [GroupTrip] {
@@ -122,12 +124,26 @@ struct GroupListView: View {
             .searchable(text: $search)
             .navigationTitle("Groups")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Button {
                         showCreate = true
                     } label: {
                         Image(systemName: "plus")
                             .imageScale(.large)
+                    }
+                    Button {
+                        showNotifications = true
+                    } label: {
+                        ZStack {
+                            Image(systemName: "bell")
+                                .imageScale(.large)
+                            if appState.unreadNotificationCount > 0 {
+                                Circle()
+                                    .fill(Color.red)
+                                    .frame(width: 10, height: 10)
+                                    .offset(x: 8, y: -8)
+                            }
+                        }
                     }
                 }
             }
