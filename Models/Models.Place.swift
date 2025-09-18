@@ -104,13 +104,17 @@ public struct PlaceReview: Codable, Hashable, Equatable, Identifiable {
     public let rating: Double?
     public let text: String?
     public let relativeTimeDescription: String?
-    public var id: String { [authorName ?? "", text ?? "", relativeTimeDescription ?? ""].joined(separator: "|") }
+    public let time: Int?
+
+    // Google returns author_name, rating, text, relative_time_description, time (and possibly profile_photo_url, author_url, language, etc.)
+    public var id: String { [authorName ?? "", text ?? "", relativeTimeDescription ?? "", "\(time ?? 0)"].joined(separator: "|") }
 
     enum CodingKeys: String, CodingKey {
         case authorName = "author_name"
         case rating
         case text
         case relativeTimeDescription = "relative_time_description"
+        case time
     }
 
     public func toDict() -> [String: Any] {
@@ -118,7 +122,8 @@ public struct PlaceReview: Codable, Hashable, Equatable, Identifiable {
             "author_name": authorName as Any,
             "rating": rating as Any,
             "text": text as Any,
-            "relative_time_description": relativeTimeDescription as Any
+            "relative_time_description": relativeTimeDescription as Any,
+            "time": time as Any
         ]
     }
     public static func fromDict(_ dict: [String: Any]) -> PlaceReview? {
@@ -126,7 +131,8 @@ public struct PlaceReview: Codable, Hashable, Equatable, Identifiable {
             authorName: dict["author_name"] as? String,
             rating: dict["rating"] as? Double,
             text: dict["text"] as? String,
-            relativeTimeDescription: dict["relative_time_description"] as? String
+            relativeTimeDescription: dict["relative_time_description"] as? String,
+            time: dict["time"] as? Int
         )
     }
 }
@@ -153,3 +159,5 @@ public struct PlaceOpeningHours: Codable, Hashable, Equatable {
         )
     }
 }
+
+// Make sure JournalEntry is defined elsewhere!

@@ -6,7 +6,7 @@ final class DiscoverLocationManager: NSObject, ObservableObject, CLLocationManag
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published var userLocation: CLLocation?
     private let manager = CLLocationManager()
-    private var shouldStartUpdatingAfterAuth = false
+    private var didRequest = false
 
     override init() {
         super.init()
@@ -14,37 +14,40 @@ final class DiscoverLocationManager: NSObject, ObservableObject, CLLocationManag
         manager.desiredAccuracy = kCLLocationAccuracyBest
     }
 
-    /// Use this instead of requestAuthorization and startUpdating
+    /// Call this to request permission. All logic continues in the delegate.
     func requestAuthorizationAndMaybeStartUpdating() {
-        if CLLocationManager.locationServicesEnabled() {
-            let status = manager.authorizationStatus
-            if status == .notDetermined {
-                shouldStartUpdatingAfterAuth = true
-                manager.requestWhenInUseAuthorization()
-                // Do NOT call startUpdating here!
-            } else if status == .authorizedAlways || status == .authorizedWhenInUse {
-                startUpdating()
+        guard CLLocationManager.locationServicesEnabled() else { return }
+        didRequest = true
+        manager.requestWhenInUseAuthorization() // no status check here!
+    }
+
+    /// Call this if you want to force location updates (after permission is granted)
+    func startUpdating() {
+        guard authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways else { return }
+        manager.startUpdatingLocation()
+    }
+    func stopUpdating() { manager.stopUpdatingLocation() }
+
+    // This is CALLED by the system whenever authorization changes, including after request
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let newStatus = manager.authorizationStatus
+        DispatchQueue.main.async {
+            self.authorizationStatus = newStatus
+            if self.didRequest,
+               (newStatus == .authorizedWhenInUse || newStatus == .authorizedAlways) {
+                self.startUpdating()
+                self.didRequest = false
             }
         }
     }
 
-    func startUpdating() {
-        if authorizationStatus == .authorizedAlways || authorizationStatus == .authorizedWhenInUse {
-            manager.startUpdatingLocation()
-        }
-    }
-    func stopUpdating() { manager.stopUpdatingLocation() }
-
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        authorizationStatus = manager.authorizationStatus
-        if shouldStartUpdatingAfterAuth && (authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways) {
-            shouldStartUpdatingAfterAuth = false
-            startUpdating()
-        }
-    }
-
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let loc = locations.last else { return }
-        userLocation = loc
+        DispatchQueue.main.async {
+            self.userLocation = locations.last
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        print("Location error: \(error.localizedDescription)")
     }
 }

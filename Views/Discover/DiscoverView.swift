@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import MapKit
 import CoreLocation
@@ -24,43 +25,8 @@ fileprivate func googlePlacePhotoURL(photoReference: String, maxWidth: Int = 400
     }
 }
 
-struct LocationPermissionView: View {
-    var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "location.slash")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 48, height: 48)
-                .foregroundColor(.red)
-            Text("Location Permission Denied")
-                .font(.title2).bold()
-            Text("To see places near you, enable location access in Settings > Privacy > Location Services.")
-                .multilineTextAlignment(.center)
-                .font(.body)
-                .foregroundColor(.secondary)
-            Spacer().frame(height: 10)
-            Button(action: {
-                if let appSettings = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(appSettings)
-                }
-            }) {
-                Text("Open Settings")
-                    .bold()
-                    .padding()
-                    .background(Capsule().fill(Color.accentColor))
-                    .foregroundColor(.white)
-            }
-        }
-        .padding()
-        .background(Color(.systemBackground).opacity(0.95))
-        .cornerRadius(18)
-        .padding()
-    }
-}
-
 enum PlaceType: String, CaseIterable, Identifiable {
     case restaurant, cafe, bar, attraction, trail
-
     var id: String { rawValue }
     var displayName: String {
         switch self {
@@ -111,14 +77,15 @@ struct DiscoverPlace: Identifiable, Equatable {
     let name: String
     let coordinate: CLLocationCoordinate2D
     let type: PlaceType
-    let rating: Double
+    var rating: Double
     let placeID: String
     var isOpen: Bool?
     var openHours: [String] = []
     var overview: String?
     var photos: [String] = []
     var reviews: [PlaceReview] = []
-    var detailsLoaded: Bool = false // <-- ADD THIS LINE
+    var userRatingsTotal: Int? = nil
+    var detailsLoaded: Bool = false
 
     static func == (lhs: DiscoverPlace, rhs: DiscoverPlace) -> Bool { lhs.id == rhs.id }
 }
@@ -135,6 +102,7 @@ final class ObservablePlace: ObservableObject, Identifiable {
     @Published var overview: String?
     @Published var photos: [String]
     @Published var reviews: [PlaceReview]
+    @Published var userRatingsTotal: Int?
 
     init(from place: DiscoverPlace) {
         self.id = place.id
@@ -148,7 +116,7 @@ final class ObservablePlace: ObservableObject, Identifiable {
         self.overview = place.overview
         self.photos = place.photos
         self.reviews = place.reviews
-        print("ObservablePlace initialized for \(name) with \(reviews.count) reviews")
+        self.userRatingsTotal = place.userRatingsTotal
     }
 
     func update(from place: DiscoverPlace) {
@@ -159,7 +127,7 @@ final class ObservablePlace: ObservableObject, Identifiable {
         self.photos = place.photos
         self.reviews = place.reviews
         self.rating = place.rating
-        print("ObservablePlace updated for \(name) with \(reviews.count) reviews")
+        self.userRatingsTotal = place.userRatingsTotal
     }
 }
 
@@ -215,6 +183,172 @@ struct DiscoverFilters: Equatable {
     var maxResults: Int = 50
     var sortBy: SortBy = .distance
 }
+
+private struct DiscoverPlaceDetailSheet: View {
+    @ObservedObject var place: ObservablePlace
+    var isLoading: Bool = false
+
+    private var averageRatingText: String {
+        String(format: "%.1f", place.rating)
+    }
+    private var reviewsCountText: String {
+        if let total = place.userRatingsTotal {
+            return "(\(total) reviews)"
+        } else {
+            return "(\(place.reviews.count) reviews)"
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                if let firstPhoto = place.photos.first,
+                   let url = googlePlacePhotoURL(photoReference: firstPhoto, maxWidth: 600) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .empty:
+                            ZStack {
+                                Color.gray.opacity(0.2)
+                                ProgressView()
+                            }
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .transition(.opacity)
+                        case .failure:
+                            ZStack {
+                                Color.gray.opacity(0.2)
+                                Image(systemName: "photo")
+                                    .font(.largeTitle)
+                                    .foregroundColor(.gray)
+                            }
+                        @unknown default:
+                            EmptyView()
+                        }
+                    }
+                    .frame(height: 220)
+                    .clipped()
+                    .cornerRadius(16)
+                    .padding([.top, .horizontal])
+                } else {
+                    ZStack {
+                        Color.gray.opacity(0.1)
+                        Image(systemName: place.type.systemImage)
+                            .font(.largeTitle)
+                            .foregroundColor(.gray)
+                    }
+                    .frame(height: 220)
+                    .cornerRadius(16)
+                    .padding([.top, .horizontal])
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(place.name)
+                        .font(.title)
+                        .bold()
+                        .lineLimit(2)
+
+                    HStack(spacing: 6) {
+                        Label(averageRatingText, systemImage: "star.fill")
+                            .foregroundColor(.yellow)
+                            .font(.headline)
+                        Text(reviewsCountText)
+                            .foregroundColor(.secondary)
+                            .font(.subheadline)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.top, 8)
+
+                Divider()
+                    .padding(.vertical, 12)
+
+                if let overview = place.overview, !overview.isEmpty {
+                    Text(overview)
+                        .font(.callout)
+                        .foregroundColor(.primary)
+                        .padding(.horizontal)
+                        .padding(.bottom)
+                }
+                else if !place.reviews.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Recent Reviews")
+                            .font(.headline)
+                        ForEach(place.reviews.prefix(3)) { review in
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 4) {
+                                    Text(review.authorName ?? "Anonymous")
+                                        .font(.subheadline)
+                                        .bold()
+                                    if let rating = review.rating {
+                                        Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                                            .foregroundColor(.yellow)
+                                            .font(.subheadline)
+                                    }
+                                    if let time = review.relativeTimeDescription {
+                                        Text("· \(time)")
+                                            .foregroundColor(.secondary)
+                                            .font(.caption)
+                                    }
+                                }
+                                if let text = review.text, !text.isEmpty {
+                                    Text("“\(text.prefix(120))\(text.count > 120 ? "..." : "")”")
+                                        .font(.callout)
+                                }
+                            }
+                            Divider()
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom)
+                }
+                else {
+                    Text("No overview or reviews available for this place.")
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
+                        .padding(.bottom)
+                }
+            }
+        }
+        .background(Color(.systemBackground))
+    }
+}
+
+private struct FilterSheetView: View {
+    @Binding var filters: DiscoverFilters
+    @Environment(\.dismiss) var dismiss
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Sort & Filter")) {
+                    Picker("Sort By", selection: $filters.sortBy) {
+                        ForEach(DiscoverFilters.SortBy.allCases) { sortBy in
+                            Text(sortBy.rawValue).tag(sortBy)
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Minimum Rating: \(String(format: "%.1f", filters.minRating))")
+                        Slider(value: $filters.minRating, in: 0...5, step: 0.5)
+                    }
+                    .padding(.vertical, 8)
+                    Toggle("Open Now", isOn: $filters.onlyOpenNow)
+                    Stepper("Max Results: \(filters.maxResults)", value: $filters.maxResults, in: 10...100, step: 10)
+                }
+            }
+            .navigationTitle("Filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
 final class STSGooglePlacesService {
     private let apiKey: String
     init(apiKey: String) { self.apiKey = apiKey }
@@ -249,12 +383,13 @@ final class STSGooglePlacesService {
         let decoded = try decoder.decode(STSNearbyResponse.self, from: data)
         return decoded.results
     }
+
     func placeDetails(placeID: String) async throws -> STSPlaceDetails? {
         var components = URLComponents(string: "https://maps.googleapis.com/maps/api/place/details/json")!
         components.queryItems = [
             URLQueryItem(name: "key", value: apiKey),
             URLQueryItem(name: "place_id", value: placeID),
-            URLQueryItem(name: "fields", value: "rating,reviews,user_ratings_total,photos,opening_hours,editorial_summary")
+            URLQueryItem(name: "fields", value: "reviews,rating,user_ratings_total,formatted_address,photos,opening_hours,editorial_summary")
         ]
         let url = components.url!
         let decoder = JSONDecoder()
@@ -277,6 +412,7 @@ struct STSPlace: Decodable {
     let rating: Double?
     let types: [String]?
     let photos: [STSPhoto]?
+    let userRatingsTotal: Int?
 }
 struct STSGeometry: Decodable {
     let location: STSLocation
@@ -292,7 +428,7 @@ struct STSPlaceDetailsResponse: Decodable {
 struct STSPlaceDetails: Decodable {
     let rating: Double?
     let userRatingsTotal: Int?
-    let reviews: [PlaceReview]? // <--- use your model!
+    let reviews: [PlaceReview]?
     let photos: [STSPhoto]?
     let openingHours: STSOpeningHours?
     let editorialSummary: STSEditorialSummary?
@@ -308,6 +444,40 @@ struct STSOpeningHours: Decodable {
     let weekdayText: [String]?
 }
 
+struct LocationPermissionView: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "location.slash")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 48, height: 48)
+                .foregroundColor(.red)
+            Text("Location Permission Denied")
+                .font(.title2).bold()
+            Text("To see places near you, enable location access in Settings > Privacy > Location Services.")
+                .multilineTextAlignment(.center)
+                .font(.body)
+                .foregroundColor(.secondary)
+            Spacer().frame(height: 10)
+            Button(action: {
+                if let appSettings = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(appSettings)
+                }
+            }) {
+                Text("Open Settings")
+                    .bold()
+                    .padding()
+                    .background(Capsule().fill(Color.accentColor))
+                    .foregroundColor(.white)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground).opacity(0.95))
+        .cornerRadius(18)
+        .padding()
+    }
+}
+
 private struct NotificationBellButton: View {
     let unreadCount: Int
     let action: () -> Void
@@ -320,177 +490,6 @@ private struct NotificationBellButton: View {
                         .fill(Color.red)
                         .frame(width: 10, height: 10)
                         .offset(x: 8, y: -8)
-                }
-            }
-        }
-    }
-}
-
-private struct DiscoverPlaceDetailSheet: View {
-    @ObservedObject var place: ObservablePlace
-    var isLoading: Bool = false
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 12) {
-                Capsule().fill(Color.secondary.opacity(0.4)).frame(width: 40, height: 5).padding(.top, 8)
-                HStack(spacing: 10) {
-                    Image(systemName: place.type.systemImage)
-                        .foregroundColor(.white)
-                        .frame(width: 44, height: 44)
-                        .background(Circle().fill(place.type.color))
-                    VStack(alignment: .leading) {
-                        Text(place.name).font(.headline)
-                        HStack(spacing: 6) {
-                            Image(systemName: "star.fill").foregroundColor(.yellow)
-                            Text(String(format: "%.1f", place.rating)).foregroundColor(.secondary)
-                        }
-                    }
-                    Spacer()
-                }
-                .padding(.horizontal)
-
-                if let isOpen = place.isOpen {
-                    Text(isOpen ? "Open Now" : "Closed")
-                        .font(.callout.bold())
-                        .foregroundColor(isOpen ? .green : .red)
-                        .padding(.horizontal)
-                }
-
-                if !place.openHours.isEmpty {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Hours")
-                            .font(.subheadline.bold())
-                            .padding(.bottom, 2)
-                        ForEach(place.openHours, id: \.self) { line in
-                            Text(line)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-
-                if let overview = place.overview {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Overview").font(.subheadline.bold())
-                        Text(overview)
-                            .font(.callout)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.horizontal)
-                }
-
-                if !place.photos.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack {
-                            ForEach(place.photos, id: \.self) { ref in
-                                if let url = googlePlacePhotoURL(photoReference: ref) {
-                                    AsyncImage(url: url) { phase in
-                                        if let img = phase.image {
-                                            img.resizable().aspectRatio(contentMode: .fill)
-                                        } else if phase.error != nil {
-                                            Color.red
-                                        } else {
-                                            ProgressView()
-                                        }
-                                    }
-                                    .frame(width: 120, height: 90)
-                                    .cornerRadius(10)
-                                    .clipped()
-                                }
-                            }
-                        }
-                        .padding(.horizontal)
-                    }
-                } else {
-                    Text("No photos available.")
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal)
-                }
-
-                Divider().padding(.horizontal)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Reviews").font(.subheadline.bold())
-                    Text("DEBUG: \(place.reviews.count) reviews loaded for \(place.name)")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    if place.reviews.isEmpty {
-                        Text("No reviews found.")
-                            .foregroundColor(.secondary)
-                            .font(.callout)
-                    } else {
-                        ForEach(place.reviews) { review in
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    if let name = review.authorName {
-                                        Text(name).font(.caption.bold())
-                                    }
-                                    if let rating = review.rating {
-                                        HStack(spacing: 2) {
-                                            Image(systemName: "star.fill")
-                                                .resizable()
-                                                .frame(width: 10, height: 10)
-                                                .foregroundColor(.yellow)
-                                            Text("\(rating)")
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
-                                    if let time = review.relativeTimeDescription {
-                                        Text("· \(time)")
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                                if let text = review.text {
-                                    Text("\"\(text)\"")
-                                        .font(.callout)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            .padding(.bottom, 6)
-                        }
-                    }
-                }
-                .padding(.horizontal)
-                Spacer()
-            }
-        }
-        .onAppear {
-            print("Sheet appears for \(place.name) with \(place.reviews.count) reviews")
-        }
-    }
-}
-
-private struct FilterSheetView: View {
-    @Binding var filters: DiscoverFilters
-    @Environment(\.dismiss) var dismiss
-    var body: some View {
-        NavigationView {
-            Form {
-                Section(header: Text("Sort & Filter")) {
-                    Picker("Sort By", selection: $filters.sortBy) {
-                        ForEach(DiscoverFilters.SortBy.allCases) { sortBy in
-                            Text(sortBy.rawValue).tag(sortBy)
-                        }
-                    }
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Minimum Rating: \(String(format: "%.1f", filters.minRating))")
-                        Slider(value: $filters.minRating, in: 0...5, step: 0.5)
-                    }
-                    .padding(.vertical, 8)
-                    Toggle("Open Now", isOn: $filters.onlyOpenNow)
-                    Stepper("Max Results: \(filters.maxResults)", value: $filters.maxResults, in: 10...100, step: 10)
-                }
-            }
-            .navigationTitle("Filters")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
                 }
             }
         }
@@ -549,76 +548,76 @@ struct DiscoverView: View {
     }
 
     var body: some View {
-            NavigationStack {
-                ZStack {
-                    mapView
-                    VStack(spacing: 0) {
-                        filterRow
-                        Spacer()
-                    }
-                    .padding(.top, 8)
-                    .padding(.horizontal, 8)
-                    VStack {
-                        Spacer()
-                        HStack {
-                            CircleIconButton(systemName: "location.fill") { focusOnUser() }
-                            Spacer()
-                            CircleIconButton(systemName: "line.3.horizontal.decrease.circle.fill") { showFilterSheet = true }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 16 + 120)
-                    }
-                    VStack(spacing: 8) {
-                        Spacer()
-                        carouselHeader
-                        placesCarousel
-                    }
-                    .padding(.bottom, 12)
-                    if isLoading {
-                        ProgressView().padding(.bottom, 180)
-                    }
-                    if locationManager.authorizationStatus == .denied || locationManager.authorizationStatus == .restricted {
-                        LocationPermissionView()
-                            .zIndex(10)
-                    }
+        NavigationStack {
+            ZStack {
+                mapView
+                VStack(spacing: 0) {
+                    filterRow
+                    Spacer()
                 }
-                .navigationTitle("Discover")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItemGroup(placement: .navigationBarTrailing) {
-                        NotificationBellButton(unreadCount: appState.unreadNotificationCount) {
-                            showNotifications = true
-                        }
+                .padding(.top, 8)
+                .padding(.horizontal, 8)
+                VStack {
+                    Spacer()
+                    HStack {
+                        CircleIconButton(systemName: "location.fill") { focusOnUser() }
+                        Spacer()
+                        CircleIconButton(systemName: "line.3.horizontal.decrease.circle.fill") { showFilterSheet = true }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16 + 120)
                 }
-                .onAppear {
-                    if locationManager.authorizationStatus == .notDetermined {
-                        locationManager.requestAuthorizationAndMaybeStartUpdating()                    }
-                    updatePlacesForRegion()
+                VStack(spacing: 8) {
+                    Spacer()
+                    carouselHeader
+                    placesCarousel
                 }
-                .modifier(CameraChangeModifier(
-                    cameraPositioniOS16: $cameraPositioniOS16,
-                    lastRegion: $lastRegion,
-                    onRegionChanged: { updatePlacesForRegion() }
-                ))
-                .sheet(item: $detailSheetPlace) { obsPlace in
-                    DiscoverPlaceDetailSheet(place: obsPlace, isLoading: isDetailLoading)
-                        .onAppear {
-                            print("Sheet onAppear for \(obsPlace.name), reviews: \(obsPlace.reviews.count)")
-                            // Only load details if we haven't loaded them yet and aren't loading
-                            if let selected = selectedPlace,
-                               let idx = places.firstIndex(where: { $0.id == selected.id }),
-                               !places[idx].detailsLoaded,
-                               !isDetailLoading
-                            {
-                                isDetailLoading = true
-                                Task { await loadDetailsForSelectedPlace() }
-                            }
-                        }
-                        .presentationDetents([.medium, .large])
+                .padding(.bottom, 12)
+                if isLoading {
+                    ProgressView().padding(.bottom, 180)
+                }
+                if locationManager.authorizationStatus == .denied || locationManager.authorizationStatus == .restricted {
+                    LocationPermissionView()
+                        .zIndex(10)
                 }
             }
+            .navigationTitle("Discover")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    NotificationBellButton(unreadCount: appState.unreadNotificationCount) {
+                        showNotifications = true
+                    }
+                }
+            }
+            .onAppear {
+                if locationManager.authorizationStatus == .notDetermined {
+                    locationManager.requestAuthorizationAndMaybeStartUpdating()
+                }
+                updatePlacesForRegion()
+            }
+            .modifier(CameraChangeModifier(
+                cameraPositioniOS16: $cameraPositioniOS16,
+                lastRegion: $lastRegion,
+                onRegionChanged: { updatePlacesForRegion() }
+            ))
+            .sheet(item: $detailSheetPlace) { obsPlace in
+                DiscoverPlaceDetailSheet(place: obsPlace, isLoading: isDetailLoading)
+                    .onAppear {
+                        if let selected = selectedPlace,
+                           let idx = places.firstIndex(where: { $0.id == selected.id }),
+                           !places[idx].detailsLoaded,
+                           !isDetailLoading
+                        {
+                            isDetailLoading = true
+                            Task { await loadDetailsForSelectedPlace() }
+                        }
+                    }
+                    .presentationDetents([.medium, .large])
+            }
         }
+    }
+
     @ViewBuilder
     private var mapView: some View {
         if #available(iOS 17.0, *) {
@@ -665,7 +664,6 @@ struct DiscoverView: View {
         isDetailLoading = true
         selectedPlace = place
         detailSheetPlace = ObservablePlace(from: place)
-        print("handlePlaceTap: Open sheet for \(place.name), initial reviews: \(place.reviews.count)")
     }
 
     private func updatePlacesForRegion() {
@@ -689,7 +687,6 @@ struct DiscoverView: View {
                 let mapped: [DiscoverPlace] = results.map { gp in
                     let coord = CLLocationCoordinate2D(latitude: gp.geometry.location.lat, longitude: gp.geometry.location.lng)
                     let photoRefs = (gp.photos ?? []).compactMap { $0.photoReference }
-                    print("Nearby photos for \"\(gp.name)\": \(photoRefs.count)")
                     return DiscoverPlace(
                         id: UUID(),
                         name: gp.name,
@@ -697,58 +694,55 @@ struct DiscoverView: View {
                         type: selectedType,
                         rating: gp.rating ?? 0.0,
                         placeID: gp.placeId,
-                        photos: photoRefs
+                        photos: photoRefs,
+                        userRatingsTotal: gp.userRatingsTotal
                     )
                 }
                 await MainActor.run {
                     self.places = mapped
                     self.isLoading = false
-                    print("updatePlacesForRegion: Loaded \(mapped.count) places")
                 }
             } catch is CancellationError {
             } catch {
                 await MainActor.run {
                     self.isLoading = false
-                    print("updatePlacesForRegion: Error: \(error)")
                 }
             }
         }
     }
 
     private func loadDetailsForSelectedPlace() async {
-            guard let selected = selectedPlace else { return }
-            do {
-                if let details = try await placesService.placeDetails(placeID: selected.placeID) {
-                    let reviews: [PlaceReview] = details.reviews ?? []
-                    let overview = details.editorialSummary?.overview
-                    let photoRefs = (details.photos ?? []).compactMap { $0.photoReference }
-                    let isOpen = details.openingHours?.openNow
-                    let openHours = details.openingHours?.weekdayText ?? []
-                    print("Details photos for \"\(selected.name)\": \(photoRefs.count)")
-                    print("Details reviews for \"\(selected.name)\": \(reviews.count)")
-                    await MainActor.run {
-                        if let idx = places.firstIndex(where: { $0.id == selected.id }) {
-                            places[idx].reviews = reviews
-                            places[idx].overview = overview
-                            places[idx].photos = photoRefs
-                            places[idx].isOpen = isOpen
-                            places[idx].openHours = openHours
-                            places[idx].detailsLoaded = true // <-- SET LOADED FLAG
-                            selectedPlace = places[idx]
-                            // Fix: close and reopen sheet to force SwiftUI update
-                            detailSheetPlace = nil
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                detailSheetPlace = ObservablePlace(from: places[idx])
-                                print("loadDetailsForSelectedPlace: Reopened sheet for \(places[idx].name) with \(reviews.count) reviews")
-                            }
+        guard let selected = selectedPlace else { return }
+        do {
+            if let details = try await placesService.placeDetails(placeID: selected.placeID) {
+                let reviews: [PlaceReview] = details.reviews ?? []
+                let overview = details.editorialSummary?.overview
+                let photoRefs = (details.photos ?? []).compactMap { $0.photoReference }
+                let isOpen = details.openingHours?.openNow
+                let openHours = details.openingHours?.weekdayText ?? []
+                await MainActor.run {
+                    if let idx = places.firstIndex(where: { $0.id == selected.id }) {
+                        places[idx].reviews = reviews
+                        places[idx].overview = overview
+                        places[idx].photos = photoRefs
+                        places[idx].isOpen = isOpen
+                        places[idx].openHours = openHours
+                        places[idx].userRatingsTotal = details.userRatingsTotal
+                        places[idx].rating = details.rating ?? places[idx].rating
+                        places[idx].detailsLoaded = true
+                        selectedPlace = places[idx]
+                        detailSheetPlace = nil
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            detailSheetPlace = ObservablePlace(from: places[idx])
                         }
                     }
                 }
-            } catch {
-                print("Details API FAILED for \(selected.name): \(error)")
             }
-            await MainActor.run { self.isDetailLoading = false }
+        } catch {
+            print("Details API FAILED for \(selected.name): \(error)")
         }
+        await MainActor.run { self.isDetailLoading = false }
+    }
 
     private var filterRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -823,8 +817,8 @@ struct DiscoverView: View {
         switch locationManager.authorizationStatus {
         case .authorizedAlways, .authorizedWhenInUse:
             if let loc = locationManager.userLocation {
-                let span = MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08)
-                let region = MKCoordinateRegion(center: loc.coordinate, span: span)
+                let region = MKCoordinateRegion(center: loc.coordinate,
+                                                span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08))
                 if #available(iOS 17.0, *) {
                     cameraPositioniOS17 = .region(region)
                 } else {
@@ -837,10 +831,14 @@ struct DiscoverView: View {
             }
         case .notDetermined:
             locationManager.requestAuthorizationAndMaybeStartUpdating()
-        default:
+        case .denied, .restricted:
+            // show LocationPermissionView
+            break
+        @unknown default:
             break
         }
     }
+
 
     private struct CircleIconButton: View {
         let systemName: String
