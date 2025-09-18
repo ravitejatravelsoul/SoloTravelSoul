@@ -1,3 +1,8 @@
+//
+// DiscoverView.swift
+// (copy/paste this entire file into your project)
+//
+
 import Foundation
 import SwiftUI
 import MapKit
@@ -5,6 +10,7 @@ import CoreLocation
 
 private let GOOGLE_PLACES_API_KEY = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU"
 
+// MARK: - Photo URL helper
 fileprivate func googlePlacePhotoURL(photoReference: String, maxWidth: Int = 400) -> URL? {
     let apiKey = GOOGLE_PLACES_API_KEY
     if photoReference.starts(with: "places/") {
@@ -25,6 +31,7 @@ fileprivate func googlePlacePhotoURL(photoReference: String, maxWidth: Int = 400
     }
 }
 
+// MARK: - PlaceType
 enum PlaceType: String, CaseIterable, Identifiable {
     case restaurant, cafe, bar, attraction, trail
     var id: String { rawValue }
@@ -72,6 +79,7 @@ enum PlaceType: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - DiscoverPlace model
 struct DiscoverPlace: Identifiable, Equatable {
     let id: UUID
     let name: String
@@ -81,7 +89,7 @@ struct DiscoverPlace: Identifiable, Equatable {
     let placeID: String
     var isOpen: Bool?
     var openHours: [String] = []
-    var overview: String?
+    var formattedAddress: String?
     var photos: [String] = []
     var reviews: [PlaceReview] = []
     var userRatingsTotal: Int? = nil
@@ -90,6 +98,7 @@ struct DiscoverPlace: Identifiable, Equatable {
     static func == (lhs: DiscoverPlace, rhs: DiscoverPlace) -> Bool { lhs.id == rhs.id }
 }
 
+// Observable wrapper for the sheet
 final class ObservablePlace: ObservableObject, Identifiable {
     @Published var id: UUID
     @Published var name: String
@@ -99,7 +108,7 @@ final class ObservablePlace: ObservableObject, Identifiable {
     @Published var placeID: String
     @Published var isOpen: Bool?
     @Published var openHours: [String]
-    @Published var overview: String?
+    @Published var formattedAddress: String?
     @Published var photos: [String]
     @Published var reviews: [PlaceReview]
     @Published var userRatingsTotal: Int?
@@ -113,7 +122,7 @@ final class ObservablePlace: ObservableObject, Identifiable {
         self.placeID = place.placeID
         self.isOpen = place.isOpen
         self.openHours = place.openHours
-        self.overview = place.overview
+        self.formattedAddress = place.formattedAddress
         self.photos = place.photos
         self.reviews = place.reviews
         self.userRatingsTotal = place.userRatingsTotal
@@ -123,7 +132,7 @@ final class ObservablePlace: ObservableObject, Identifiable {
         guard place.id == self.id else { return }
         self.isOpen = place.isOpen
         self.openHours = place.openHours
-        self.overview = place.overview
+        self.formattedAddress = place.formattedAddress
         self.photos = place.photos
         self.reviews = place.reviews
         self.rating = place.rating
@@ -131,6 +140,7 @@ final class ObservablePlace: ObservableObject, Identifiable {
     }
 }
 
+// MARK: - Map helpers
 extension MKCoordinateRegion {
     static var defaultRegion: MKCoordinateRegion {
         MKCoordinateRegion(
@@ -171,6 +181,7 @@ extension CustomMapCameraPosition {
     }
 }
 
+// MARK: - Filters
 struct DiscoverFilters: Equatable {
     enum SortBy: String, CaseIterable, Identifiable {
         case distance = "Distance"
@@ -184,13 +195,16 @@ struct DiscoverFilters: Equatable {
     var sortBy: SortBy = .distance
 }
 
+// MARK: - PLACE DETAILS SHEET
 private struct DiscoverPlaceDetailSheet: View {
     @ObservedObject var place: ObservablePlace
+    @State private var isShareSheetPresented = false
     var isLoading: Bool = false
 
     private var averageRatingText: String {
         String(format: "%.1f", place.rating)
     }
+
     private var reviewsCountText: String {
         if let total = place.userRatingsTotal {
             return "(\(total) reviews)"
@@ -199,9 +213,23 @@ private struct DiscoverPlaceDetailSheet: View {
         }
     }
 
+    private var todayHours: String? {
+        let calendar = Calendar.current
+        let weekday = calendar.component(.weekday, from: Date())
+        // Google weekdayText is Mon..Sun starting index 0, Calendar.weekday gives Sun=1..Sat=7
+        // Convert Sunday=1 -> index 6, Monday=2 -> index 0, etc.
+        let adjusted: Int
+        if weekday == 1 { adjusted = 6 } else { adjusted = weekday - 2 }
+        if place.openHours.indices.contains(adjusted) {
+            return place.openHours[adjusted]
+        }
+        return nil
+    }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 16) {
+                // Photo
                 if let firstPhoto = place.photos.first,
                    let url = googlePlacePhotoURL(photoReference: firstPhoto, maxWidth: 600) {
                     AsyncImage(url: url) { phase in
@@ -217,12 +245,7 @@ private struct DiscoverPlaceDetailSheet: View {
                                 .aspectRatio(contentMode: .fill)
                                 .transition(.opacity)
                         case .failure:
-                            ZStack {
-                                Color.gray.opacity(0.2)
-                                Image(systemName: "photo")
-                                    .font(.largeTitle)
-                                    .foregroundColor(.gray)
-                            }
+                            placeholderImage
                         @unknown default:
                             EmptyView()
                         }
@@ -230,26 +253,21 @@ private struct DiscoverPlaceDetailSheet: View {
                     .frame(height: 220)
                     .clipped()
                     .cornerRadius(16)
-                    .padding([.top, .horizontal])
+                    .padding(.horizontal)
                 } else {
-                    ZStack {
-                        Color.gray.opacity(0.1)
-                        Image(systemName: place.type.systemImage)
-                            .font(.largeTitle)
-                            .foregroundColor(.gray)
-                    }
-                    .frame(height: 220)
-                    .cornerRadius(16)
-                    .padding([.top, .horizontal])
+                    placeholderImage
+                        .frame(height: 220)
+                        .cornerRadius(16)
+                        .padding(.horizontal)
                 }
 
+                // Title + rating
                 VStack(alignment: .leading, spacing: 8) {
                     Text(place.name)
-                        .font(.title)
-                        .bold()
+                        .font(.title2).bold()
                         .lineLimit(2)
 
-                    HStack(spacing: 6) {
+                    HStack(spacing: 10) {
                         Label(averageRatingText, systemImage: "star.fill")
                             .foregroundColor(.yellow)
                             .font(.headline)
@@ -259,62 +277,161 @@ private struct DiscoverPlaceDetailSheet: View {
                     }
                 }
                 .padding(.horizontal)
-                .padding(.top, 8)
 
-                Divider()
-                    .padding(.vertical, 12)
+                // Modern "Open in Maps" card (kept & improved UI)
+                Button(action: {
+                    openInMaps(address: place.formattedAddress ?? place.name,
+                               latitude: place.coordinate.latitude,
+                               longitude: place.coordinate.longitude)
+                }) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(LinearGradient(
+                                    gradient: Gradient(colors: [.blue, .green]),
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ))
+                                .frame(width: 44, height: 44)
 
-                if let overview = place.overview, !overview.isEmpty {
-                    Text(overview)
-                        .font(.callout)
-                        .foregroundColor(.primary)
-                        .padding(.horizontal)
-                        .padding(.bottom)
+                            Image(systemName: "location.north.fill")
+                                .foregroundColor(.white)
+                                .font(.system(size: 18, weight: .semibold))
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Open in Maps")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            if let addr = place.formattedAddress {
+                                Text(addr)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+
+                        Spacer()
+
+                        Image(systemName: "arrow.up.right.square")
+                            .foregroundColor(.blue)
+                    }
+                    .padding()
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color(.systemBackground))
+                            .shadow(color: Color.black.opacity(0.06), radius: 6, x: 0, y: 2)
+                    )
                 }
-                else if !place.reviews.isEmpty {
+                .padding(.horizontal)
+
+                // Open Now / Today's hours
+                Group {
+                    if let openNow = place.isOpen {
+                        HStack(spacing: 8) {
+                            Image(systemName: openNow ? "clock.badge.checkmark" : "clock.badge.xmark")
+                                .foregroundColor(openNow ? .green : .red)
+                            Text(openNow ? "Open Now" : "Closed")
+                                .foregroundColor(openNow ? .green : .red)
+                                .font(.subheadline)
+                            if let hours = todayHours {
+                                Text("· \(hours)")
+                                    .foregroundColor(.secondary)
+                                    .font(.subheadline)
+                            }
+                        }
+                        .padding(.horizontal)
+                    } else if let hours = todayHours {
+                        HStack(spacing: 8) {
+                            Image(systemName: "clock")
+                            Text(hours)
+                                .foregroundColor(.secondary)
+                                .font(.subheadline)
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+
+                // Share button
+                Button(action: { isShareSheetPresented = true }) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                        .font(.headline)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
+                }
+                .padding(.horizontal)
+                .sheet(isPresented: $isShareSheetPresented) {
+                    if let url = URL(string: "https://maps.apple.com/?q=\(place.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&ll=\(place.coordinate.latitude),\(place.coordinate.longitude)") {
+                        ShareSheet(activityItems: [url])
+                    }
+                }
+
+                Divider().padding(.vertical, 12)
+
+                // Recent reviews (if available)
+                if !place.reviews.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Recent Reviews")
                             .font(.headline)
-                        ForEach(place.reviews.prefix(3)) { review in
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 4) {
-                                    Text(review.authorName ?? "Anonymous")
-                                        .font(.subheadline)
-                                        .bold()
-                                    if let rating = review.rating {
-                                        Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                            .padding(.horizontal)
+
+                        ForEach(place.reviews.prefix(4)) { rev in
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Text(rev.authorName ?? "Anonymous")
+                                        .font(.subheadline).bold()
+                                    Spacer()
+                                    if let r = rev.rating {
+                                        Label(String(format: "%.1f", r), systemImage: "star.fill")
                                             .foregroundColor(.yellow)
-                                            .font(.subheadline)
-                                    }
-                                    if let time = review.relativeTimeDescription {
-                                        Text("· \(time)")
-                                            .foregroundColor(.secondary)
                                             .font(.caption)
                                     }
                                 }
-                                if let text = review.text, !text.isEmpty {
-                                    Text("“\(text.prefix(120))\(text.count > 120 ? "..." : "")”")
+                                if let text = rev.text {
+                                    Text(text)
                                         .font(.callout)
+                                        .foregroundColor(.primary)
+                                }
+                                if let relative = rev.relativeTimeDescription {
+                                    Text(relative).font(.caption2).foregroundColor(.secondary)
                                 }
                             }
+                            .padding(.horizontal)
                             Divider()
                         }
                     }
-                    .padding(.horizontal)
-                    .padding(.bottom)
                 }
-                else {
-                    Text("No overview or reviews available for this place.")
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal)
-                        .padding(.bottom)
-                }
-            }
-        }
+
+                Spacer().frame(height: 20)
+            } // VStack
+            .padding(.top)
+        } // ScrollView
         .background(Color(.systemBackground))
+    }
+
+    private var placeholderImage: some View {
+        ZStack {
+            Color.gray.opacity(0.1)
+            Image(systemName: place.type.systemImage)
+                .font(.largeTitle)
+                .foregroundColor(.gray)
+        }
+    }
+
+    private func openInMaps(address: String, latitude: Double, longitude: Double) {
+        let encoded = address.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let googleMapsURL = URL(string: "comgooglemaps://?q=\(encoded)&center=\(latitude),\(longitude)&zoom=14"),
+           UIApplication.shared.canOpenURL(googleMapsURL) {
+            UIApplication.shared.open(googleMapsURL)
+        } else if let appleMapsURL = URL(string: "http://maps.apple.com/?ll=\(latitude),\(longitude)&q=\(encoded)") {
+            UIApplication.shared.open(appleMapsURL)
+        }
     }
 }
 
+// MARK: - Filter sheet
 private struct FilterSheetView: View {
     @Binding var filters: DiscoverFilters
     @Environment(\.dismiss) var dismiss
@@ -340,15 +457,26 @@ private struct FilterSheetView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
+                    Button("Done") { dismiss() }
                 }
             }
         }
     }
 }
 
+// MARK: - ShareSheet wrapper
+struct ShareSheet: UIViewControllerRepresentable {
+    var activityItems: [Any]
+    var applicationActivities: [UIActivity]? = nil
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: applicationActivities)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+// MARK: - Google Places service + decoding
 final class STSGooglePlacesService {
     private let apiKey: String
     init(apiKey: String) { self.apiKey = apiKey }
@@ -400,6 +528,7 @@ final class STSGooglePlacesService {
     }
 }
 
+// Decodable structs
 struct STSNearbyResponse: Decodable {
     let results: [STSPlace]
     let status: String
@@ -432,6 +561,7 @@ struct STSPlaceDetails: Decodable {
     let photos: [STSPhoto]?
     let openingHours: STSOpeningHours?
     let editorialSummary: STSEditorialSummary?
+    let formattedAddress: String?
 }
 struct STSEditorialSummary: Decodable {
     let overview: String?
@@ -444,6 +574,7 @@ struct STSOpeningHours: Decodable {
     let weekdayText: [String]?
 }
 
+// MARK: - Location permission view & notification bell
 struct LocationPermissionView: View {
     var body: some View {
         VStack(spacing: 16) {
@@ -496,7 +627,9 @@ private struct NotificationBellButton: View {
     }
 }
 
+// MARK: - DISCOVER VIEW (main)
 struct DiscoverView: View {
+    // replace these types with your own concrete types in your project
     @ObservedObject var groupViewModel: GroupViewModel
     let currentUser: UserProfile
     @Binding var showNotifications: Bool
@@ -526,6 +659,7 @@ struct DiscoverView: View {
         self.placesService = STSGooglePlacesService(apiKey: GOOGLE_PLACES_API_KEY)
     }
 
+    // filter/sort result
     private var filteredPlaces: [DiscoverPlace] {
         var items = places.filter { $0.rating >= filters.minRating }
         switch filters.sortBy {
@@ -551,31 +685,52 @@ struct DiscoverView: View {
         NavigationStack {
             ZStack {
                 mapView
+
                 VStack(spacing: 0) {
                     filterRow
                     Spacer()
                 }
                 .padding(.top, 8)
                 .padding(.horizontal, 8)
+
+                // Controls row bottom-right and bottom-left
                 VStack {
                     Spacer()
                     HStack {
-                        CircleIconButton(systemName: "location.fill") { focusOnUser() }
+                        // Current location button (triangle style you mentioned)
+                        Button(action: {
+                            focusOnUser(animated: true)
+                        }) {
+                            Image(systemName: "location.north.fill") // triangle-like icon
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(.black)
+                                .frame(width: 44, height: 44)
+                                .background(Circle().fill(Color.white))
+                                .shadow(radius: 4)
+                        }
+                        .padding(.leading, 16)
+
                         Spacer()
-                        CircleIconButton(systemName: "line.3.horizontal.decrease.circle.fill") { showFilterSheet = true }
+
+                        CircleIconButton(systemName: "line.3.horizontal.decrease.circle.fill") {
+                            showFilterSheet = true
+                        }
+                        .padding(.trailing, 16)
                     }
-                    .padding(.horizontal, 16)
                     .padding(.bottom, 16 + 120)
                 }
+
                 VStack(spacing: 8) {
                     Spacer()
                     carouselHeader
                     placesCarousel
                 }
                 .padding(.bottom, 12)
+
                 if isLoading {
                     ProgressView().padding(.bottom, 180)
                 }
+
                 if locationManager.authorizationStatus == .denied || locationManager.authorizationStatus == .restricted {
                     LocationPermissionView()
                         .zIndex(10)
@@ -618,26 +773,25 @@ struct DiscoverView: View {
         }
     }
 
+    // MARK: Map view builder
     @ViewBuilder
     private var mapView: some View {
         if #available(iOS 17.0, *) {
-            MapReader { _ in
-                Map(position: $cameraPositioniOS17) {
-                    UserAnnotation()
-                    ForEach(filteredPlaces) { place in
-                        Annotation("", coordinate: place.coordinate) {
-                            PinView(place: place, selected: place.id == selectedPlace?.id)
-                                .onTapGesture { handlePlaceTap(place) }
-                        }
+            Map(position: $cameraPositioniOS17) {
+                UserAnnotation()
+                ForEach(filteredPlaces) { place in
+                    Annotation("", coordinate: place.coordinate) {
+                        PinView(place: place, selected: place.id == selectedPlace?.id)
+                            .onTapGesture { handlePlaceTap(place) }
                     }
                 }
-                .ignoresSafeArea()
-                .onMapCameraChange(frequency: .onEnd) { context in
-                    let region = context.region
-                    if !regionsAreEqual(region, lastRegion) {
-                        lastRegion = region
-                        updatePlacesForRegion()
-                    }
+            }
+            .ignoresSafeArea()
+            .onMapCameraChange(frequency: .onEnd) { context in
+                let region = context.region
+                if !regionsAreEqual(region, lastRegion) {
+                    lastRegion = region
+                    updatePlacesForRegion()
                 }
             }
         } else {
@@ -660,6 +814,7 @@ struct DiscoverView: View {
         }
     }
 
+    // MARK: Actions
     private func handlePlaceTap(_ place: DiscoverPlace) {
         isDetailLoading = true
         selectedPlace = place
@@ -703,10 +858,12 @@ struct DiscoverView: View {
                     self.isLoading = false
                 }
             } catch is CancellationError {
+                // canceled
             } catch {
                 await MainActor.run {
                     self.isLoading = false
                 }
+                print("Nearby search failed: \(error)")
             }
         }
     }
@@ -720,19 +877,23 @@ struct DiscoverView: View {
                 let photoRefs = (details.photos ?? []).compactMap { $0.photoReference }
                 let isOpen = details.openingHours?.openNow
                 let openHours = details.openingHours?.weekdayText ?? []
+                let address = details.formattedAddress
+
                 await MainActor.run {
                     if let idx = places.firstIndex(where: { $0.id == selected.id }) {
                         places[idx].reviews = reviews
-                        places[idx].overview = overview
                         places[idx].photos = photoRefs
                         places[idx].isOpen = isOpen
                         places[idx].openHours = openHours
+                        places[idx].formattedAddress = address
                         places[idx].userRatingsTotal = details.userRatingsTotal
                         places[idx].rating = details.rating ?? places[idx].rating
                         places[idx].detailsLoaded = true
+
                         selectedPlace = places[idx]
                         detailSheetPlace = nil
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        // Slight delay so sheet's ObservablePlace is constructed with updated fields
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
                             detailSheetPlace = ObservablePlace(from: places[idx])
                         }
                     }
@@ -744,6 +905,7 @@ struct DiscoverView: View {
         await MainActor.run { self.isDetailLoading = false }
     }
 
+    // MARK: UI parts
     private var filterRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
@@ -813,16 +975,27 @@ struct DiscoverView: View {
         )
     }
 
-    private func focusOnUser() {
+    // Recenter to user location with optional animation
+    private func focusOnUser(animated: Bool = false) {
         switch locationManager.authorizationStatus {
         case .authorizedAlways, .authorizedWhenInUse:
             if let loc = locationManager.userLocation {
                 let region = MKCoordinateRegion(center: loc.coordinate,
                                                 span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08))
-                if #available(iOS 17.0, *) {
-                    cameraPositioniOS17 = .region(region)
+                if animated {
+                    withAnimation(.easeInOut) {
+                        if #available(iOS 17.0, *) {
+                            cameraPositioniOS17 = .region(region)
+                        } else {
+                            cameraPositioniOS16 = .region(region)
+                        }
+                    }
                 } else {
-                    cameraPositioniOS16 = .region(region)
+                    if #available(iOS 17.0, *) {
+                        cameraPositioniOS17 = .region(region)
+                    } else {
+                        cameraPositioniOS16 = .region(region)
+                    }
                 }
                 lastRegion = region
                 updatePlacesForRegion()
@@ -839,7 +1012,7 @@ struct DiscoverView: View {
         }
     }
 
-
+    // MARK: small components
     private struct CircleIconButton: View {
         let systemName: String
         let action: () -> Void

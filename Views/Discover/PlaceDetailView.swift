@@ -1,8 +1,10 @@
 import SwiftUI
 import MapKit
+import UIKit
 
+// MARK: - Google Place Photo Helper
 fileprivate func googlePlacePhotoURL(photoReference: String, maxWidth: Int = 400) -> URL? {
-    let apiKey = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU"
+    let apiKey = "YOUR_API_KEY_HERE" // Replace with your API key
     var components = URLComponents(string: "https://places.googleapis.com/v1/\(photoReference)/media")
     components?.queryItems = [
         URLQueryItem(name: "key", value: apiKey),
@@ -11,6 +13,26 @@ fileprivate func googlePlacePhotoURL(photoReference: String, maxWidth: Int = 400
     return components?.url
 }
 
+// MARK: - Map Launcher (Google Maps → Apple Maps fallback)
+struct MapLauncher {
+    static func openInMaps(placeName: String, latitude: Double, longitude: Double) {
+        let encodedName = placeName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+
+        // Google Maps URL scheme
+        if let googleMapsURL = URL(string: "comgooglemaps://?q=\(encodedName)&center=\(latitude),\(longitude)&zoom=15"),
+           UIApplication.shared.canOpenURL(googleMapsURL) {
+            UIApplication.shared.open(googleMapsURL)
+            return
+        }
+
+        // Fallback → Apple Maps
+        if let appleMapsURL = URL(string: "http://maps.apple.com/?q=\(encodedName)&ll=\(latitude),\(longitude)") {
+            UIApplication.shared.open(appleMapsURL)
+        }
+    }
+}
+
+// MARK: - Place Detail View
 struct PlaceDetailView: View {
     let place: Place
     @State private var region: MKCoordinateRegion
@@ -26,6 +48,8 @@ struct PlaceDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+
+                // Photos
                 if let photos = place.photoReferences, !photos.isEmpty {
                     TabView {
                         ForEach(photos, id: \.self) { ref in
@@ -63,6 +87,7 @@ struct PlaceDetailView: View {
                         .overlay(Image(systemName: "photo").font(.largeTitle).foregroundColor(.gray))
                 }
 
+                // Basic info
                 Text(place.name).font(.title2).bold()
                 if let address = place.address {
                     Text(address).font(.callout)
@@ -78,12 +103,30 @@ struct PlaceDetailView: View {
                     }
                 }
 
+                // Map
                 Map(initialPosition: .region(region)) {
                     Marker(place.name, coordinate: CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude))
                 }
                 .frame(height: 180)
                 .cornerRadius(12, corners: [.topLeft, .topRight])
 
+                // "Open in Maps" Button
+                Button(action: {
+                    MapLauncher.openInMaps(
+                        placeName: place.name,
+                        latitude: place.latitude,
+                        longitude: place.longitude
+                    )
+                }) {
+                    Label("Open in Maps", systemImage: "map")
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(8)
+                }
+                .padding(.vertical, 4)
+
+                // Contact info
                 if let phone = place.phoneNumber {
                     HStack { Image(systemName: "phone"); Text(phone) }
                         .foregroundColor(.blue)
@@ -96,6 +139,7 @@ struct PlaceDetailView: View {
                     }
                 }
 
+                // Reviews
                 if let reviews = place.reviews, !reviews.isEmpty {
                     Text("Reviews").font(.headline)
                     ForEach(reviews.prefix(3)) { review in

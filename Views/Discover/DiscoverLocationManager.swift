@@ -1,53 +1,81 @@
+//
+//  DiscoverLocationManager.swift
+//  SoloTravelSoul
+//
+//  Created by ChatGPT on 2025-09-18.
+//
+
 import Foundation
 import CoreLocation
 import Combine
+import MapKit
 
 final class DiscoverLocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published var userLocation: CLLocation?
-    private let manager = CLLocationManager()
-    private var didRequest = false
 
     override init() {
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
+        manager.distanceFilter = 10 // meters
     }
 
-    /// Call this to request permission. All logic continues in the delegate.
+    /// Request permission and start updates if possible
     func requestAuthorizationAndMaybeStartUpdating() {
         guard CLLocationManager.locationServicesEnabled() else { return }
-        didRequest = true
-        manager.requestWhenInUseAuthorization() // no status check here!
-    }
 
-    /// Call this if you want to force location updates (after permission is granted)
-    func startUpdating() {
-        guard authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways else { return }
-        manager.startUpdatingLocation()
-    }
-    func stopUpdating() { manager.stopUpdatingLocation() }
-
-    // This is CALLED by the system whenever authorization changes, including after request
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        let newStatus = manager.authorizationStatus
-        DispatchQueue.main.async {
-            self.authorizationStatus = newStatus
-            if self.didRequest,
-               (newStatus == .authorizedWhenInUse || newStatus == .authorizedAlways) {
-                self.startUpdating()
-                self.didRequest = false
-            }
+        switch manager.authorizationStatus {
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse, .authorizedAlways:
+            startUpdating()
+        default:
+            break
         }
     }
 
+    func startUpdating() {
+        manager.startUpdatingLocation()
+    }
+
+    func stopUpdating() {
+        manager.stopUpdatingLocation()
+    }
+
+    // MARK: - CLLocationManagerDelegate
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        authorizationStatus = manager.authorizationStatus
+        if authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways {
+            startUpdating()
+        }
+    }
+®
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let loc = locations.last else { return }
         DispatchQueue.main.async {
-            self.userLocation = locations.last
+            self.userLocation = loc
+
+            // 🔔 Notify DiscoverView to recenter if needed
+            let region = MKCoordinateRegion(
+                center: loc.coordinate,
+                span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08)
+            )
+            NotificationCenter.default.post(
+                name: .didUpdateUserLocation,
+                object: region
+            )
         }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        print("Location error: \(error.localizedDescription)")
+        print("Location manager error: \(error.localizedDescription)")
     }
+}
+
+// MARK: - Notification
+extension Notification.Name {
+    static let didUpdateUserLocation = Notification.Name("didUpdateUserLocation")
 }
