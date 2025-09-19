@@ -35,6 +35,7 @@ struct ChangePasswordView: View {
                     dismiss()
                 }
             }
+            .accentColor(AppTheme.primary)
             .navigationTitle("Change Password")
             .alert(error, isPresented: $showError) {
                 Button("OK", role: .cancel) {}

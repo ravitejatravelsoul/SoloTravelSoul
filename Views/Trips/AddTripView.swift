@@ -49,6 +49,7 @@ struct AddTripView: View {
                 }
                 .disabled(destination.isEmpty)
             )
+            .accentColor(AppTheme.primary)
         }
     }
 }

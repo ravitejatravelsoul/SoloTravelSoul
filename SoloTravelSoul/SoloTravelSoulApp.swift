@@ -12,6 +12,7 @@ struct SoloTravelSoulApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .accentColor(AppTheme.primary)
                 .environmentObject(authViewModel)
                 .environmentObject(tripViewModel)
                 .environmentObject(notificationsVM)

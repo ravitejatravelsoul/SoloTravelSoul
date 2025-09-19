@@ -45,7 +45,16 @@ final class GooglePlacesService {
     static let shared = GooglePlacesService()
     private init() {}
 
-    private let apiKey = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU"
+    /// The Google Places API key.  Do **not** commit your API key in source code.
+    /// Instead, read the `GooglePlacesAPIKey` entry from your app's Info.plist.  If no entry is
+    /// found, an empty string is used and API requests will fail.  Make sure to add the
+    /// appropriate key in Info.plist.
+    private let apiKey: String = {
+        if let key = Bundle.main.object(forInfoDictionaryKey: "GooglePlacesAPIKey") as? String {
+            return key
+        }
+        return ""
+    }()
 
     /// Generic search for places using a text query. Optionally filter by type (e.g. "restaurant").
     func searchPlaces(

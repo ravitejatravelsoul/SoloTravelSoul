@@ -1,56 +1,13 @@
 import SwiftUI
 
-struct AppTheme {
-    /// Primary colour used throughout the app (buttons, highlights, icons).
-    static let primary: Color = Color(red: 0.07, green: 0.44, blue: 0.76)
+/// A collection of reusable, themed UI components.  These wrappers apply the
+/// app's design language (colours, corner radii, shadows) consistently
+/// across different screens.  Using these components helps reduce duplicate
+/// styling code and makes it easy to iterate on the look and feel in one
+/// place.
 
-    /// Secondary accent colour for less prominent UI elements.
-    static let accent: Color = Color(red: 0.20, green: 0.60, blue: 0.86)
-
-    /// Card background colour for list items and containers.
-    static let card: Color = Color(.secondarySystemBackground)
-
-    /// Page background colour.
-    static let background: Color = Color(.systemBackground)
-
-    /// Primary text colour.
-    static let textPrimary: Color = Color.primary
-
-    /// Secondary text colour.
-    static let textSecondary: Color = Color.secondary
-
-    /// Background for chips/pills.
-    static let chipBackground: Color = Color(.systemGray5)
-
-    /// Colour for selected chips/pills.
-    static let chipSelected: Color = primary
-
-    /// Background for search fields.
-    static let searchBackground: Color = Color.white.opacity(0.95)
-
-    /// Shadow colour used for cards.
-    static let shadow: Color = Color.black.opacity(0.07)
-
-    /// Tab bar background colour.
-    static let tabBar: Color = Color(.systemBackground)
-
-    /// Font for headings.
-    static let headingFont: Font = Font.system(size: 28, weight: .bold)
-
-    /// Font for body text.
-    static let bodyFont: Font = Font.system(size: 16, weight: .regular)
-
-    /// Corner radius for cards.
-    static let cardCornerRadius: CGFloat = 12
-
-    /// Shadow radius for cards.
-    static let cardShadow: CGFloat = 4
-}
-
-// MARK: - Themed reusable components
-
-/// A card container that applies padding, background colour, corner radius and shadow.
-/// Use this to wrap content that should appear as a card.
+/// A card container that applies padding, background colour, corner radius
+/// and shadow.  Use this to wrap content that should appear as a card.
 struct ThemedCard<Content: View>: View {
     let content: Content
     init(@ViewBuilder content: () -> Content) {
