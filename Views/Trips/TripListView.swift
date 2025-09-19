@@ -39,8 +39,7 @@ struct TripListView: View {
                             photoData: nil,
                             latitude: nil,
                             longitude: nil,
-                            placeName: nil,
-                            members: [] // <-- Added members argument
+                            placeName: nil
                         )
                         tripViewModel.trips.append(newTrip)
                     }) {

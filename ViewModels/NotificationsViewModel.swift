@@ -7,11 +7,9 @@ class NotificationsViewModel: ObservableObject {
     private let db = Firestore.firestore()
     private var userId: String = ""
     private var listener: ListenerRegistration?
-    weak var appState: AppState?
 
     /// Sets up a real-time listener for notifications for the given user.
-    func setup(userId: String, appState: AppState? = nil) {
-        self.appState = appState
+    func setup(userId: String) {
         self.userId = userId
         listener?.remove()
         listener = db.collection("users").document(userId).collection("notifications")
@@ -31,8 +29,6 @@ class NotificationsViewModel: ObservableObject {
                 }
                 DispatchQueue.main.async {
                     self.notifications = notifications
-                    let unreadCount = notifications.filter { !$0.isRead }.count
-                    self.appState?.unreadNotificationCount = unreadCount
                 }
             }
     }

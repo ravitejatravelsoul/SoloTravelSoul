@@ -49,9 +49,6 @@ struct TripDetailView: View {
         )
     )
 
-    // NEW: Suggestions for 'You might also like'
-    @State private var itinerarySuggestions: [Place] = []
-
     @Environment(\.dismiss) private var dismiss
 
     init(tripViewModel: TripViewModel, trip: PlannedTrip) {
@@ -69,14 +66,6 @@ struct TripDetailView: View {
                 suggestionsSection
                 if !trip.allPlaces.isEmpty { tripMapSection }
                 itinerarySection
-                // NEW: Show suggestions after itinerary
-                if !itinerarySuggestions.isEmpty {
-                    Section(header: Text("You might also like")) {
-                        ForEach(itinerarySuggestions) { place in
-                            Text(place.name)
-                        }
-                    }
-                }
                 saveSection
             }
             .sheet(item: $editingPlace) { edit in
@@ -452,7 +441,6 @@ struct TripDetailView: View {
             )
 
             trip.itinerary = plannedItinerary
-            itinerarySuggestions = suggestions
             tripViewModel.updateTrip(trip)
         }
     }

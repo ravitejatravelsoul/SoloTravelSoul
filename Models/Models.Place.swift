@@ -15,8 +15,6 @@ public struct Place: Identifiable, Codable, Hashable, Equatable {
     public let phoneNumber: String?
     public let website: String?
     public var journalEntries: [JournalEntry]?
-    // NEW: category property to distinguish "food" or "attraction"
-    public var category: String? // "food", "attraction", or nil
 
     public init(
         id: String,
@@ -32,8 +30,7 @@ public struct Place: Identifiable, Codable, Hashable, Equatable {
         openingHours: PlaceOpeningHours?,
         phoneNumber: String?,
         website: String?,
-        journalEntries: [JournalEntry]? = nil,
-        category: String? = nil // NEW: default nil
+        journalEntries: [JournalEntry]? = nil
     ) {
         self.id = id
         self.name = name
@@ -49,7 +46,6 @@ public struct Place: Identifiable, Codable, Hashable, Equatable {
         self.phoneNumber = phoneNumber
         self.website = website
         self.journalEntries = journalEntries
-        self.category = category
     }
 
     public func toDict() -> [String: Any] {
@@ -69,7 +65,6 @@ public struct Place: Identifiable, Codable, Hashable, Equatable {
         dict["phoneNumber"] = phoneNumber
         dict["website"] = website
         dict["journalEntries"] = journalEntries?.map { $0.toDict() }
-        dict["category"] = category // NEW: persist category
         return dict
     }
 
@@ -85,7 +80,6 @@ public struct Place: Identifiable, Codable, Hashable, Equatable {
         let openingHours = openingHoursDict.flatMap { PlaceOpeningHours.fromDict($0) }
         let journalEntriesArray = dict["journalEntries"] as? [[String: Any]]
         let journalEntries = journalEntriesArray?.compactMap { JournalEntry.fromDict($0) }
-        let category = dict["category"] as? String // NEW: load category
         return Place(
             id: id,
             name: name,
@@ -100,8 +94,7 @@ public struct Place: Identifiable, Codable, Hashable, Equatable {
             openingHours: openingHours,
             phoneNumber: dict["phoneNumber"] as? String,
             website: dict["website"] as? String,
-            journalEntries: journalEntries,
-            category: category // NEW
+            journalEntries: journalEntries
         )
     }
 }

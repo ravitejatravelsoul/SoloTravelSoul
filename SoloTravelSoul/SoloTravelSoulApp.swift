@@ -7,7 +7,6 @@ struct SoloTravelSoulApp: App {
     @StateObject var tripViewModel = TripViewModel()
     @StateObject var notificationsVM = NotificationsViewModel()
     @StateObject var locationManager = LocationManager()
-    @StateObject var appState = AppState() // NEW
 
     var body: some Scene {
         WindowGroup {
@@ -17,15 +16,14 @@ struct SoloTravelSoulApp: App {
                 .environmentObject(tripViewModel)
                 .environmentObject(notificationsVM)
                 .environmentObject(locationManager)
-                .environmentObject(appState) // NEW
                 .onAppear {
                     if let user = authViewModel.user {
-                        notificationsVM.setup(userId: user.uid, appState: appState)
+                        notificationsVM.setup(userId: user.uid)
                     }
                 }
                 .onChange(of: authViewModel.user) {
                     if let user = authViewModel.user {
-                        notificationsVM.setup(userId: user.uid, appState: appState)
+                        notificationsVM.setup(userId: user.uid)
                     }
                 }
         }
