@@ -891,7 +891,6 @@ struct DiscoverView: View {
         do {
             if let details = try await placesService.placeDetails(placeID: selected.placeID) {
                 let reviews: [PlaceReview] = details.reviews ?? []
-                let overview = details.editorialSummary?.overview
                 let photoRefs = (details.photos ?? []).compactMap { $0.photoReference }
                 let isOpen = details.openingHours?.openNow
                 let openHours = details.openingHours?.weekdayText ?? []

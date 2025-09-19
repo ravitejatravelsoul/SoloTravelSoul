@@ -14,6 +14,8 @@ struct CreateTripView: View {
     @State private var cityOrCountry: String = ""
     @StateObject private var placeSearchViewModel: PlaceSearchViewModel
     @State private var selectedPlaces: [Place] = []
+    @State private var plannedItinerary: [ItineraryDay] = []
+    @State private var itinerarySuggestions: [Place] = []
     @State private var tripMapPosition = MapCameraPosition.region(
         MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 48.8584, longitude: 2.2945),
@@ -139,18 +141,18 @@ struct CreateTripView: View {
                     .tint(.purple)
                 }
 
-                // Map and selected itinerary
-                if !selectedPlaces.isEmpty {
+                // Map and planned itinerary
+                if !plannedItinerary.isEmpty {
                     Section(header: Text("Trip Map")) {
                         Map(position: $tripMapPosition) {
-                            ForEach(selectedPlaces) { place in
+                            ForEach(plannedItinerary.flatMap { $0.places }) { place in
                                 Marker(place.name, coordinate: CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude))
                             }
                         }
                         .frame(height: 200)
                         .cornerRadius(12, corners: [.topLeft, .topRight])
                         .onAppear {
-                            if let first = selectedPlaces.first {
+                            if let first = plannedItinerary.first?.places.first {
                                 tripMapPosition = MapCameraPosition.region(
                                     MKCoordinateRegion(
                                         center: CLLocationCoordinate2D(latitude: first.latitude, longitude: first.longitude),
@@ -160,7 +162,27 @@ struct CreateTripView: View {
                             }
                         }
                     }
-                    Section(header: Text("Selected Itinerary")) {
+                    Section(header: Text("Planned Itinerary")) {
+                        ForEach(plannedItinerary) { day in
+                            VStack(alignment: .leading) {
+                                Text(day.date, style: .date)
+                                    .font(.headline)
+                                    .padding(.bottom, 2)
+                                ForEach(day.places) { place in
+                                    Text(place.name)
+                                }
+                            }.padding(.vertical, 3)
+                        }
+                    }
+                    if !itinerarySuggestions.isEmpty {
+                        Section(header: Text("You might also like")) {
+                            ForEach(itinerarySuggestions) { place in
+                                Text(place.name)
+                            }
+                        }
+                    }
+                } else if !selectedPlaces.isEmpty {
+                    Section(header: Text("Selected Places")) {
                         ForEach(selectedPlaces) { place in
                             Text(place.name)
                         }
@@ -179,7 +201,7 @@ struct CreateTripView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.green)
-                    .disabled(destination.isEmpty || cityOrCountry.isEmpty || selectedPlaces.isEmpty)
+                    .disabled(destination.isEmpty || cityOrCountry.isEmpty || plannedItinerary.isEmpty)
                     .alert("Trip Saved!", isPresented: $showSavedAlert) {
                         Button("OK", role: .cancel) { dismiss() }
                     }
@@ -218,35 +240,50 @@ struct CreateTripView: View {
             showAutoPlanError = true
             return
         }
+        if selectedPlaces.isEmpty {
+            autoPlanErrorMessage = "Please select at least one place to auto-plan."
+            showAutoPlanError = true
+            return
+        }
         Task {
-            await placeSearchViewModel.fetchTopPlaces(for: cityOrCountry)
-            let places = placeSearchViewModel.results.sorted {
-                ($0.rating ?? 0, $0.userRatingsTotal ?? 0, $0.name) >
-                ($1.rating ?? 0, $1.userRatingsTotal ?? 0, $1.name)
-            }
-            if places.isEmpty {
-                autoPlanErrorMessage = "No places found for your destination."
-                showAutoPlanError = true
-                return
-            }
-            selectedPlaces = Array(places.prefix(15)) // Simple: add top 15
+            let foodSpots = await placeSearchViewModel.fetchFoodPlaces(for: cityOrCountry)
+            let tempTrip = PlannedTrip(
+                id: UUID(),
+                destination: destination.isEmpty ? cityOrCountry : destination,
+                startDate: startDate,
+                endDate: endDate,
+                notes: notes,
+                itinerary: [],
+                photoData: nil,
+                latitude: nil,
+                longitude: nil,
+                placeName: nil,
+                members: []
+            )
+            let (itinerary, suggestions) = ItineraryPlanner.autoPlan(
+                places: selectedPlaces,
+                foodSpots: foodSpots,
+                trip: tempTrip
+            )
+            plannedItinerary = itinerary
+            itinerarySuggestions = suggestions
         }
     }
 
     private func saveTrip() {
-        let itineraryDay = ItineraryDay(date: startDate, places: selectedPlaces, journalEntries: [])
+        guard !plannedItinerary.isEmpty else { return }
         let newTrip = PlannedTrip(
             id: UUID(),
             destination: destination,
             startDate: startDate,
             endDate: endDate,
             notes: notes,
-            itinerary: [itineraryDay],
+            itinerary: plannedItinerary,
             photoData: nil,
             latitude: nil,
             longitude: nil,
             placeName: nil,
-            members: [] // <-- Added members argument
+            members: []
         )
         tripViewModel.addTrip(newTrip)
         showSavedAlert = true

@@ -1,10 +1,3 @@
-//
-//  DiscoverLocationManager.swift
-//  SoloTravelSoul
-//
-//  Created by ChatGPT on 2025-09-18.
-//
-
 import Foundation
 import CoreLocation
 import Combine
@@ -27,6 +20,7 @@ final class DiscoverLocationManager: NSObject, ObservableObject, CLLocationManag
     }
 
     func startUpdating() {
+        // Only start updates if authorized, else just request authorization
         guard authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways else {
             manager.requestWhenInUseAuthorization()
             return

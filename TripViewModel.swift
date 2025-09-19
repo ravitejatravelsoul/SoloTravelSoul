@@ -103,12 +103,24 @@ class TripViewModel: ObservableObject {
 
     // MARK: - Places
 
+    /// Adds a place to the last day of the trip's itinerary,
+    /// or creates a new day if itinerary is empty.
+    /// If the place already has a category, it is kept. Otherwise, assign by type.
     func addPlaceToTrip(place: Place, to trip: PlannedTrip) {
         var updated = trip
+        var placeToAdd = place
+        // Assign category if not already present
+        if placeToAdd.category == nil {
+            if let types = placeToAdd.types, types.contains(where: { $0.lowercased().contains("restaurant") }) {
+                placeToAdd.category = "food"
+            } else {
+                placeToAdd.category = "attraction"
+            }
+        }
         if updated.itinerary.isEmpty {
-            updated.itinerary.append(ItineraryDay(date: Date(), places: [place]))
+            updated.itinerary.append(ItineraryDay(date: Date(), places: [placeToAdd]))
         } else {
-            updated.itinerary[updated.itinerary.count - 1].places.append(place)
+            updated.itinerary[updated.itinerary.count - 1].places.append(placeToAdd)
         }
         addOrUpdateTrip(updated)
     }

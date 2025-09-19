@@ -49,6 +49,9 @@ struct TripDetailView: View {
         )
     )
 
+    // NEW: Suggestions for 'You might also like'
+    @State private var itinerarySuggestions: [Place] = []
+
     @Environment(\.dismiss) private var dismiss
 
     init(tripViewModel: TripViewModel, trip: PlannedTrip) {
@@ -66,6 +69,14 @@ struct TripDetailView: View {
                 suggestionsSection
                 if !trip.allPlaces.isEmpty { tripMapSection }
                 itinerarySection
+                // NEW: Show suggestions after itinerary
+                if !itinerarySuggestions.isEmpty {
+                    Section(header: Text("You might also like")) {
+                        ForEach(itinerarySuggestions) { place in
+                            Text(place.name)
+                        }
+                    }
+                }
                 saveSection
             }
             .sheet(item: $editingPlace) { edit in
@@ -77,7 +88,7 @@ struct TripDetailView: View {
                             tripViewModel.updateTrip(trip)
                         }
                     ),
-                    onUpdate: { _ in } // Binding already handles update
+                    onUpdate: { _ in }
                 )
             }
             .sheet(item: $selectedJournalDay) { day in
@@ -95,8 +106,6 @@ struct TripDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
         }
     }
-
-    // MARK: Sections
 
     var tripInfoSection: some View {
         Section(header: Text("Trip Info")) {
@@ -414,42 +423,36 @@ struct TripDetailView: View {
             return
         }
         Task {
+            // Fetch top places (tourist attractions, etc)
             await placeSearchViewModel.fetchTopPlaces(for: mainLocation)
-            let ranked = placeSearchViewModel.results.sorted {
+            let attractions = placeSearchViewModel.results.sorted {
                 ($0.rating ?? 0, $0.userRatingsTotal ?? 0, $0.name) >
                 ($1.rating ?? 0, $1.userRatingsTotal ?? 0, $1.name)
             }
-            if ranked.isEmpty {
+            if attractions.isEmpty {
                 autoPlanErrorMessage = "No places found for your destination."
                 showAutoPlanError = true
                 return
             }
+
+            // Fetch food spots (restaurants/local food). You need to implement this!
+            let foodSpots = await placeSearchViewModel.fetchFoodPlaces(for: mainLocation)
+
             let dateList = trip.startDate.days(until: trip.endDate)
             if dateList.isEmpty {
                 autoPlanErrorMessage = "Select a valid date range."
                 showAutoPlanError = true
                 return
             }
-            let blocks = ranked.map { ($0, estimateDuration(for: $0)) }
-            var dayPlans: [[Place]] = Array(repeating: [], count: dateList.count)
-            var dayTime = Array(repeating: 0.0, count: dateList.count)
-            var di = 0
-            for (place, dur) in blocks {
-                if dur >= 0.9 {
-                    if di < dateList.count {
-                        dayPlans[di].append(place)
-                        dayTime[di] += dur
-                        di += 1
-                    }
-                } else {
-                    while di < dateList.count && (dayTime[di] + dur) > 0.9 { di += 1 }
-                    if di < dateList.count {
-                        dayPlans[di].append(place)
-                        dayTime[di] += dur
-                    } else { break }
-                }
-            }
-            trip.itinerary = zip(dateList, dayPlans).map { ItineraryDay(date: $0.0, places: $0.1) }
+
+            let (plannedItinerary, suggestions) = ItineraryPlanner.autoPlan(
+                places: attractions,
+                foodSpots: foodSpots,
+                trip: trip
+            )
+
+            trip.itinerary = plannedItinerary
+            itinerarySuggestions = suggestions
             tripViewModel.updateTrip(trip)
         }
     }
@@ -513,20 +516,5 @@ struct EditPlaceSheet: View {
                 longitude = "\(place.longitude)"
             }
         }
-    }
-}
-
-// MARK: - Date Helper
-private extension Date {
-    func days(until end: Date) -> [Date] {
-        guard self <= end else { return [] }
-        var dates: [Date] = []
-        var current = self
-        let cal = Calendar.current
-        repeat {
-            dates.append(current)
-            current = cal.date(byAdding: .day, value: 1, to: current)!
-        } while current <= end
-        return dates
     }
 }

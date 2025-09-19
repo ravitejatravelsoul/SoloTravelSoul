@@ -32,8 +32,8 @@ private struct PlaceDetailsResult: Codable {
     let rating: Double?
     let user_ratings_total: Int?
     let photos: [PlacePhoto]?
-    let reviews: [PlaceReview]? // <- Use your model directly!
-    let opening_hours: PlaceOpeningHours? // <- Use your model directly!
+    let reviews: [PlaceReview]?
+    let opening_hours: PlaceOpeningHours?
     let formatted_phone_number: String?
     let website: String?
 }
@@ -47,10 +47,12 @@ final class GooglePlacesService {
 
     private let apiKey = "AIzaSyD7ysvfoeInF3mr9tO3IfRx1K5EfFK2XQU"
 
+    /// Generic search for places using a text query. Optionally filter by type (e.g. "restaurant").
     func searchPlaces(
         query: String,
         locationBias: (latitude: Double, longitude: Double)? = nil,
-        pageSize: Int = 15
+        pageSize: Int = 15,
+        type: String? = nil // NEW: type filter (e.g., "restaurant")
     ) async throws -> [Place] {
         guard let url = URL(string: "https://places.googleapis.com/v1/places:searchText?key=\(apiKey)") else {
             throw PlacesServiceError.invalidURL
@@ -75,6 +77,9 @@ final class GooglePlacesService {
                 ]
             ]
         }
+        if let type = type {
+            requestBody["includedTypes"] = [type] // Google API expects array for includedTypes
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody, options: [])
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
@@ -93,6 +98,13 @@ final class GooglePlacesService {
             let rating = result.rating
             let userRatingsTotal = result.userRatingCount
             let photoReferences = result.photos?.compactMap { $0.name }
+            // NEW: Assign category based on type
+            let category: String?
+            if let t = types, t.contains(where: { $0.lowercased().contains("restaurant") }) {
+                category = "food"
+            } else {
+                category = "attraction"
+            }
             let place = Place(
                 id: id,
                 name: name,
@@ -106,16 +118,34 @@ final class GooglePlacesService {
                 reviews: nil,
                 openingHours: nil,
                 phoneNumber: nil,
-                website: nil
+                website: nil,
+                journalEntries: nil,
+                category: category
             )
             places.append(place)
         }
         return places
     }
 
+    /// Fetches top attractions for a location (used for main itinerary).
     func fetchTopPlaces(for locationName: String) async throws -> [Place] {
         let query = "top attractions in \(locationName)"
-        return try await searchPlaces(query: query, locationBias: nil, pageSize: 15)
+        // Only return attractions (not restaurants)
+        let all = try await searchPlaces(query: query, locationBias: nil, pageSize: 15)
+        // Filter out restaurants if any slipped in
+        return all.filter { $0.category != "food" }
+    }
+
+    /// Fetches food/restaurant places for a location (used for food in itinerary).
+    func fetchFoodPlaces(for locationName: String) async throws -> [Place] {
+        let query = "\(locationName) local food"
+        // Only return places of type restaurant, and mark as category "food"
+        let foods = try await searchPlaces(query: query, locationBias: nil, pageSize: 10, type: "restaurant")
+        return foods.map { place in
+            var p = place
+            p.category = "food"
+            return p
+        }
     }
 
     func fetchPlaceDetails(placeID: String) async throws -> Place {
@@ -131,20 +161,30 @@ final class GooglePlacesService {
         guard let details = decoded.result else {
             throw NSError(domain: "GooglePlacesService", code: 0, userInfo: [NSLocalizedDescriptionKey: "No details found"])
         }
+        // NEW: Assign category based on type
+        let types = details.types
+        let category: String?
+        if let t = types, t.contains(where: { $0.lowercased().contains("restaurant") }) {
+            category = "food"
+        } else {
+            category = "attraction"
+        }
         return Place(
             id: placeID,
             name: details.name,
             address: details.formatted_address,
             latitude: details.geometry.location.lat,
             longitude: details.geometry.location.lng,
-            types: details.types,
+            types: types,
             rating: details.rating,
             userRatingsTotal: details.user_ratings_total,
             photoReferences: details.photos?.compactMap { $0.photo_reference },
             reviews: details.reviews,
             openingHours: details.opening_hours,
             phoneNumber: details.formatted_phone_number,
-            website: details.website
+            website: details.website,
+            journalEntries: nil,
+            category: category
         )
     }
 }

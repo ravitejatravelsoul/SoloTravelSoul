@@ -20,6 +20,9 @@ class PlaceSearchViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var tripViewModel: TripViewModel
 
+    // NEW: Stores food spots (restaurants/local food)
+    @Published var foodResults: [Place] = []
+
     // NEW: Dynamic activity types from current results
     var availableActivities: [String] {
         let allTypes = results.compactMap { $0.types }.flatMap { $0 }
@@ -104,6 +107,33 @@ class PlaceSearchViewModel: ObservableObject {
             results = []
         }
         isLoading = false
+    }
+
+    // MARK: - NEW: Fetch food spots (restaurants/local food)
+    /// Fetches local food/restaurant places for the given location using Google Places API.
+    /// You can further refine the keyword if you want to focus on special local foods.
+    @MainActor
+    func fetchFoodPlaces(for location: String) async -> [Place] {
+        guard !location.trimmingCharacters(in: .whitespaces).isEmpty else {
+            foodResults = []
+            return []
+        }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            // Using 'restaurant' type and 'local food' as keyword to fetch local cuisine spots.
+            let places = try await GooglePlacesService.shared.searchPlaces(
+                query: "\(location) local food",
+                type: "restaurant"
+            )
+            let resultsLimited = Array(places.prefix(10))
+            self.foodResults = resultsLimited
+            return resultsLimited
+        } catch {
+            errorMessage = error.localizedDescription
+            foodResults = []
+            return []
+        }
     }
 
     func fetchPlaceDetails(placeID: String, completion: @escaping (Place?, String?) -> Void) {
