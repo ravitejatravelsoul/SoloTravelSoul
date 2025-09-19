@@ -11,67 +11,51 @@ import Combine
 import MapKit
 
 final class DiscoverLocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
-    private let manager = CLLocationManager()
-
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published var userLocation: CLLocation?
+    private let manager = CLLocationManager()
 
     override init() {
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
-        manager.distanceFilter = 10 // meters
     }
 
-    /// Request permission and start updates if possible
     func requestAuthorizationAndMaybeStartUpdating() {
         guard CLLocationManager.locationServicesEnabled() else { return }
-
-        switch manager.authorizationStatus {
-        case .notDetermined:
-            manager.requestWhenInUseAuthorization()
-        case .authorizedWhenInUse, .authorizedAlways:
-            startUpdating()
-        default:
-            break
-        }
+        manager.requestWhenInUseAuthorization()
     }
 
     func startUpdating() {
+        guard authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways else {
+            manager.requestWhenInUseAuthorization()
+            return
+        }
         manager.startUpdatingLocation()
     }
 
-    func stopUpdating() {
-        manager.stopUpdatingLocation()
-    }
+    func stopUpdating() { manager.stopUpdatingLocation() }
 
-    // MARK: - CLLocationManagerDelegate
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        authorizationStatus = manager.authorizationStatus
-        if authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways {
-            startUpdating()
+        DispatchQueue.main.async {
+            self.authorizationStatus = manager.authorizationStatus
+            switch manager.authorizationStatus {
+            case .authorizedWhenInUse, .authorizedAlways:
+                manager.startUpdatingLocation()
+            default:
+                break
+            }
         }
     }
-®
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let loc = locations.last else { return }
-        DispatchQueue.main.async {
-            self.userLocation = loc
 
-            // 🔔 Notify DiscoverView to recenter if needed
-            let region = MKCoordinateRegion(
-                center: loc.coordinate,
-                span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08)
-            )
-            NotificationCenter.default.post(
-                name: .didUpdateUserLocation,
-                object: region
-            )
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        DispatchQueue.main.async {
+            self.userLocation = locations.last
         }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        print("Location manager error: \(error.localizedDescription)")
+        print("Location error: \(error)")
     }
 }
 

@@ -112,6 +112,8 @@ final class ObservablePlace: ObservableObject, Identifiable {
     @Published var photos: [String]
     @Published var reviews: [PlaceReview]
     @Published var userRatingsTotal: Int?
+    @State private var fetchTask: Task<Void, Never>? = nil
+
 
     init(from place: DiscoverPlace) {
         self.id = place.id
@@ -634,7 +636,7 @@ struct DiscoverView: View {
     let currentUser: UserProfile
     @Binding var showNotifications: Bool
     @EnvironmentObject var appState: AppState
-
+    
     @State private var cameraPositioniOS16: CustomMapCameraPosition = .region(.defaultRegion)
     @State private var cameraPositioniOS17: MapCameraPosition = .region(.defaultRegion)
     @State private var selectedType: PlaceType = .restaurant
@@ -645,20 +647,25 @@ struct DiscoverView: View {
     @State private var isLoading = false
     @State private var isDetailLoading = false
     @State private var detailSheetPlace: ObservablePlace? = nil
-
+    
     @StateObject private var locationManager = DiscoverLocationManager()
     @State private var places: [DiscoverPlace] = []
-
+    
     private let placesService: STSGooglePlacesService
     @State private var fetchTask: Task<Void, Never>?
-
+    @State private var cameraPosition: MapCameraPosition = .region(
+        MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194), // Default: San Francisco
+            span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+        )
+    )
     init(groupViewModel: GroupViewModel, currentUser: UserProfile, showNotifications: Binding<Bool>) {
         self._groupViewModel = ObservedObject(wrappedValue: groupViewModel)
         self.currentUser = currentUser
         self._showNotifications = showNotifications
         self.placesService = STSGooglePlacesService(apiKey: GOOGLE_PLACES_API_KEY)
     }
-
+    
     // filter/sort result
     private var filteredPlaces: [DiscoverPlace] {
         var items = places.filter { $0.rating >= filters.minRating }
@@ -680,38 +687,49 @@ struct DiscoverView: View {
         }
         return items
     }
-
+    
     var body: some View {
         NavigationStack {
             ZStack {
                 mapView
-
+                
                 VStack(spacing: 0) {
                     filterRow
                     Spacer()
                 }
                 .padding(.top, 8)
                 .padding(.horizontal, 8)
-
+                
                 // Controls row bottom-right and bottom-left
                 VStack {
                     Spacer()
                     HStack {
                         // Current location button (triangle style you mentioned)
                         Button(action: {
+                            if let location = locationManager.userLocation {
+                                cameraPosition = .region(
+                                    MKCoordinateRegion(
+                                        center: location.coordinate,
+                                        span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+                                    )
+                                )
+                            } else {
+                                locationManager.requestAuthorizationAndMaybeStartUpdating()
+                            }
                             focusOnUser(animated: true)
                         }) {
-                            Image(systemName: "location.north.fill") // triangle-like icon
-                                .font(.system(size: 20, weight: .semibold))
-                                .foregroundColor(.black)
-                                .frame(width: 44, height: 44)
-                                .background(Circle().fill(Color.white))
-                                .shadow(radius: 4)
+                            Image(systemName: "location.fill")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundColor(.blue)
+                                    .frame(width: 44, height: 44)
+                                    .background(Color(.systemBackground))
+                                    .clipShape(Circle())
+                                    .shadow(color: Color.black.opacity(0.15), radius: 4, x: 0, y: 2)
                         }
-                        .padding(.leading, 16)
-
+                        .padding()
+                        
                         Spacer()
-
+                        
                         CircleIconButton(systemName: "line.3.horizontal.decrease.circle.fill") {
                             showFilterSheet = true
                         }
@@ -719,18 +737,18 @@ struct DiscoverView: View {
                     }
                     .padding(.bottom, 16 + 120)
                 }
-
+                
                 VStack(spacing: 8) {
                     Spacer()
                     carouselHeader
                     placesCarousel
                 }
                 .padding(.bottom, 12)
-
+                
                 if isLoading {
                     ProgressView().padding(.bottom, 180)
                 }
-
+                
                 if locationManager.authorizationStatus == .denied || locationManager.authorizationStatus == .restricted {
                     LocationPermissionView()
                         .zIndex(10)
@@ -772,7 +790,7 @@ struct DiscoverView: View {
             }
         }
     }
-
+    
     // MARK: Map view builder
     @ViewBuilder
     private var mapView: some View {
@@ -813,14 +831,14 @@ struct DiscoverView: View {
             .ignoresSafeArea()
         }
     }
-
+    
     // MARK: Actions
     private func handlePlaceTap(_ place: DiscoverPlace) {
         isDetailLoading = true
         selectedPlace = place
         detailSheetPlace = ObservablePlace(from: place)
     }
-
+    
     private func updatePlacesForRegion() {
         fetchTask?.cancel()
         let region = lastRegion
@@ -829,9 +847,9 @@ struct DiscoverView: View {
         let typeParam = selectedType.googleType
         let keywordParam = selectedType.googleKeyword
         let openNow = filters.onlyOpenNow
-
+        
         isLoading = true
-
+        
         fetchTask = Task {
             do {
                 let results = try await placesService.nearbySearch(center: center,
@@ -867,7 +885,7 @@ struct DiscoverView: View {
             }
         }
     }
-
+    
     private func loadDetailsForSelectedPlace() async {
         guard let selected = selectedPlace else { return }
         do {
@@ -878,7 +896,7 @@ struct DiscoverView: View {
                 let isOpen = details.openingHours?.openNow
                 let openHours = details.openingHours?.weekdayText ?? []
                 let address = details.formattedAddress
-
+                
                 await MainActor.run {
                     if let idx = places.firstIndex(where: { $0.id == selected.id }) {
                         places[idx].reviews = reviews
@@ -889,7 +907,7 @@ struct DiscoverView: View {
                         places[idx].userRatingsTotal = details.userRatingsTotal
                         places[idx].rating = details.rating ?? places[idx].rating
                         places[idx].detailsLoaded = true
-
+                        
                         selectedPlace = places[idx]
                         detailSheetPlace = nil
                         // Slight delay so sheet's ObservablePlace is constructed with updated fields
@@ -904,7 +922,7 @@ struct DiscoverView: View {
         }
         await MainActor.run { self.isDetailLoading = false }
     }
-
+    
     // MARK: UI parts
     private var filterRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -943,7 +961,7 @@ struct DiscoverView: View {
             .background(.ultraThinMaterial, in: Capsule())
         }
     }
-
+    
     private var carouselHeader: some View {
         HStack {
             Text("SUGGESTIONS (\(filteredPlaces.count))")
@@ -954,7 +972,7 @@ struct DiscoverView: View {
         .padding(.horizontal, 16)
         .padding(.bottom, 4)
     }
-
+    
     private var placesCarousel: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
@@ -971,17 +989,21 @@ struct DiscoverView: View {
         .background(
             LinearGradient(gradient: Gradient(colors: [Color.clear, Color(.systemBackground)]),
                            startPoint: .top, endPoint: .bottom)
-                .opacity(0.8)
+            .opacity(0.8)
         )
     }
-
+    
     // Recenter to user location with optional animation
     private func focusOnUser(animated: Bool = false) {
         switch locationManager.authorizationStatus {
         case .authorizedAlways, .authorizedWhenInUse:
             if let loc = locationManager.userLocation {
-                let region = MKCoordinateRegion(center: loc.coordinate,
-                                                span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08))
+                let region = MKCoordinateRegion(
+                    center: loc.coordinate,
+                    span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+                )
+
+                // update map camera for the currently used API
                 if animated {
                     withAnimation(.easeInOut) {
                         if #available(iOS 17.0, *) {
@@ -997,21 +1019,27 @@ struct DiscoverView: View {
                         cameraPositioniOS16 = .region(region)
                     }
                 }
+
+                // keep lastRegion in sync (used for nearby search)
                 lastRegion = region
+
+                // refresh places for the new region
                 updatePlacesForRegion()
             } else {
+                // we have permission but no location yet; start updates
                 locationManager.startUpdating()
             }
+
         case .notDetermined:
             locationManager.requestAuthorizationAndMaybeStartUpdating()
         case .denied, .restricted:
-            // show LocationPermissionView
+            // permission denied — UI already handles this via LocationPermissionView
             break
         @unknown default:
             break
         }
     }
-
+    
     // MARK: small components
     private struct CircleIconButton: View {
         let systemName: String
@@ -1027,7 +1055,7 @@ struct DiscoverView: View {
             .shadow(radius: 2)
         }
     }
-
+    
     private struct PinView: View {
         let place: DiscoverPlace
         let selected: Bool
@@ -1051,7 +1079,7 @@ struct DiscoverView: View {
             }
         }
     }
-
+    
     private struct PlaceCard: View {
         let place: DiscoverPlace
         let isSelected: Bool
@@ -1102,12 +1130,12 @@ struct DiscoverView: View {
             )
         }
     }
-
+    
     struct CameraChangeModifier: ViewModifier {
         @Binding var cameraPositioniOS16: CustomMapCameraPosition
         @Binding var lastRegion: MKCoordinateRegion
         var onRegionChanged: () -> Void
-
+        
         func body(content: Content) -> some View {
             if #available(iOS 17.0, *) {
                 content
