@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"console.log\\(require\\('./node_modules/expo-notifications/package.json'\\).version\\)\")",
+      "Bash(node -e \"const n = require\\('./node_modules/expo-notifications/build/index'\\); console.log\\(Object.keys\\(n\\).filter\\(k => k.includes\\('Trigger'\\) || k.includes\\('Schedule'\\) || k.includes\\('Handler'\\)\\).join\\('\\\\n'\\)\\)\")",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\" -Recurse -Directory)",
+      "Bash(Select-Object -First 50)",
+      "Bash(Format-Table FullName)",
+      "Bash(xargs wc -l)",
+      "Bash(python3 -c \"s=open\\('c:/Users/ravit/Desktop/SoloTravelSoul/apps/mobile/store-assets/metadata/en-US/keywords.txt'\\).read\\(\\).strip\\(\\); print\\(f'Length: {len\\(s\\)} chars'\\); print\\('Content:', s\\)\")",
+      "Bash(node -e \"const s=require\\('fs'\\).readFileSync\\('c:/Users/ravit/Desktop/SoloTravelSoul/apps/mobile/store-assets/metadata/en-US/keywords.txt','utf8'\\).trim\\(\\); console.log\\('Length:', s.length, 'chars'\\); console.log\\('Content:', s\\);\")",
+      "Bash(node -e \"const s=require\\('fs'\\).readFileSync\\('c:/Users/ravit/Desktop/SoloTravelSoul/apps/mobile/store-assets/metadata/en-US/subtitle.txt','utf8'\\).trim\\(\\); console.log\\('Subtitle length:', s.length, '\\(iOS max 30\\):', s\\);\")",
+      "Bash(node -e \"const fs=require\\('fs'\\); ['icon.png','adaptive-icon.png','splash.png'].forEach\\(f => { const s=fs.statSync\\('c:/Users/ravit/Desktop/SoloTravelSoul/apps/mobile/assets/images/'+f\\); console.log\\(f, s.size+'B'\\); }\\);\")",
+      "Read(//c/Users/ravit/Downloads/**)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\\\\apps\\\\mobile\\\\assets\\\\images\\\\\" | Select-Object Name, @{N='KB';E={[math]::Round\\($_.Length/1KB,0\\)}}, LastWriteTime | Format-Table -AutoSize)",
+      "Bash(Select-Object Name)",
+      "Bash(xargs ls -la)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\\\\apps\\\\mobile\" -Force)"
+    ]
+  }
+}

@@ -1,0 +1,33 @@
+SoloTravelSoul is the travel companion built for independent explorers. Whether you're hopping continents solo or escaping for a weekend, SoloTravelSoul keeps every trip beautifully organized from first plan to lasting memory.
+
+PLAN YOUR JOURNEY
+Build day-by-day itineraries with ease. Add places, notes, and logistics for every day of your trip. See your full trip at a glance and stay organized no matter how complex the adventure.
+
+PACK SMARTER
+SoloTravelSoul analyzes your destination, trip length, and itinerary to suggest exactly what to pack — beach gear, hiking essentials, city outfits, international documents. Check items off as you go.
+
+JOURNAL EVERY MOMENT
+Write travel memories the moment they happen. Add a mood, tag a place, and attach photos. Your journal organizes entries by day in a clean timeline — each trip becomes a story you can relive anytime.
+
+NEVER MISS A BEAT WITH REMINDERS
+Set local reminders so the app notifies you 7 days before, 1 day before, and the morning of your trip. No account needed, no push server — reminders fire straight from your device.
+
+DISCOVER NEW PLACES
+Browse a curated collection of destinations. Filter by category — Beach, Hiking, City, Food, Adventure, Nightlife, Hidden Gem, or Solo-friendly — and save your favorites to your personal library.
+
+WORKS OFFLINE
+SoloTravelSoul keeps your itinerary, checklist, and journal available even without a signal. Changes sync automatically when you reconnect. Your trip data is never held hostage by a weak airport Wi-Fi.
+
+SHARE YOUR ADVENTURES
+Export your full trip as a shareable summary — destination, itinerary, packing progress, journal highlights — and send it to friends or save it for yourself.
+
+YOUR DATA, YOUR MEMORIES
+Everything you create belongs to you. SoloTravelSoul uses Firebase with strict security rules so only your account can access your content. No ads. No data selling. No subscriptions.
+
+DESIGNED FOR SOLO TRAVELERS
+Clean, distraction-free interface optimized for one thing: making your travel life easier and your memories more vivid.
+
+Coming in future updates:
+• Live place search powered by Foursquare (millions of real destinations)
+• Map view for trip pins and nearby places
+• Group trip planning and shared itineraries

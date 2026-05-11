@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Copy-Item \"C:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\\\\Data\\\\Attractions.json\" \"C:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\\\\apps\\\\mobile\\\\assets\\\\attractions.json\" -Force)",
+      "PowerShell(Copy-Item \"C:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\\\\Data\\\\Attractions.json\" \"C:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\\\\apps\\\\mobile\\\\assets\\\\attractions.json\" -Force)",
+      "PowerShell(New-Item -ItemType Directory -Force -Path \"C:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\\\\apps\\\\mobile\\\\assets\\\\images\")",
+      "PowerShell(cd \"C:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\"; Get-ChildItem -Recurse -Depth 4 -Name | Where-Object { $_ -notmatch \"node_modules|\\\\.git|xcuserdata|\\\\.DS_Store|pack-\" } | Sort-Object | Select-Object -First 120)",
+      "PowerShell(cd \"C:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\"; Get-ChildItem -Recurse -Depth 6 -Name | Where-Object { $_ -notmatch \"node_modules|\\\\.git|xcuserdata|\\\\.DS_Store|pack-\" } | Sort-Object | Select-Object -Skip 120)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\\\\apps\\\\mobile\\\\app\\\\\\(app\\)\\\\trips\" -Recurse -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object FullName)",
+      "PowerShell(Head -50)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\\\\apps\\\\mobile\\\\assets\\\\images\" -ErrorAction SilentlyContinue | Select-Object Name, @{Label=\"Type\";Expression={if\\($_.PSIsContainer\\){\"Directory\"}else{$_.Extension}}}; \"--- Files Found ---\")",
+      "Bash(Remove-Item \"c:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\\\\apps\\\\mobile\\\\app\\\\\\(app\\)\\\\privacy.tsx\" -Force)",
+      "Bash(Remove-Item \"c:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\\\\apps\\\\mobile\\\\app\\\\\\(app\\)\\\\terms.tsx\" -Force)",
+      "Bash(Write-Output \"Deleted\")",
+      "PowerShell(New-Item -ItemType Directory -Path \"c:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\\\\apps\\\\mobile\\\\store-assets\\\\metadata\\\\en-US\" -Force)",
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); types=sorted\\(set\\(a['type'] for a in data\\)\\); print\\(f'Total: {len\\(data\\)} attractions'\\); print\\('Types:', types\\)\")",
+      "PowerShell($data = Get-Content \"c:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\\\\apps\\\\mobile\\\\assets\\\\attractions.json\" | ConvertFrom-Json; Write-Output \"Total: $\\($data.Count\\)\"; $data | Select-Object -ExpandProperty type | Sort-Object -Unique)"
+    ]
+  }
+}

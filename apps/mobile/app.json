@@ -1,0 +1,84 @@
+{
+  "expo": {
+    "name": "SoloTravelSoul",
+    "slug": "solotravelsoul",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "solotravelsoul",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1270C2"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.solotravelsoul.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "SoloTravelSoul uses your location to show nearby places and travel recommendations.",
+        "NSCameraUsageDescription": "SoloTravelSoul needs camera access to add photos to your travel journal.",
+        "NSPhotoLibraryUsageDescription": "SoloTravelSoul needs photo library access to upload journey photos.",
+        "NSFaceIDUsageDescription": "Use Face ID to sign in quickly and securely."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#1270C2"
+      },
+      "package": "com.solotravelsoul.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.SCHEDULE_EXACT_ALARM"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#1270C2",
+          "iosDisplayInForeground": true
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "SoloTravelSoul uses your location to show nearby attractions and sort places by distance."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow SoloTravelSoul to access your photos to add memories to your journal."
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow SoloTravelSoul to use Face ID for secure sign-in."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "REPLACE_WITH_YOUR_EAS_PROJECT_ID"
+      }
+    }
+  }
+}

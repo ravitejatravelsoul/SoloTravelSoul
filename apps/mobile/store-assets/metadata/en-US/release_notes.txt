@@ -1,0 +1,14 @@
+Welcome to SoloTravelSoul v1.0.0 — built for solo explorers who want everything in one place.
+
+WHAT'S IN THIS RELEASE:
+• Trip planning with day-by-day itinerary builder
+• Travel journal with moods, place tags, and photo support
+• Smart packing suggestions based on your destination and itinerary
+• Trip reminders — local notifications for 7 days before, day before, and morning of departure
+• Place discovery with 8 travel categories and "Near me" sorting
+• Personal library for saving favourite destinations
+• Trip sharing — export a full trip summary to send to friends
+• Offline-first — your data stays available without a signal, syncs on reconnect
+• Secure sign-in with biometric authentication
+
+Thank you for being an early traveller. Your feedback shapes every update.

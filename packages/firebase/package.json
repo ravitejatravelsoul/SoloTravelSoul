@@ -1,0 +1,22 @@
+{
+  "name": "@solotravelsoul/firebase",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "lint": "eslint . --ext .ts"
+  },
+  "dependencies": {
+    "@solotravelsoul/shared": "*"
+  },
+  "peerDependencies": {
+    "@react-native-async-storage/async-storage": ">=1.0.0",
+    "firebase": ">=10.0.0"
+  },
+  "devDependencies": {
+    "firebase": "^11.0.0",
+    "typescript": "^5.6.0"
+  }
+}

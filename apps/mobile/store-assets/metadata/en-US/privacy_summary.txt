@@ -1,0 +1,24 @@
+SoloTravelSoul collects only what it needs to give you a personalized travel experience:
+
+DATA COLLECTED:
+• Email address and name (for your account)
+• Trip data you create: destinations, itinerary, journal entries, packing lists
+• Travel preferences you set in your profile
+• App usage data for crash reporting (if enabled)
+
+DATA NOT COLLECTED:
+• No advertising identifiers
+• No precise location stored on our servers (location is used on-device for "Near me" sorting only and never sent to our servers)
+• No contacts, microphone, or camera data beyond photos you explicitly upload to your journal
+
+HOW YOUR DATA IS USED:
+• To sync your trip data securely across your devices via Firebase
+• To personalize packing suggestions based on your trip details
+• To fire local notifications you request (reminders are scheduled on your device — no push server)
+
+YOUR RIGHTS:
+• You can delete your account and all associated data at any time
+• We do not sell your data or use it for advertising
+• All data is stored in Firebase Firestore with strict per-user security rules
+
+For the full privacy policy, visit the Privacy Policy screen inside the app.
