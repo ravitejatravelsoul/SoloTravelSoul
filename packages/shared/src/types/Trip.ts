@@ -14,6 +14,8 @@ export interface PlaceEntry {
   name: string;
   category: PlaceCategory;
   notes: string;
+  latitude?: number;   // set for Foursquare places; bundled places use attractionId lookup
+  longitude?: number;
 }
 
 export type JournalMood = 'amazing' | 'good' | 'okay' | 'tired' | 'challenging';

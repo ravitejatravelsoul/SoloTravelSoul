@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   FlatList,
@@ -10,8 +10,8 @@ import {
   ListRenderItemInfo,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '@/stores/chatStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useMessages } from '@/hooks/useMessages';
@@ -30,6 +30,7 @@ type ListItem =
 export default function DirectChatScreen() {
   const { chatId } = useLocalSearchParams<{ chatId: string }>();
   const router = useRouter();
+  const { top } = useSafeAreaInsets();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const { isConnected } = useNetworkState();
   const flatRef = useRef<FlatList>(null);
@@ -38,7 +39,8 @@ export default function DirectChatScreen() {
   const chat = directChats.find((c) => c.id === chatId);
   const otherUid = chat?.participants.find((p) => p !== uid);
   const otherInfo = otherUid ? chat?.participantInfo[otherUid] : null;
-  const otherUids = otherUid ? [otherUid] : [];
+  // Stable reference — prevents sendMessage callback from being recreated every render
+  const otherUids = useMemo(() => (otherUid ? [otherUid] : []), [otherUid]);
 
   const { messages, sendMessage } = useMessages(chatId ?? '', otherUids);
 
@@ -86,7 +88,7 @@ export default function DirectChatScreen() {
       keyboardVerticalOffset={0}
     >
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: top + 10 }]}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="chevron-back" size={26} color={Colors.textPrimary} />
         </TouchableOpacity>
@@ -131,7 +133,6 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 56,
     paddingBottom: Spacing.sm,
     paddingHorizontal: Spacing.md,
     backgroundColor: Colors.surface,

@@ -11,6 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   searchUserByEmail,
@@ -28,6 +29,7 @@ function generateClientId(): string {
 
 export default function NewGroupScreen() {
   const router = useRouter();
+  const { top } = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
   const profile = useAuthStore((s) => s.profile);
 
@@ -111,7 +113,7 @@ export default function NewGroupScreen() {
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: top + 12 }]}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="close" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
@@ -201,7 +203,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 60,
     paddingBottom: Spacing.md,
     paddingHorizontal: Spacing.lg,
     backgroundColor: Colors.surface,

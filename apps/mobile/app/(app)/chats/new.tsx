@@ -10,6 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   searchUserByEmail,
@@ -17,13 +18,16 @@ import {
 } from '@solotravelsoul/firebase';
 import { getUserInitials } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
+import { useUIStore } from '@/stores/uiStore';
 import { Colors, FontSize, FontWeight, Radius, Spacing } from '@/constants/theme';
 import type { UserLookup } from '@solotravelsoul/shared';
 
 export default function NewChatScreen() {
   const router = useRouter();
+  const { top } = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
   const profile = useAuthStore((s) => s.profile);
+  const addToast = useUIStore((s) => s.addToast);
 
   const [email, setEmail] = useState('');
   const [result, setResult] = useState<UserLookup | null>(null);
@@ -66,6 +70,7 @@ export default function NewChatScreen() {
   const handleStartChat = useCallback(async () => {
     if (!result || !user) return;
     setStarting(true);
+    setError(null);
     try {
       const myName = profile?.name ?? user.email ?? 'Traveler';
       const myInitials = getUserInitials(myName) || myName[0]?.toUpperCase() || 'T';
@@ -76,11 +81,17 @@ export default function NewChatScreen() {
         { name: result.displayName, initials: result.initials },
       );
       router.replace(`/chats/${chatId}`);
-    } catch {
-      setError('Could not start chat. Please try again.');
+    } catch (err) {
+      const e = err as { code?: string; message?: string };
+      console.error('[NewChat] start failed', e.code, e.message);
+      const msg = e.code === 'permission-denied'
+        ? 'Permission denied — deploy Firestore rules and try again.'
+        : 'Could not start chat. Please try again.';
+      setError(msg);
+      addToast(msg, 'error');
       setStarting(false);
     }
-  }, [result, user, profile, router]);
+  }, [result, user, profile, router, addToast]);
 
   return (
     <KeyboardAvoidingView
@@ -88,7 +99,7 @@ export default function NewChatScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: top + 12 }]}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="close" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
@@ -164,7 +175,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 60,
     paddingBottom: Spacing.md,
     paddingHorizontal: Spacing.lg,
     backgroundColor: Colors.surface,

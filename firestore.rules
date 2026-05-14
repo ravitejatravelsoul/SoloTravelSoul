@@ -72,8 +72,11 @@ service cloud.firestore {
 
     // ── Direct chats ─────────────────────────────────────────────────
     match /direct_chats/{chatId} {
+      // resource == null when the document does not yet exist.
+      // Allowing authenticated reads on non-existing docs is safe:
+      // the SDK returns exists()=false with no data, so nothing is exposed.
       allow read: if request.auth != null
-        && request.auth.uid in resource.data.participants;
+        && (resource == null || request.auth.uid in resource.data.participants);
       allow create: if request.auth != null
         && request.auth.uid in request.resource.data.participants
         && request.resource.data.participants.size() == 2;

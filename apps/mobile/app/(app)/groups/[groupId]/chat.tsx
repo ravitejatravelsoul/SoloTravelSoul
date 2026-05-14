@@ -10,8 +10,8 @@ import {
   ListRenderItemInfo,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '@/stores/chatStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useGroupChat } from '@/hooks/useGroupChat';
@@ -31,6 +31,7 @@ type ListItem =
 export default function GroupChatScreen() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const router = useRouter();
+  const { top } = useSafeAreaInsets();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const profile = useAuthStore((s) => s.profile);
   const { isConnected } = useNetworkState();
@@ -90,13 +91,13 @@ export default function GroupChatScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: top + 10 }]}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="chevron-back" size={26} color={Colors.textPrimary} />
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.headerCenter}
-          onPress={() => router.push(`/groups/${groupId}/index`)}
+          onPress={() => router.push(`/groups/${groupId}`)}
           activeOpacity={0.7}
         >
           <View style={styles.headerAvatar}>
@@ -143,7 +144,6 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 56,
     paddingBottom: Spacing.sm,
     paddingHorizontal: Spacing.md,
     backgroundColor: Colors.surface,

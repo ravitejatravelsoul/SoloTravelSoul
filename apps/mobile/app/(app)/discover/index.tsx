@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, memo, useRef } from 'react';
+import { useState, useMemo, useCallback, memo, useRef, useEffect } from 'react';
 import {
   FlatList,
   View,
@@ -14,15 +14,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui';
 import { CategoryGrid } from '@/components/discover/CategoryGrid';
 import type { TravelCategory } from '@/components/discover/CategoryGrid';
-import { MapPlaceholder } from '@/components/map/MapPlaceholder';
+import { DiscoverMapView } from '@/components/map/DiscoverMapView';
 import { AddToTripSheet } from '@/components/trips/AddToTripSheet';
 import { useSavedPlaces } from '@/hooks/useSavedPlaces';
 import { useHaptics } from '@/hooks/useHaptics';
 import { useLocation } from '@/hooks/useLocation';
+import { useAuthStore } from '@/stores/authStore';
 import { distanceBetweenKm, formatDistance } from '@/services/locationService';
-import { isFoursquareEnabled } from '@/services/foursquareService';
+import { searchPlaces, isFoursquareEnabled } from '@/services/foursquareService';
 import { Colors, Gradients, Spacing, Radius, Shadow, FontSize, FontWeight } from '@/constants/theme';
-import type { BundledAttraction, PlaceEntry, PlaceCategory } from '@solotravelsoul/shared';
+import type { BundledAttraction, PlaceEntry, PlaceCategory, DiscoverItem } from '@solotravelsoul/shared';
 
 const MIN_LIVE_QUERY_LEN = 3;
 const DEBOUNCE_MS = 600;
@@ -39,6 +40,18 @@ function attractionToPlace(attraction: BundledAttraction): PlaceEntry {
     name: attraction.name,
     category: categoryMap[attraction.type] ?? 'attraction',
     notes: [attraction.city, attraction.state].filter(Boolean).join(', '),
+  };
+}
+
+function discoverItemToPlace(item: DiscoverItem): PlaceEntry {
+  return {
+    id: `fsq-${item.fsqId ?? item.id}-${Date.now()}`,
+    attractionId: item.fsqId,
+    name: item.name,
+    category: 'attraction',
+    notes: [item.city, item.region].filter(Boolean).join(', '),
+    latitude: item.latitude,
+    longitude: item.longitude,
   };
 }
 
@@ -76,14 +89,27 @@ const TYPE_EMOJI: Record<string, string> = {
 type ViewMode = 'list' | 'map';
 
 export default function DiscoverScreen() {
+  const isEnabled = isFoursquareEnabled();
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<TravelCategory | null>(null);
   const [addToTripPlace, setAddToTripPlace] = useState<PlaceEntry | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [liveResults, setLiveResults] = useState<DiscoverItem[]>([]);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveRateLimited, setLiveRateLimited] = useState(false);
 
-  const { savedPlaces, savePlace, unsavePlace, isSaved, getSavedId } = useSavedPlaces();
+  const uid = useAuthStore((s) => s.user?.uid ?? '');
+  const {
+    savedPlaces,
+    savePlace,
+    unsavePlace,
+    isSaved,
+    getSavedId,
+    isSavedByFsqId,
+    getSavedIdByFsqId,
+  } = useSavedPlaces();
   const haptics = useHaptics();
   const { location, loading: locationLoading, requestLocation, clearLocation } = useLocation();
 
@@ -152,6 +178,36 @@ export default function DiscoverScreen() {
     [haptics]
   );
 
+  const handleLiveSaveToggle = useCallback(
+    async (item: DiscoverItem) => {
+      if (!item.fsqId) return;
+      if (isSavedByFsqId(item.fsqId)) {
+        haptics.light();
+        const savedId = getSavedIdByFsqId(item.fsqId);
+        if (savedId) await unsavePlace(savedId);
+      } else {
+        haptics.success();
+        await savePlace({
+          name: item.name,
+          category: 'attraction',
+          fsqId: item.fsqId,
+          city: item.city,
+          description: item.description,
+          address: item.description,
+        });
+      }
+    },
+    [isSavedByFsqId, getSavedIdByFsqId, savePlace, unsavePlace, haptics]
+  );
+
+  const handleLiveAddToTrip = useCallback(
+    (item: DiscoverItem) => {
+      haptics.medium();
+      setAddToTripPlace(discoverItemToPlace(item));
+    },
+    [haptics]
+  );
+
   const renderAttraction = useCallback(
     ({ item }: { item: BundledAttraction }) => (
       <AttractionCard
@@ -166,6 +222,31 @@ export default function DiscoverScreen() {
   );
 
   const showLiveSection = debouncedQuery.length >= MIN_LIVE_QUERY_LEN;
+
+  useEffect(() => {
+    if (!showLiveSection || !isEnabled || !uid) {
+      setLiveResults([]);
+      setLiveRateLimited(false);
+      setLiveLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLiveLoading(true);
+    setLiveResults([]);
+    setLiveRateLimited(false);
+    searchPlaces(debouncedQuery, uid).then((r) => {
+      if (cancelled) return;
+      if (r.source === 'rate_limited') {
+        setLiveRateLimited(true);
+      } else {
+        setLiveResults(r.results);
+      }
+      setLiveLoading(false);
+    }).catch(() => {
+      if (!cancelled) setLiveLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [debouncedQuery, uid, isEnabled, showLiveSection]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -200,7 +281,17 @@ export default function DiscoverScreen() {
 
       {/* ── Map mode ── */}
       {viewMode === 'map' ? (
-        <MapPlaceholder attractions={filtered} totalCount={attractions.length} />
+        <DiscoverMapView
+          attractions={filtered}
+          liveResults={liveResults}
+          totalCount={attractions.length}
+          isSaved={isSaved}
+          isSavedFsq={isSavedByFsqId}
+          onSaveToggle={handleSaveToggle}
+          onLiveSaveToggle={handleLiveSaveToggle}
+          onAddToTrip={handleAddToTrip}
+          onLiveAddToTrip={handleLiveAddToTrip}
+        />
       ) : (
         <>
           {/* ── Search ── */}
@@ -347,7 +438,16 @@ export default function DiscoverScreen() {
             }
             ListFooterComponent={
               showLiveSection ? (
-                <LiveSearchSection query={debouncedQuery} />
+                <LiveSearchSection
+                  query={debouncedQuery}
+                  isEnabled={isEnabled}
+                  loading={liveLoading}
+                  results={liveResults}
+                  rateLimited={liveRateLimited}
+                  onSaveToggle={handleLiveSaveToggle}
+                  onAddToTrip={handleLiveAddToTrip}
+                  isSavedFsq={isSavedByFsqId}
+                />
               ) : null
             }
           />
@@ -468,6 +568,68 @@ const AttractionCard = memo(function AttractionCard({
   );
 });
 
+const LivePlaceCard = memo(function LivePlaceCard({
+  item,
+  saved,
+  onSaveToggle,
+  onAddToTrip,
+}: {
+  item: DiscoverItem;
+  saved: boolean;
+  onSaveToggle: () => void;
+  onAddToTrip: () => void;
+}) {
+  return (
+    <View style={styles.liveCard}>
+      <View style={styles.cardBody}>
+        <View style={styles.cardTop}>
+          <View style={{ flex: 1 }}>
+            <Text variant="h3" numberOfLines={1}>{item.name}</Text>
+            <Text variant="caption" style={styles.cardLocation}>
+              {[item.city, item.region].filter(Boolean).join(', ')}
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={onSaveToggle}
+            style={styles.saveBtn}
+            hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+          >
+            <Ionicons
+              name={saved ? 'heart' : 'heart-outline'}
+              size={22}
+              color={saved ? Colors.error : Colors.placeholder}
+            />
+          </TouchableOpacity>
+        </View>
+
+        <Text variant="body" numberOfLines={2} style={styles.desc}>
+          {item.description}
+        </Text>
+
+        <View style={styles.cardFooter}>
+          <View style={styles.typeChip}>
+            <Text style={styles.typeChipText}>{item.category}</Text>
+          </View>
+          {item.rating !== undefined && (
+            <View style={styles.ratingChip}>
+              <Ionicons name="star" size={11} color={Colors.warning} />
+              <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
+            </View>
+          )}
+          <TouchableOpacity
+            style={styles.addTripBtn}
+            onPress={onAddToTrip}
+            hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
+          >
+            <Ionicons name="add-circle-outline" size={13} color={Colors.primary} />
+            <Text style={styles.addTripBtnText}>Add to trip</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+});
+
 const SavedPill = memo(function SavedPill({
   name,
   onRemove,
@@ -503,25 +665,43 @@ function TrendingSection() {
 
 // ── Live search section (shown when query ≥ 3 chars) ─────────────────
 
-function LiveSearchSection({ query }: { query: string }) {
-  const isEnabled = isFoursquareEnabled();
+function LiveSearchSection({
+  query,
+  isEnabled,
+  loading,
+  results,
+  rateLimited,
+  onSaveToggle,
+  onAddToTrip,
+  isSavedFsq,
+}: {
+  query: string;
+  isEnabled: boolean;
+  loading: boolean;
+  results: DiscoverItem[];
+  rateLimited: boolean;
+  onSaveToggle: (item: DiscoverItem) => void;
+  onAddToTrip: (item: DiscoverItem) => void;
+  isSavedFsq: (fsqId: string) => boolean;
+}) {
 
   return (
     <View style={styles.liveSection}>
       <View style={styles.sectionHeaderRow}>
         <Ionicons name="globe-outline" size={14} color={Colors.primary} />
         <Text variant="label" style={styles.sectionTitle}>Live destinations</Text>
-        {!isEnabled && (
+        {isEnabled ? (
+          <View style={styles.fsqBadge}>
+            <Text style={styles.fsqBadgeText}>Foursquare</Text>
+          </View>
+        ) : (
           <View style={styles.phase2Badge}>
             <Text style={styles.phase2Text}>Coming soon</Text>
           </View>
         )}
       </View>
 
-      {isEnabled ? (
-        // Real results or loading skeleton — rendered when API is enabled
-        <LiveResultsSkeleton />
-      ) : (
+      {!isEnabled ? (
         <View style={styles.comingSoonCard}>
           <View style={styles.comingSoonIconRow}>
             <Text style={styles.comingSoonEmoji}>🌍</Text>
@@ -542,6 +722,33 @@ function LiveSearchSection({ query }: { query: string }) {
             ))}
           </View>
         </View>
+      ) : rateLimited ? (
+        <View style={styles.rateLimitCard}>
+          <Ionicons name="alert-circle-outline" size={18} color={Colors.warning} />
+          <Text variant="caption" style={styles.rateLimitText}>
+            Daily search limit reached. Live results will be available again tomorrow.
+          </Text>
+        </View>
+      ) : loading ? (
+        <LiveResultsSkeleton />
+      ) : results.length === 0 ? (
+        <View style={styles.noLiveResults}>
+          <Text variant="caption" style={styles.noLiveText}>
+            No live results found for "{query}"
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.liveResultsList}>
+          {results.map((item) => (
+            <LivePlaceCard
+              key={item.id}
+              item={item}
+              saved={item.fsqId ? isSavedFsq(item.fsqId) : false}
+              onSaveToggle={() => onSaveToggle(item)}
+              onAddToTrip={() => onAddToTrip(item)}
+            />
+          ))}
+        </View>
       )}
     </View>
   );
@@ -552,7 +759,6 @@ function LiveResultsSkeleton() {
     <View style={styles.skeletonContainer}>
       {[1, 2, 3].map((i) => (
         <View key={i} style={styles.skeletonCard}>
-          <View style={styles.skeletonAccent} />
           <View style={styles.skeletonBody}>
             <View style={[styles.skeletonLine, { width: '65%' }]} />
             <View style={[styles.skeletonLine, { width: '40%', marginTop: 6 }]} />
@@ -815,6 +1021,33 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
 
+  // Live place card
+  liveCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    marginBottom: Spacing.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.primary + '80',
+    ...Shadow.sm,
+  },
+  ratingChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: Colors.warning + '18',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+  },
+  ratingText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.semibold,
+    color: Colors.warning,
+  },
+
   // Empty state
   noResults: {
     alignItems: 'center',
@@ -845,6 +1078,19 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.border,
     marginTop: Spacing.md,
+  },
+
+  // Foursquare badge
+  fsqBadge: {
+    backgroundColor: Colors.accent + '20',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: Radius.full,
+  },
+  fsqBadgeText: {
+    fontSize: FontSize.xs,
+    color: Colors.accent,
+    fontWeight: FontWeight.semibold,
   },
 
   // Coming soon card
@@ -889,6 +1135,36 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
 
+  // Rate limit
+  rateLimitCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.warning + '14',
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.warning + '30',
+  },
+  rateLimitText: {
+    flex: 1,
+    color: Colors.warning,
+    lineHeight: 18,
+  },
+
+  // No live results
+  noLiveResults: {
+    paddingVertical: Spacing.lg,
+    alignItems: 'center',
+  },
+  noLiveText: {
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+
+  // Live results list
+  liveResultsList: { gap: 0 },
+
   // Loading skeleton
   skeletonContainer: { gap: Spacing.md },
   skeletonCard: {
@@ -897,10 +1173,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: Colors.border,
-  },
-  skeletonAccent: {
-    height: 52,
-    backgroundColor: Colors.chipBackground,
   },
   skeletonBody: {
     padding: Spacing.md,

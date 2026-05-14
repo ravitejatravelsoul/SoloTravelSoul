@@ -75,6 +75,8 @@ export interface DiscoverItem {
   source: 'local' | 'foursquare';
   localId?: string;
   fsqId?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 // ── Phase 2: Foursquare integration interface ─────────────────────────

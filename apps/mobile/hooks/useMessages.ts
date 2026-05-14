@@ -28,9 +28,9 @@ export function useMessages(chatId: string, otherUids: string[]) {
 
   // Subscribe to Firestore snapshot
   useEffect(() => {
-    if (!chatId) return;
+    if (!chatId || !uid) return;
 
-    markDirectChatRead(chatId, uid ?? '').catch(() => {});
+    markDirectChatRead(chatId, uid).catch(() => {});
 
     const unsub = subscribeToDirectMessages(chatId, (msgs) => {
       setConfirmed(msgs);

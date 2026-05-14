@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { searchCachedPlaces, upsertCachedPlace } from '@solotravelsoul/firebase';
 import type { CachedPlace, DiscoverItem } from '@solotravelsoul/shared';
 
 // Feature flag — defaults to false; must be explicitly enabled in .env
@@ -47,8 +48,8 @@ async function incrementDailyCount(uid: string): Promise<void> {
  * When EXPO_PUBLIC_FOURSQUARE_ENABLED is false (the default), returns
  * `source: 'disabled'` with zero results — no network call is made.
  *
- * When enabled, checks Firestore places_cache first (cache hit returns
- * `source: 'cache'`), then calls the Foursquare API on cache miss.
+ * Checks Firestore places_cache first (cache hit returns `source: 'cache'`),
+ * then calls the Foursquare API on cache miss and writes results back to cache.
  *
  * Minimum 3-character guard and 600ms debounce are enforced at the
  * call site (Discover screen) — not here.
@@ -73,10 +74,16 @@ export async function searchPlaces(
     return { results: [], source: 'rate_limited' };
   }
 
-  // Phase 2: Firestore cache lookup goes here before hitting the API.
-  // import { searchCachedPlaces } from '@solotravelsoul/firebase';
-  // const cached = await searchCachedPlaces(query, options?.limit ?? 10);
-  // if (cached.length > 0) return { results: cached.map(cachedPlaceToDiscoverItem), source: 'cache' };
+  // Cache-first: check Firestore places_cache before hitting the API.
+  // On cache hit the API is never called — zero quota cost.
+  try {
+    const cached = await searchCachedPlaces(query, options?.limit ?? 10);
+    if (cached.length > 0) {
+      return { results: cached.map(cachedPlaceToDiscoverItem), source: 'cache' };
+    }
+  } catch {
+    // Cache read failed (offline or permissions) — fall through to API call
+  }
 
   const searchParams = new URLSearchParams({
     query,
@@ -127,7 +134,31 @@ export async function searchPlaces(
         : undefined,
       source: 'foursquare' as const,
       fsqId: r.fsq_id,
+      latitude: r.geocodes?.main?.latitude,
+      longitude: r.geocodes?.main?.longitude,
     }));
+
+    // Write results to Firestore cache — fire and forget, non-blocking.
+    // Next search for the same term hits cache instead of the API.
+    const cachePlaces: CachedPlace[] = data.results.map((r) => ({
+      id: r.fsq_id,
+      name: r.name,
+      address: r.location.formatted_address,
+      city: r.location.locality ?? '',
+      country: r.location.country ?? '',
+      latitude: r.geocodes?.main?.latitude ?? 0,
+      longitude: r.geocodes?.main?.longitude ?? 0,
+      category: r.categories[0]?.name ?? 'Place',
+      rating: r.rating ?? null,
+      photoUrl: r.photos?.[0]
+        ? `${r.photos[0].prefix}300x300${r.photos[0].suffix}`
+        : null,
+      cachedAt: new Date(),
+      source: 'foursquare' as const,
+    }));
+    Promise.all(cachePlaces.map((p) => upsertCachedPlace(p))).catch(
+      (err) => console.warn('[Foursquare] cache write failed:', err)
+    );
 
     return { results: items, source: 'foursquare' };
   } catch (err) {
@@ -154,5 +185,7 @@ export function cachedPlaceToDiscoverItem(p: CachedPlace): DiscoverItem {
     photoUrl: p.photoUrl ?? undefined,
     source: 'foursquare',
     fsqId: p.id,
+    latitude: p.latitude || undefined,
+    longitude: p.longitude || undefined,
   };
 }

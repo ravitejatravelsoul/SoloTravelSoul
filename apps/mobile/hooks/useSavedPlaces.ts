@@ -74,5 +74,15 @@ export function useSavedPlaces() {
     [savedPlaces]
   );
 
-  return { savedPlaces, loading, savePlace, unsavePlace, isSaved, getSavedId };
+  const isSavedByFsqId = useCallback(
+    (fsqId: string) => savedPlaces.some((p) => p.fsqId === fsqId),
+    [savedPlaces]
+  );
+
+  const getSavedIdByFsqId = useCallback(
+    (fsqId: string) => savedPlaces.find((p) => p.fsqId === fsqId)?.id ?? null,
+    [savedPlaces]
+  );
+
+  return { savedPlaces, loading, savePlace, unsavePlace, isSaved, getSavedId, isSavedByFsqId, getSavedIdByFsqId };
 }

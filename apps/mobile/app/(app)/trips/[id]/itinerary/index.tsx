@@ -1,4 +1,4 @@
-import { useEffect, memo, useCallback } from 'react';
+import { useEffect, memo, useCallback, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +16,7 @@ import {
   FontWeight,
   Shadow,
 } from '@/constants/theme';
+import { TripMapView } from '@/components/map/TripMapView';
 import type { ItineraryDay } from '@solotravelsoul/shared';
 
 export default function ItineraryScreen() {
@@ -23,6 +24,7 @@ export default function ItineraryScreen() {
   const trip = useTripStore((s) => s.trips.find((t) => t.id === id));
   const { itinerary, loading, load } = useItinerary(id);
   const status = trip ? tripStatus(trip.startDate, trip.endDate) : 'upcoming';
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
 
   useEffect(() => {
     if (trip) load(trip.startDate, trip.endDate);
@@ -86,6 +88,19 @@ export default function ItineraryScreen() {
             </Text>
           )}
         </View>
+        {itinerary.length > 0 && !loading && (
+          <TouchableOpacity
+            onPress={() => setViewMode((v) => (v === 'list' ? 'map' : 'list'))}
+            hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+            style={styles.mapToggleBtn}
+          >
+            <Ionicons
+              name={viewMode === 'map' ? 'list-outline' : 'map-outline'}
+              size={22}
+              color={Colors.primary}
+            />
+          </TouchableOpacity>
+        )}
         {status === 'active' && (
           <View style={styles.activeBadge}>
             <View style={styles.activeDot} />
@@ -94,7 +109,11 @@ export default function ItineraryScreen() {
         )}
       </View>
 
-      {!loading && itinerary.length > 0 && (
+      {!loading && itinerary.length > 0 && viewMode === 'map' && (
+        <TripMapView itinerary={itinerary} />
+      )}
+
+      {!loading && itinerary.length > 0 && viewMode === 'list' && (
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scroll}
@@ -155,7 +174,7 @@ export default function ItineraryScreen() {
         </ScrollView>
       )}
 
-      {!loading && itinerary.length === 0 && (
+      {!loading && itinerary.length === 0 && viewMode === 'list' && (
         <View style={styles.emptyState}>
           <Text style={styles.emptyEmoji}>📅</Text>
           <Text variant="h3" center>No itinerary yet</Text>
@@ -302,6 +321,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   headerSub: { color: Colors.textSecondary, marginTop: 1 },
+  mapToggleBtn: { padding: Spacing.xs, marginLeft: Spacing.xs },
   activeBadge: {
     flexDirection: 'row',
     alignItems: 'center',

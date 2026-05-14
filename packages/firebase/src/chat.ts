@@ -139,7 +139,12 @@ export function subscribeToDirectChats(
   );
 }
 
-/** Returns the chatId. Creates the document only if it doesn't already exist. */
+/**
+ * Returns the chatId. Creates the document only if it doesn't already exist.
+ *
+ * NOTE: The Firestore read rule allows resource==null so that getDoc on a
+ * not-yet-created chat does not throw PERMISSION_DENIED.
+ */
 export async function getOrCreateDirectChat(
   uid1: string,
   info1: ChatParticipantInfo,
@@ -148,17 +153,33 @@ export async function getOrCreateDirectChat(
 ): Promise<string> {
   const chatId = directChatId(uid1, uid2);
   const ref = doc(db, 'direct_chats', chatId);
-  const snap = await getDoc(ref);
+
+  let snap;
+  try {
+    snap = await getDoc(ref);
+  } catch (err) {
+    const e = err as { code?: string; message?: string };
+    console.error('[chat] getDoc failed', e.code, e.message);
+    throw err;
+  }
+
   if (!snap.exists()) {
     const sorted = [uid1, uid2].sort();
-    await setDoc(ref, {
-      participants: sorted,
-      participantInfo: { [uid1]: info1, [uid2]: info2 },
-      lastMessage: null,
-      updatedAt: serverTimestamp(),
-      unreadCounts: { [uid1]: 0, [uid2]: 0 },
-    });
+    try {
+      await setDoc(ref, {
+        participants: sorted,
+        participantInfo: { [uid1]: info1, [uid2]: info2 },
+        lastMessage: null,
+        updatedAt: serverTimestamp(),
+        unreadCounts: { [uid1]: 0, [uid2]: 0 },
+      });
+    } catch (err) {
+      const e = err as { code?: string; message?: string };
+      console.error('[chat] setDoc failed', e.code, e.message);
+      throw err;
+    }
   }
+
   return chatId;
 }
 

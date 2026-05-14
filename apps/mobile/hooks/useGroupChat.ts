@@ -25,9 +25,9 @@ export function useGroupChat(groupId: string, myName: string) {
   const [pending, setPending] = useState<TravelGroupMessage[]>([]);
 
   useEffect(() => {
-    if (!groupId) return;
+    if (!groupId || !uid) return;
 
-    markGroupRead(groupId, uid ?? '').catch(() => {});
+    markGroupRead(groupId, uid).catch(() => {});
 
     const unsub = subscribeToGroupMessages(groupId, (msgs) => {
       setConfirmed(msgs);
