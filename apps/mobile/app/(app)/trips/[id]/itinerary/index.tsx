@@ -160,7 +160,7 @@ export default function ItineraryScreen() {
             <View style={styles.summaryChip}>
               <Ionicons name="location-outline" size={13} color={Colors.textSecondary} />
               <Text style={styles.summaryChipText}>
-                {totalPlaces} place{totalPlaces !== 1 ? 's' : ''} planned across {completedDays + (totalDays - completedDays)} days
+                {totalPlaces} place{totalPlaces !== 1 ? 's' : ''} planned across {totalDays} days
               </Text>
             </View>
           )}

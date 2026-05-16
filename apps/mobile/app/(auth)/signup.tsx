@@ -83,6 +83,17 @@ export default function SignupScreen() {
           fullWidth
           size="lg"
         />
+
+        <View style={styles.legalRow}>
+          <Text variant="caption" style={styles.legalText}>By creating an account you agree to our </Text>
+          <TouchableOpacity onPress={() => router.push('/terms')}>
+            <Text variant="caption" color={Colors.primary}>Terms</Text>
+          </TouchableOpacity>
+          <Text variant="caption" style={styles.legalText}> and </Text>
+          <TouchableOpacity onPress={() => router.push('/privacy')}>
+            <Text variant="caption" color={Colors.primary}>Privacy Policy</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.footer}>
@@ -99,5 +110,12 @@ const styles = StyleSheet.create({
   header: { alignItems: 'center', gap: Spacing.sm, marginTop: Spacing['2xl'], marginBottom: Spacing['2xl'] },
   logo: { fontSize: 56 },
   form: { gap: Spacing.lg },
-  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing['3xl'] },
+  legalRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  legalText: { color: Colors.textSecondary },
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing['2xl'] },
 });

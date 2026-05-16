@@ -1,5 +1,5 @@
 export { app, isFirebaseConfigured } from './src/config';
-export { auth, signIn, signUp, signOut, resetPassword, subscribeToAuthState, getCurrentUser } from './src/auth';
+export { auth, signIn, signUp, signOut, resetPassword, deleteCurrentUser, subscribeToAuthState, getCurrentUser } from './src/auth';
 export {
   db,
   getUserProfile,

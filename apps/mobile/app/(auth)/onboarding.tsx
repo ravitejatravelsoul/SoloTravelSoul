@@ -134,7 +134,7 @@ export default function OnboardingScreen() {
 
         {/* Tagline */}
         {page === SLIDES.length - 1 && (
-          <Text style={styles.tagline}>Join thousands of solo travelers</Text>
+          <Text style={styles.tagline}>Your adventure starts now</Text>
         )}
       </View>
     </LinearGradient>

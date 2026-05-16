@@ -1,4 +1,16 @@
-import { View, StyleSheet, Alert, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { useState } from 'react';
+import {
+  View,
+  StyleSheet,
+  Alert,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,8 +22,11 @@ import { getUserInitials } from '@solotravelsoul/shared';
 import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 
 export default function ProfileScreen() {
-  const { profile, logout } = useAuth();
+  const { profile, logout, deleteAccount } = useAuth();
   const { savedPlaces } = useSavedPlaces();
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   if (!profile) {
     return (
@@ -30,6 +45,32 @@ export default function ProfileScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign out', style: 'destructive', onPress: logout },
     ]);
+  };
+
+  const handleDeletePress = () => {
+    Alert.alert(
+      'Delete account',
+      'This permanently deletes your account and all your trips, journal entries, and saved places. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: () => {
+            setDeletePassword('');
+            setShowDeleteModal(true);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletePassword.trim()) return;
+    setDeleteLoading(true);
+    await deleteAccount(deletePassword);
+    setDeleteLoading(false);
+    setShowDeleteModal(false);
   };
 
   return (
@@ -146,7 +187,74 @@ export default function ProfileScreen() {
           <Text style={styles.signOutLabel}>Sign out</Text>
         </TouchableOpacity>
 
+        {/* ── Delete account ── */}
+        <TouchableOpacity style={styles.deleteAccountBtn} onPress={handleDeletePress} activeOpacity={0.8}>
+          <Text style={styles.deleteAccountLabel}>Delete account</Text>
+        </TouchableOpacity>
+
       </ScrollView>
+
+      {/* ── Delete account confirmation modal ── */}
+      <Modal
+        visible={showDeleteModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowDeleteModal(false)}
+      >
+        <SafeAreaView style={styles.modalSafe} edges={['top', 'bottom']}>
+          <KeyboardAvoidingView
+            style={styles.modalInner}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setShowDeleteModal(false)}>
+                <Ionicons name="close" size={22} color={Colors.textPrimary} />
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>Delete account</Text>
+              <View style={{ width: 22 }} />
+            </View>
+
+            <View style={styles.modalBody}>
+              <View style={styles.warningBanner}>
+                <Ionicons name="warning-outline" size={20} color={Colors.error} />
+                <Text style={styles.warningText}>
+                  This will permanently delete your account and all associated data. This action cannot be undone.
+                </Text>
+              </View>
+
+              <Text style={styles.passwordLabel}>Enter your password to confirm</Text>
+              <TextInput
+                value={deletePassword}
+                onChangeText={setDeletePassword}
+                secureTextEntry
+                placeholder="Your password"
+                placeholderTextColor={Colors.placeholder}
+                style={styles.passwordInput}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={handleDeleteConfirm}
+              />
+
+              <TouchableOpacity
+                style={[styles.deleteConfirmBtn, (!deletePassword.trim() || deleteLoading) && styles.deleteConfirmBtnDisabled]}
+                onPress={handleDeleteConfirm}
+                disabled={!deletePassword.trim() || deleteLoading}
+                activeOpacity={0.8}
+              >
+                {deleteLoading ? (
+                  <ActivityIndicator size="small" color={Colors.white} />
+                ) : (
+                  <Text style={styles.deleteConfirmLabel}>Permanently delete my account</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowDeleteModal(false)}>
+                <Text style={styles.cancelLabel}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -330,5 +438,96 @@ const styles = StyleSheet.create({
     fontSize: FontSize.md,
     fontWeight: FontWeight.semibold,
     color: Colors.error,
+  },
+
+  // Delete account link
+  deleteAccountBtn: {
+    alignItems: 'center',
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  deleteAccountLabel: {
+    fontSize: FontSize.sm,
+    color: Colors.placeholder,
+    textDecorationLine: 'underline',
+  },
+
+  // Delete account modal
+  modalSafe: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  modalInner: { flex: 1 },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  modalTitle: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.bold,
+    color: Colors.textPrimary,
+  },
+  modalBody: {
+    padding: Spacing.lg,
+    gap: Spacing.lg,
+  },
+  warningBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    backgroundColor: Colors.error + '10',
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.error + '30',
+  },
+  warningText: {
+    flex: 1,
+    fontSize: FontSize.sm,
+    color: Colors.error,
+    lineHeight: 20,
+  },
+  passwordLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.textPrimary,
+  },
+  passwordInput: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    fontSize: FontSize.md,
+    color: Colors.textPrimary,
+  },
+  deleteConfirmBtn: {
+    backgroundColor: Colors.error,
+    borderRadius: Radius.lg,
+    paddingVertical: Spacing.md + 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50,
+  },
+  deleteConfirmBtnDisabled: { opacity: 0.45 },
+  deleteConfirmLabel: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.bold,
+    color: Colors.white,
+  },
+  cancelBtn: {
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+  },
+  cancelLabel: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
   },
 });

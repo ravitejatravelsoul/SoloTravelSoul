@@ -6,6 +6,7 @@ import {
   signUp,
   signOut,
   resetPassword,
+  deleteCurrentUser,
   createUserProfile,
   upsertUserLookup,
 } from '@solotravelsoul/firebase';
@@ -98,5 +99,30 @@ export function useAuth() {
     [addToast]
   );
 
-  return { user, profile, loading, login, register, logout, forgotPassword };
+  // Re-authenticates then permanently deletes the Firebase account.
+  // Returns true on success; shows an error toast and returns false on failure.
+  // onAuthStateChanged fires with null after deletion, root layout redirects to login.
+  const deleteAccount = useCallback(
+    async (password: string): Promise<boolean> => {
+      setLoading(true);
+      try {
+        await deleteCurrentUser(password);
+        return true;
+      } catch (err: unknown) {
+        const code = (err as { code?: string }).code ?? '';
+        addToast(
+          code === 'auth/wrong-password' || code === 'auth/invalid-credential'
+            ? 'Incorrect password. Account was not deleted.'
+            : 'Could not delete account. Please try again.',
+          'error'
+        );
+        return false;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [setLoading, addToast]
+  );
+
+  return { user, profile, loading, login, register, logout, forgotPassword, deleteAccount };
 }

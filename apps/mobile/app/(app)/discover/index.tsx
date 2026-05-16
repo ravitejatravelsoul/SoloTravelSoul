@@ -193,7 +193,6 @@ export default function DiscoverScreen() {
           fsqId: item.fsqId,
           city: item.city,
           description: item.description,
-          address: item.description,
         });
       }
     },

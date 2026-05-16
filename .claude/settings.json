@@ -15,7 +15,10 @@
       "PowerShell(Get-ChildItem \"C:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\\\\apps\\\\mobile\\\\assets\\\\images\\\\\" | Select-Object Name, @{N='KB';E={[math]::Round\\($_.Length/1KB,0\\)}}, LastWriteTime | Format-Table -AutoSize)",
       "Bash(Select-Object Name)",
       "Bash(xargs ls -la)",
-      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\\\\apps\\\\mobile\" -Force)"
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\\\\apps\\\\mobile\" -Force)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\" -Recurse -Directory -ErrorAction SilentlyContinue)",
+      "Bash(echo \"TS EXIT:$?\")",
+      "Bash(echo \"EXIT:$?\")"
     ]
   }
 }

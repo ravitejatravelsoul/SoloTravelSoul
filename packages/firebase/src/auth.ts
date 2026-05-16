@@ -6,6 +6,9 @@ import {
   signOut as _signOut,
   sendPasswordResetEmail,
   onAuthStateChanged,
+  deleteUser,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
   type User,
 } from 'firebase/auth';
 import { app } from './config';
@@ -45,6 +48,16 @@ export async function signOut(): Promise<void> {
 
 export async function resetPassword(email: string): Promise<void> {
   await sendPasswordResetEmail(auth, email);
+}
+
+// Re-authenticates with password then permanently deletes the current user.
+// Throws if password is wrong or no user is signed in.
+export async function deleteCurrentUser(password: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.email) throw new Error('auth/no-current-user');
+  const credential = EmailAuthProvider.credential(user.email, password);
+  await reauthenticateWithCredential(user, credential);
+  await deleteUser(user);
 }
 
 // Returns unsubscribe function — call it in useEffect cleanup.
