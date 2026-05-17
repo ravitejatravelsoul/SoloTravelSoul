@@ -69,6 +69,12 @@
         {
           "faceIDPermission": "Allow SoloTravelSoul to use Face ID for secure sign-in."
         }
+      ],
+      [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsDownloadsToken": "$MAPBOX_DOWNLOADS_TOKEN"
+        }
       ]
     ],
     "experiments": {

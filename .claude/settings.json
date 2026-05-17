@@ -18,7 +18,8 @@
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\\\\apps\\\\mobile\" -Force)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\" -Recurse -Directory -ErrorAction SilentlyContinue)",
       "Bash(echo \"TS EXIT:$?\")",
-      "Bash(echo \"EXIT:$?\")"
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(npm list *)"
     ]
   }
 }

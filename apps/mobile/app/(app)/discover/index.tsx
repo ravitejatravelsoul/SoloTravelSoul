@@ -21,7 +21,7 @@ import { useHaptics } from '@/hooks/useHaptics';
 import { useLocation } from '@/hooks/useLocation';
 import { useAuthStore } from '@/stores/authStore';
 import { distanceBetweenKm, formatDistance } from '@/services/locationService';
-import { searchPlaces, isFoursquareEnabled } from '@/services/foursquareService';
+import { searchPlaces, searchNearby, isFoursquareEnabled } from '@/services/foursquareService';
 import { Colors, Gradients, Spacing, Radius, Shadow, FontSize, FontWeight } from '@/constants/theme';
 import type { BundledAttraction, PlaceEntry, PlaceCategory, DiscoverItem } from '@solotravelsoul/shared';
 
@@ -99,6 +99,8 @@ export default function DiscoverScreen() {
   const [liveResults, setLiveResults] = useState<DiscoverItem[]>([]);
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveRateLimited, setLiveRateLimited] = useState(false);
+  const [nearbyResults, setNearbyResults] = useState<DiscoverItem[]>([]);
+  const [nearbyLoading, setNearbyLoading] = useState(false);
 
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const {
@@ -222,6 +224,21 @@ export default function DiscoverScreen() {
 
   const showLiveSection = debouncedQuery.length >= MIN_LIVE_QUERY_LEN;
 
+  // Merge text-search and nearby results for the map, deduped by fsqId
+  const mergedLiveResults = useMemo<DiscoverItem[]>(() => {
+    if (!isEnabled) return [];
+    const seen = new Set<string>();
+    const merged: DiscoverItem[] = [];
+    for (const item of [...liveResults, ...nearbyResults]) {
+      const key = item.fsqId ?? item.id;
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push(item);
+      }
+    }
+    return merged;
+  }, [liveResults, nearbyResults, isEnabled]);
+
   useEffect(() => {
     if (!showLiveSection || !isEnabled || !uid) {
       setLiveResults([]);
@@ -246,6 +263,25 @@ export default function DiscoverScreen() {
     });
     return () => { cancelled = true; };
   }, [debouncedQuery, uid, isEnabled, showLiveSection]);
+
+  // Nearby live search — fires once per location tap (one-shot, not continuous)
+  useEffect(() => {
+    if (!location || !isEnabled || !uid) {
+      setNearbyResults([]);
+      setNearbyLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setNearbyLoading(true);
+    searchNearby(location, uid, 20).then((r) => {
+      if (cancelled) return;
+      if (r.source !== 'rate_limited') setNearbyResults(r.results);
+      setNearbyLoading(false);
+    }).catch(() => {
+      if (!cancelled) setNearbyLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [location, uid, isEnabled]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -282,7 +318,7 @@ export default function DiscoverScreen() {
       {viewMode === 'map' ? (
         <DiscoverMapView
           attractions={filtered}
-          liveResults={liveResults}
+          liveResults={mergedLiveResults}
           totalCount={attractions.length}
           isSaved={isSaved}
           isSavedFsq={isSavedByFsqId}
@@ -290,6 +326,9 @@ export default function DiscoverScreen() {
           onLiveSaveToggle={handleLiveSaveToggle}
           onAddToTrip={handleAddToTrip}
           onLiveAddToTrip={handleLiveAddToTrip}
+          userLocation={location}
+          locationLoading={locationLoading || nearbyLoading}
+          onRequestLocation={requestLocation}
         />
       ) : (
         <>

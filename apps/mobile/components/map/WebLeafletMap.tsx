@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import WebView from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview';
@@ -14,21 +14,24 @@ export interface MapPin {
   label?: string; // short text rendered inside the circle (e.g. day number)
 }
 
+export interface UserLocation {
+  latitude: number;
+  longitude: number;
+}
+
 interface Props {
   pins: MapPin[];
+  userLocation?: UserLocation | null;
   onPinTap?: (pin: MapPin) => void;
   onError?: () => void;
 }
 
-// Messages posted from Leaflet → React Native.
-// Only the pin id travels over the bridge; the full pin is looked up
-// in the pins array to avoid re-serialising large objects.
 type BridgeMessage =
   | { type: 'pinTap'; id: string }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  | { type: 'ready' };
 
 function buildMapHtml(pins: MapPin[]): string {
-  // Escape </script> so it can't break out of the script block.
   const pinsJson = JSON.stringify(pins).replace(/<\//g, '<\\/');
 
   return `<!DOCTYPE html>
@@ -85,6 +88,20 @@ function buildMapHtml(pins: MapPin[]): string {
       crossOrigin:true
     }).addTo(map);
 
+    // User location marker — updated by centerOnUser() called from React Native
+    var userMarker=null;
+
+    window.centerOnUser=function(lat,lng){
+      var dotHtml='<div style="width:14px;height:14px;border-radius:50%;background:#1270C2;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);"></div>';
+      var icon=L.divIcon({html:dotHtml,className:'',iconSize:[14,14],iconAnchor:[7,7]});
+      if(userMarker){
+        userMarker.setLatLng([lat,lng]);
+      } else {
+        userMarker=L.marker([lat,lng],{icon:icon,zIndexOffset:1000}).addTo(map);
+      }
+      map.setView([lat,lng],12,{animate:true,duration:0.8});
+    };
+
     function makeIcon(pin){
       var s=pin.label?26:14;
       var inner=pin.label
@@ -109,6 +126,10 @@ function buildMapHtml(pins: MapPin[]): string {
       var latlngs=PINS.map(function(p){return[p.latitude,p.longitude];});
       map.fitBounds(L.latLngBounds(latlngs),{padding:[40,40],maxZoom:12});
     }
+
+    // Signal to React Native that the map object is ready to accept commands
+    post({type:'ready'});
+
   } catch(e){
     post({type:'error',message:String(e)});
   }
@@ -118,14 +139,48 @@ function buildMapHtml(pins: MapPin[]): string {
 </html>`;
 }
 
-export function WebLeafletMap({ pins, onPinTap, onError }: Props) {
+export function WebLeafletMap({ pins, userLocation, onPinTap, onError }: Props) {
   const [errored, setErrored] = useState(false);
+  const webViewRef = useRef<WebView>(null);
+  // Tracks whether the Leaflet map has finished initialising (received 'ready' message)
+  const mapReadyRef = useRef(false);
+  // Location queued while map was still loading — injected on next 'ready'
+  const pendingCenterRef = useRef<UserLocation | null>(null);
+
+  // Reset ready flag whenever pins change — the WebView reloads its HTML source
+  useEffect(() => {
+    mapReadyRef.current = false;
+    pendingCenterRef.current = userLocation ?? null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pins]);
+
+  // Center map on user location whenever it changes
+  useEffect(() => {
+    if (!userLocation) return;
+    if (mapReadyRef.current && webViewRef.current) {
+      webViewRef.current.injectJavaScript(
+        `window.centerOnUser(${userLocation.latitude},${userLocation.longitude}); true;`
+      );
+    } else {
+      // Map not ready yet — queue and inject after 'ready' message arrives
+      pendingCenterRef.current = userLocation;
+    }
+  }, [userLocation]);
 
   const handleMessage = useCallback(
     (event: WebViewMessageEvent) => {
       try {
         const msg = JSON.parse(event.nativeEvent.data) as BridgeMessage;
-        if (msg.type === 'pinTap' && onPinTap) {
+        if (msg.type === 'ready') {
+          mapReadyRef.current = true;
+          const pending = pendingCenterRef.current;
+          if (pending && webViewRef.current) {
+            webViewRef.current.injectJavaScript(
+              `window.centerOnUser(${pending.latitude},${pending.longitude}); true;`
+            );
+            pendingCenterRef.current = null;
+          }
+        } else if (msg.type === 'pinTap' && onPinTap) {
           const pin = pins.find((p) => p.id === msg.id);
           if (pin) onPinTap(pin);
         } else if (msg.type === 'error') {
@@ -133,7 +188,7 @@ export function WebLeafletMap({ pins, onPinTap, onError }: Props) {
           onError?.();
         }
       } catch {
-        // malformed message — ignore
+        // malformed bridge message — ignore
       }
     },
     [pins, onPinTap, onError]
@@ -148,6 +203,7 @@ export function WebLeafletMap({ pins, onPinTap, onError }: Props) {
 
   return (
     <WebView
+      ref={webViewRef}
       source={{ html: buildMapHtml(pins) }}
       style={styles.webview}
       onMessage={handleMessage}

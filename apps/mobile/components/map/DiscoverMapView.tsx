@@ -1,11 +1,11 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui';
 import { MapPlaceholder } from './MapPlaceholder';
 import { WebLeafletMap } from './WebLeafletMap';
-import type { MapPin } from './WebLeafletMap';
+import type { MapPin, UserLocation } from './WebLeafletMap';
 import { canUseMapbox, getMapboxGL } from '@/services/mapboxService';
 import {
   Colors,
@@ -29,6 +29,9 @@ interface Props {
   onLiveSaveToggle: (item: DiscoverItem) => void;
   onAddToTrip: (attraction: BundledAttraction) => void;
   onLiveAddToTrip: (item: DiscoverItem) => void;
+  userLocation: UserLocation | null;
+  locationLoading: boolean;
+  onRequestLocation: () => void;
 }
 
 // ── Shared pin-tap card type ──────────────────────────────────────────
@@ -40,11 +43,65 @@ type SelectedPin =
 // ── Entry point ───────────────────────────────────────────────────────
 
 export function DiscoverMapView(props: Props) {
-  if (canUseMapbox) {
-    return <DiscoverMapNative {...props} />;
-  }
-  // Expo Go / Mapbox disabled → WebLeaflet real map
-  return <DiscoverWebMap {...props} />;
+  const {
+    userLocation,
+    locationLoading,
+    onRequestLocation,
+    totalCount,
+    ...mapProps
+  } = props;
+
+  const mapContent = canUseMapbox ? (
+    <DiscoverMapNative {...mapProps} userLocation={userLocation} />
+  ) : (
+    <DiscoverWebMap
+      {...mapProps}
+      totalCount={totalCount}
+      userLocation={userLocation}
+    />
+  );
+
+  return (
+    <View style={styles.container}>
+      {mapContent}
+      <LocationButton
+        userLocation={userLocation}
+        loading={locationLoading}
+        onPress={onRequestLocation}
+      />
+    </View>
+  );
+}
+
+// ── Floating location button ──────────────────────────────────────────
+
+function LocationButton({
+  userLocation,
+  loading,
+  onPress,
+}: {
+  userLocation: UserLocation | null;
+  loading: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.locateBtn, userLocation && styles.locateBtnActive]}
+      onPress={onPress}
+      activeOpacity={0.8}
+      hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+    >
+      {loading ? (
+        <ActivityIndicator size="small" color={Colors.primary} />
+      ) : (
+        <Ionicons
+          name={userLocation ? 'locate' : 'locate-outline'}
+          size={20}
+          color={userLocation ? Colors.primary : Colors.textSecondary}
+        />
+      )}
+    </TouchableOpacity>
+  );
 }
 
 // ── WebLeaflet map (Expo Go) ──────────────────────────────────────────
@@ -59,11 +116,11 @@ function DiscoverWebMap({
   onLiveSaveToggle,
   onAddToTrip,
   onLiveAddToTrip,
-}: Props) {
+  userLocation,
+}: Omit<Props, 'locationLoading' | 'onRequestLocation'>) {
   const [selected, setSelected] = useState<SelectedPin | null>(null);
   const [mapErrored, setMapErrored] = useState(false);
 
-  // Build MapPin array + lookup map in one pass so pin-tap resolution is O(1)
   const { pins, pinLookup } = useMemo(() => {
     const lookup = new Map<string, SelectedPin>();
     const all: MapPin[] = [];
@@ -112,9 +169,10 @@ function DiscoverWebMap({
   }
 
   return (
-    <View style={styles.container}>
+    <View style={styles.mapFill}>
       <WebLeafletMap
         pins={pins}
+        userLocation={userLocation}
         onPinTap={handlePinTap}
         onError={() => setMapErrored(true)}
       />
@@ -145,15 +203,27 @@ function DiscoverMapNative({
   onLiveSaveToggle,
   onAddToTrip,
   onLiveAddToTrip,
-}: Omit<Props, 'totalCount'>) {
+  userLocation,
+}: Omit<Props, 'totalCount' | 'locationLoading' | 'onRequestLocation'>) {
   const [selected, setSelected] = useState<SelectedPin | null>(null);
 
-  const center = useMemo<[number, number]>(() => {
+  // Camera center + zoom — updated imperatively when user location arrives
+  const [cameraCenter, setCameraCenter] = useState<[number, number]>(() => {
+    if (userLocation) return [userLocation.longitude, userLocation.latitude];
     if (attractions.length === 0) return [-98.5795, 39.8283];
     const lon = attractions.reduce((s, a) => s + a.longitude, 0) / attractions.length;
     const lat = attractions.reduce((s, a) => s + a.latitude, 0) / attractions.length;
     return [lon, lat];
-  }, [attractions]);
+  });
+  const [cameraZoom, setCameraZoom] = useState(
+    userLocation ? 12 : attractions.length > 0 ? 5 : 3
+  );
+
+  useEffect(() => {
+    if (!userLocation) return;
+    setCameraCenter([userLocation.longitude, userLocation.latitude]);
+    setCameraZoom(12);
+  }, [userLocation]);
 
   const mappableLive = useMemo(
     () =>
@@ -174,12 +244,13 @@ function DiscoverMapNative({
   const PointAnnotation = mapbox.PointAnnotation as React.ComponentType<any>;
 
   return (
-    <View style={styles.container}>
+    <View style={styles.mapFill}>
       <MapView style={styles.map} styleURL="mapbox://styles/mapbox/streets-v12">
         <Camera
-          centerCoordinate={center}
-          zoomLevel={attractions.length > 0 ? 5 : 3}
-          animationMode="none"
+          centerCoordinate={cameraCenter}
+          zoomLevel={cameraZoom}
+          animationMode="flyTo"
+          animationDuration={800}
         />
 
         {attractions.map((a) => (
@@ -207,6 +278,16 @@ function DiscoverMapNative({
             </View>
           </PointAnnotation>
         ))}
+
+        {userLocation && (
+          <PointAnnotation
+            key="user-location"
+            id="user-location"
+            coordinate={[userLocation.longitude, userLocation.latitude]}
+          >
+            <View style={styles.userDot} />
+          </PointAnnotation>
+        )}
       </MapView>
 
       {selected && (
@@ -225,7 +306,7 @@ function DiscoverMapNative({
   );
 }
 
-// ── Shared pin info card (used by both map implementations) ───────────
+// ── Shared pin info card ──────────────────────────────────────────────
 
 function PinInfoCard({
   selected,
@@ -260,6 +341,7 @@ function PinInfoCard({
   const savedAttr = attrData ? isSaved(attrData.id) : false;
   const savedLive = liveData?.fsqId ? isSavedFsq(liveData.fsqId) : false;
   const isSavedPin = isAttr ? savedAttr : savedLive;
+  const isLive = selected.type === 'live';
 
   return (
     <View
@@ -268,7 +350,6 @@ function PinInfoCard({
         { paddingBottom: Math.max(Spacing['2xl'], bottom + Spacing.md) },
       ]}
     >
-      {/* Handle bar */}
       <View style={styles.handleBar} />
 
       <View style={styles.pinCardHeader}>
@@ -294,6 +375,11 @@ function PinInfoCard({
         {!!cat && (
           <View style={styles.catChip}>
             <Text style={styles.catChipText}>{cat}</Text>
+          </View>
+        )}
+        {isLive && (
+          <View style={styles.sourceBadge}>
+            <Text style={styles.sourceBadgeText}>Foursquare</Text>
           </View>
         )}
         {rating !== undefined && (
@@ -336,10 +422,43 @@ function PinInfoCard({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  mapFill: { flex: 1 },
   map: { flex: 1 },
   pinMarker: { alignItems: 'center', justifyContent: 'center' },
   livePinMarker: { alignItems: 'center', justifyContent: 'center' },
 
+  // User "You are here" dot (Mapbox native only; WebLeaflet uses injected HTML)
+  userDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: Colors.primary,
+    borderWidth: 3,
+    borderColor: Colors.white,
+    ...Shadow.sm,
+  },
+
+  // Floating location button
+  locateBtn: {
+    position: 'absolute',
+    top: Spacing.lg,
+    right: Spacing.lg,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    ...Shadow.md,
+  },
+  locateBtnActive: {
+    borderColor: Colors.primary + '50',
+    backgroundColor: Colors.primary + '0A',
+  },
+
+  // Pin info card (bottom sheet)
   pinCard: {
     position: 'absolute',
     bottom: 0,
@@ -385,6 +504,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
+    flexWrap: 'wrap',
   },
   catChip: {
     backgroundColor: Colors.chipBackground,
@@ -396,6 +516,17 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.textSecondary,
     fontWeight: FontWeight.medium,
+  },
+  sourceBadge: {
+    backgroundColor: Colors.accent + '20',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+  },
+  sourceBadgeText: {
+    fontSize: FontSize.xs,
+    color: Colors.accent,
+    fontWeight: FontWeight.semibold,
   },
   ratingChip: {
     flexDirection: 'row',
