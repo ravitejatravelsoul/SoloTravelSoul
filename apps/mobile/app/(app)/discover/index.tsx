@@ -21,7 +21,8 @@ import { useHaptics } from '@/hooks/useHaptics';
 import { useLocation } from '@/hooks/useLocation';
 import { useAuthStore } from '@/stores/authStore';
 import { distanceBetweenKm, formatDistance } from '@/services/locationService';
-import { searchPlaces, searchNearby, isFoursquareEnabled } from '@/services/foursquareService';
+import { searchPlaces, searchNearby, isFoursquareEnabled, isFoursquareConfigured } from '@/services/foursquareService';
+import type { PlaceSearchResult } from '@/services/foursquareService';
 import { Colors, Gradients, Spacing, Radius, Shadow, FontSize, FontWeight } from '@/constants/theme';
 import type { BundledAttraction, PlaceEntry, PlaceCategory, DiscoverItem } from '@solotravelsoul/shared';
 
@@ -90,6 +91,7 @@ type ViewMode = 'list' | 'map';
 
 export default function DiscoverScreen() {
   const isEnabled = isFoursquareEnabled();
+  const isConfigured = isFoursquareConfigured();
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -101,6 +103,7 @@ export default function DiscoverScreen() {
   const [liveRateLimited, setLiveRateLimited] = useState(false);
   const [nearbyResults, setNearbyResults] = useState<DiscoverItem[]>([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
+  const [nearbySource, setNearbySource] = useState<PlaceSearchResult['source'] | null>(null);
 
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const {
@@ -239,6 +242,24 @@ export default function DiscoverScreen() {
     return merged;
   }, [liveResults, nearbyResults, isEnabled]);
 
+  // Status message overlaid on the map when live places have a notable state
+  const liveMapStatus = useMemo<string | undefined>(() => {
+    if (viewMode !== 'map') return undefined;
+    if (!isEnabled) return undefined; // live search coming soon — map shows bundled pins only
+    if (isEnabled && !isConfigured) return undefined;
+    if (!location) return undefined; // waiting for user to tap locate
+    if (nearbyLoading || locationLoading) return 'Searching nearby…';
+    if (nearbySource === 'key_rejected') return 'Foursquare key rejected — check Service API Key permissions';
+    if (nearbySource === 'rate_limited') return 'Daily search limit reached';
+    if (nearbySource === 'disabled') return 'Foursquare API key missing';
+    if (mergedLiveResults.length === 0) return 'No live places found nearby';
+    const withCoords = mergedLiveResults.filter(
+      (r) => typeof r.latitude === 'number' && typeof r.longitude === 'number'
+    );
+    if (withCoords.length === 0) return 'Live places found, but no map coordinates';
+    return undefined; // pins are visible — no banner needed
+  }, [viewMode, isEnabled, isConfigured, location, nearbyLoading, locationLoading, nearbySource, mergedLiveResults]);
+
   useEffect(() => {
     if (!showLiveSection || !isEnabled || !uid) {
       setLiveResults([]);
@@ -268,16 +289,25 @@ export default function DiscoverScreen() {
   useEffect(() => {
     if (!location || !isEnabled || !uid) {
       setNearbyResults([]);
+      setNearbySource(null);
       setNearbyLoading(false);
+      if (__DEV__) console.log('[Discover] searchNearby skipped — location:', !!location, 'isEnabled:', isEnabled, 'uid:', !!uid);
       return;
     }
     let cancelled = false;
     setNearbyLoading(true);
+    if (__DEV__) console.log('[Discover] searchNearby starting at', location);
     searchNearby(location, uid, 20).then((r) => {
       if (cancelled) return;
-      if (r.source !== 'rate_limited') setNearbyResults(r.results);
+      setNearbySource(r.source);
+      if (r.source !== 'rate_limited' && r.source !== 'key_rejected') setNearbyResults(r.results);
+      if (__DEV__) {
+        const withCoords = r.results.filter((x) => typeof x.latitude === 'number' && typeof x.longitude === 'number');
+        console.log(`[Discover] searchNearby → ${r.results.length} results, ${withCoords.length} with coords, source: ${r.source}`);
+      }
       setNearbyLoading(false);
-    }).catch(() => {
+    }).catch((err) => {
+      if (__DEV__) console.error('[Discover] searchNearby error:', err);
       if (!cancelled) setNearbyLoading(false);
     });
     return () => { cancelled = true; };
@@ -329,6 +359,7 @@ export default function DiscoverScreen() {
           userLocation={location}
           locationLoading={locationLoading || nearbyLoading}
           onRequestLocation={requestLocation}
+          liveStatusMessage={liveMapStatus}
         />
       ) : (
         <>

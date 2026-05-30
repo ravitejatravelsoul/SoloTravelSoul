@@ -32,6 +32,7 @@ interface Props {
   userLocation: UserLocation | null;
   locationLoading: boolean;
   onRequestLocation: () => void;
+  liveStatusMessage?: string;
 }
 
 // ── Shared pin-tap card type ──────────────────────────────────────────
@@ -48,6 +49,7 @@ export function DiscoverMapView(props: Props) {
     locationLoading,
     onRequestLocation,
     totalCount,
+    liveStatusMessage,
     ...mapProps
   } = props;
 
@@ -64,6 +66,11 @@ export function DiscoverMapView(props: Props) {
   return (
     <View style={styles.container}>
       {mapContent}
+      {liveStatusMessage ? (
+        <View pointerEvents="none" style={styles.statusBanner}>
+          <Text style={styles.statusBannerText}>{liveStatusMessage}</Text>
+        </View>
+      ) : null}
       <LocationButton
         userLocation={userLocation}
         loading={locationLoading}
@@ -456,6 +463,25 @@ const styles = StyleSheet.create({
   locateBtnActive: {
     borderColor: Colors.primary + '50',
     backgroundColor: Colors.primary + '0A',
+  },
+
+  // Map status banner — shown when live places have a notable state
+  statusBanner: {
+    position: 'absolute',
+    bottom: 72,
+    left: Spacing.lg,
+    right: Spacing.lg,
+    backgroundColor: 'rgba(0,0,0,0.68)',
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    alignItems: 'center',
+  },
+  statusBannerText: {
+    color: '#ffffff',
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.medium,
+    textAlign: 'center',
   },
 
   // Pin info card (bottom sheet)

@@ -19,11 +19,11 @@ const SECTIONS = [
   },
   {
     title: 'Third-party services',
-    body: 'We use Firebase (auth, Firestore, Storage) by Google. Firebase collects basic telemetry as part of its infrastructure. No other third-party analytics or tracking SDKs are included in this version.',
+    body: 'We use Firebase (auth, Firestore, Storage) by Google. Firebase collects basic telemetry as part of its infrastructure. Map tiles are provided by OpenStreetMap contributors (openstreetmap.org). No other third-party analytics or tracking SDKs are included in this version.',
   },
   {
     title: 'Data deletion',
-    body: 'You can delete your account at any time from the Profile screen. All associated data (trips, journal, photos) is permanently deleted within 30 days. To request immediate deletion, email privacy@solotravelsoul.app.',
+    body: 'You can delete your account at any time from the Profile screen. Deleting your account permanently removes your profile, trips, itinerary, journal entries, and saved places. Messages you sent in group or direct chats may remain visible to other participants as "Deleted User" — they are not recoverable. To request assistance with data removal, email privacy@solotravelsoul.app.',
   },
   {
     title: 'Contact',

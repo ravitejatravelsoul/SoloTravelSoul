@@ -60,6 +60,23 @@ export async function deleteCurrentUser(password: string): Promise<void> {
   await deleteUser(user);
 }
 
+// Verify the user's password without deleting anything.
+// Throws auth/wrong-password / auth/invalid-credential if wrong.
+export async function reauthenticate(password: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.email) throw new Error('auth/no-current-user');
+  const credential = EmailAuthProvider.credential(user.email, password);
+  await reauthenticateWithCredential(user, credential);
+}
+
+// Delete the currently-signed-in auth account.
+// Call reauthenticate() first, then deleteAllUserData(), then this.
+export async function deleteAuthUser(): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('auth/no-current-user');
+  await deleteUser(user);
+}
+
 // Returns unsubscribe function — call it in useEffect cleanup.
 export function subscribeToAuthState(
   callback: (user: User | null) => void

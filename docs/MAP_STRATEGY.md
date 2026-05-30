@@ -97,6 +97,8 @@ In Expo Go, `IS_EXPO_GO` is always true → `canUseMapbox` is always false → M
 2. **Public token** (`pk.eyJ1...`) — runtime token, used by the app
 3. **Secret downloads token** (`sk.eyJ1...`) — build-time token, Android only
 
+> **Note on Foursquare keys:** Live place search uses the Foursquare **Service API Key** from `developer.foursquare.com → Service API Keys`. The OAuth Client ID/Secret and Legacy API Keys shown in the same dashboard are **not used** by this app. The service API key is passed as the `Authorization` header value with no prefix.
+
 ### Step 2 — Set local env vars
 
 In `apps/mobile/.env`:

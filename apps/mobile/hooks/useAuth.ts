@@ -7,6 +7,9 @@ import {
   signOut,
   resetPassword,
   deleteCurrentUser,
+  reauthenticate,
+  deleteAuthUser,
+  deleteAllUserData,
   createUserProfile,
   upsertUserLookup,
 } from '@solotravelsoul/firebase';
@@ -99,14 +102,20 @@ export function useAuth() {
     [addToast]
   );
 
-  // Re-authenticates then permanently deletes the Firebase account.
-  // Returns true on success; shows an error toast and returns false on failure.
-  // onAuthStateChanged fires with null after deletion, root layout redirects to login.
+  // Safe 3-step account deletion:
+  //   1. reauthenticate  — verifies password; throws before any data is touched if wrong
+  //   2. deleteAllUserData — wipes Firestore data; best-effort, never blocks deletion
+  //   3. deleteAuthUser  — removes the Firebase Auth account
+  // onAuthStateChanged fires null after step 3 and root layout redirects to login.
   const deleteAccount = useCallback(
     async (password: string): Promise<boolean> => {
       setLoading(true);
+      const uid = user?.uid;
+      if (!uid) { setLoading(false); return false; }
       try {
-        await deleteCurrentUser(password);
+        await reauthenticate(password);
+        await deleteAllUserData(uid).catch(() => {});
+        await deleteAuthUser();
         return true;
       } catch (err: unknown) {
         const code = (err as { code?: string }).code ?? '';
@@ -121,7 +130,7 @@ export function useAuth() {
         setLoading(false);
       }
     },
-    [setLoading, addToast]
+    [setLoading, addToast, user?.uid]
   );
 
   return { user, profile, loading, login, register, logout, forgotPassword, deleteAccount };

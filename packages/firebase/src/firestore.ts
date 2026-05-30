@@ -16,6 +16,7 @@ import {
   limit,
   serverTimestamp,
   Timestamp,
+  arrayRemove,
   type DocumentData,
 } from 'firebase/firestore';
 import { app } from './config';
@@ -426,6 +427,52 @@ export async function upsertCachedPlace(place: CachedPlace): Promise<void> {
     ...place,
     cachedAt: dateToTs(place.cachedAt),
   });
+}
+
+// ── Account Deletion ──────────────────────────────────────────────────
+// Deletes all Firestore data owned by a user before their auth account is removed.
+// Subcollections (itinerary, checklist, reminders) must be deleted explicitly —
+// deleting a parent doc in Firestore does NOT cascade to subcollections.
+// Group removal is best-effort: failures are swallowed so auth deletion still proceeds.
+export async function deleteAllUserData(uid: string): Promise<void> {
+  // 1. Delete all trips and their subcollections
+  const tripsSnap = await getDocs(collection(db, 'users', uid, 'trips'));
+  for (const tripDoc of tripsSnap.docs) {
+    const tripId = tripDoc.id;
+    const [itinSnap, checkSnap, remSnap] = await Promise.all([
+      getDocs(collection(db, 'users', uid, 'trips', tripId, 'itinerary')),
+      getDocs(collection(db, 'users', uid, 'trips', tripId, 'checklist')),
+      getDocs(collection(db, 'users', uid, 'trips', tripId, 'reminders')),
+    ]);
+    await Promise.all([
+      ...itinSnap.docs.map((d) => deleteDoc(d.ref)),
+      ...checkSnap.docs.map((d) => deleteDoc(d.ref)),
+      ...remSnap.docs.map((d) => deleteDoc(d.ref)),
+    ]);
+    await deleteDoc(tripDoc.ref);
+  }
+
+  // 2. Delete saved places
+  const savedSnap = await getDocs(collection(db, 'users', uid, 'saved_places'));
+  await Promise.all(savedSnap.docs.map((d) => deleteDoc(d.ref)));
+
+  // 3. Delete user profile document
+  await deleteDoc(doc(db, 'users', uid)).catch(() => {});
+
+  // 4. Delete userLookup entry
+  await deleteDoc(doc(db, 'userLookup', uid)).catch(() => {});
+
+  // 5. Best-effort: remove from any groups (non-fatal — group doc not owned by user)
+  const groupsSnap = await getDocs(
+    query(collection(db, 'groups'), where('members', 'array-contains', uid))
+  ).catch(() => null);
+  if (groupsSnap) {
+    await Promise.all(
+      groupsSnap.docs.map((d) =>
+        updateDoc(d.ref, { members: arrayRemove(uid) }).catch(() => {})
+      )
+    );
+  }
 }
 
 // Firestore has no full-text search, so we fetch the most recently cached

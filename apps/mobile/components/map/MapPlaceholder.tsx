@@ -67,22 +67,16 @@ export function MapPlaceholder({ attractions, totalCount }: Props) {
       <View style={styles.statusCard}>
         <View style={styles.statusRow}>
           <View style={styles.statusIconBox}>
-            <Ionicons name="construct-outline" size={18} color={Colors.primary} />
+            <Ionicons name="map-outline" size={18} color={Colors.primary} />
           </View>
           <View style={styles.statusText}>
-            <Text style={styles.statusTitle}>Interactive Map Coming Soon</Text>
+            <Text style={styles.statusTitle}>Map temporarily unavailable</Text>
             <Text style={styles.statusBody}>
-              Full Mapbox map view is ready for an EAS dev build. Switch to{' '}
+              Switch to{' '}
               <Text style={styles.inline}>List</Text> to browse all{' '}
               {totalCount} attractions now.
             </Text>
           </View>
-        </View>
-        <View style={styles.devBadge}>
-          <Ionicons name="code-slash-outline" size={11} color={Colors.primary} />
-          <Text style={styles.devBadgeText}>
-            Requires EAS dev build · set EXPO_PUBLIC_MAPBOX_ENABLED=true
-          </Text>
         </View>
       </View>
 

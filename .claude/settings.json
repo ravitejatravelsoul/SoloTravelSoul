@@ -19,7 +19,11 @@
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\ravit\\\\Desktop\\\\SoloTravelSoul\" -Recurse -Directory -ErrorAction SilentlyContinue)",
       "Bash(echo \"TS EXIT:$?\")",
       "Bash(echo \"EXIT:$?\")",
-      "Bash(npm list *)"
+      "Bash(npm list *)",
+      "Bash(npx --yes expo-env-info)",
+      "Bash(findstr /i \"expo mapbox\")",
+      "Bash(ipconfig)",
+      "Bash(Select-String \"IPv4|Wireless\")"
     ]
   }
 }

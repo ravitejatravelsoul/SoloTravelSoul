@@ -11,7 +11,8 @@ const dailyLimitKey = (uid: string) =>
 
 export interface PlaceSearchResult {
   results: DiscoverItem[];
-  source: 'foursquare' | 'cache' | 'disabled' | 'rate_limited';
+  // 'key_rejected' — API returned 401 or 403 (wrong key, wrong permissions, or suspended)
+  source: 'foursquare' | 'cache' | 'disabled' | 'rate_limited' | 'key_rejected';
 }
 
 // Raw shape returned by the Foursquare Places Search API
@@ -19,10 +20,23 @@ interface RawFsqPlace {
   fsq_id: string;
   name: string;
   location: { formatted_address: string; locality: string; country: string };
-  geocodes: { main: { latitude: number; longitude: number } };
+  geocodes?: {
+    main?: { latitude: number; longitude: number };
+    drop_off?: { latitude: number; longitude: number };
+    front_door?: { latitude: number; longitude: number };
+  };
   categories: Array<{ name: string }>;
   rating?: number;
   photos?: Array<{ prefix: string; suffix: string }>;
+}
+
+// Try geocodes.main first, then drop_off, then front_door — FSQ sometimes omits main
+function extractCoords(geocodes: RawFsqPlace['geocodes']): { latitude: number | undefined; longitude: number | undefined } {
+  const src = geocodes?.main ?? geocodes?.drop_off ?? geocodes?.front_door;
+  return {
+    latitude: typeof src?.latitude === 'number' ? src.latitude : undefined,
+    longitude: typeof src?.longitude === 'number' ? src.longitude : undefined,
+  };
 }
 
 function logApiCall(endpoint: string, params: Record<string, unknown>): void {
@@ -50,6 +64,7 @@ async function incrementDailyCount(uid: string): Promise<void> {
 }
 
 function rawToDiscoverItem(r: RawFsqPlace): DiscoverItem {
+  const { latitude, longitude } = extractCoords(r.geocodes);
   return {
     id: r.fsq_id,
     name: r.name,
@@ -63,20 +78,21 @@ function rawToDiscoverItem(r: RawFsqPlace): DiscoverItem {
       : undefined,
     source: 'foursquare' as const,
     fsqId: r.fsq_id,
-    latitude: r.geocodes?.main?.latitude,
-    longitude: r.geocodes?.main?.longitude,
+    latitude,
+    longitude,
   };
 }
 
 function rawToCachedPlace(r: RawFsqPlace): CachedPlace {
+  const { latitude, longitude } = extractCoords(r.geocodes);
   return {
     id: r.fsq_id,
     name: r.name,
     address: r.location.formatted_address,
     city: r.location.locality ?? '',
     country: r.location.country ?? '',
-    latitude: r.geocodes?.main?.latitude ?? 0,
-    longitude: r.geocodes?.main?.longitude ?? 0,
+    latitude: latitude ?? 0,
+    longitude: longitude ?? 0,
     category: r.categories[0]?.name ?? 'Place',
     rating: r.rating ?? null,
     photoUrl: r.photos?.[0]
@@ -106,6 +122,14 @@ async function callFoursquareSearch(
       { headers: { Authorization: API_KEY, Accept: 'application/json' } }
     );
 
+    if (res.status === 401 || res.status === 403) {
+      console.error(
+        `[Foursquare] Key rejected (${res.status}). ` +
+        'Use a Service API Key from Foursquare Developer Dashboard → Service API Keys. ' +
+        'OAuth Client ID/Secret and Legacy API Keys are not accepted by /v3/places/search.'
+      );
+      return { results: [], source: 'key_rejected' };
+    }
     if (!res.ok) {
       console.error('[Foursquare] API error:', res.status, res.statusText);
       return { results: [], source: 'foursquare' };
@@ -113,6 +137,11 @@ async function callFoursquareSearch(
 
     const data = await res.json() as { results: RawFsqPlace[] };
     await incrementDailyCount(uid);
+
+    if (__DEV__) {
+      const withCoords = data.results.filter((r) => extractCoords(r.geocodes).latitude !== undefined);
+      console.log(`[Foursquare] ${data.results.length} results, ${withCoords.length} with coords. params: ${params.toString()}`);
+    }
 
     const items = data.results.map(rawToDiscoverItem);
 
@@ -176,11 +205,15 @@ export async function searchNearby(
   uid: string,
   limit = 20
 ): Promise<PlaceSearchResult> {
-  if (!ENABLED) return { results: [], source: 'disabled' };
-  if (!API_KEY) {
-    console.warn('[Foursquare] API key not configured — set EXPO_PUBLIC_FOURSQUARE_API_KEY');
+  if (!ENABLED) {
+    if (__DEV__) console.log('[Foursquare] searchNearby: EXPO_PUBLIC_FOURSQUARE_ENABLED is not "true" — skipping');
     return { results: [], source: 'disabled' };
   }
+  if (!API_KEY) {
+    console.warn('[Foursquare] searchNearby: EXPO_PUBLIC_FOURSQUARE_API_KEY is not set');
+    return { results: [], source: 'disabled' };
+  }
+  if (__DEV__) console.log('[Foursquare] searchNearby at', coords, 'limit:', limit);
 
   const ll = `${coords.latitude.toFixed(4)},${coords.longitude.toFixed(4)}`;
   const params = new URLSearchParams({
@@ -197,8 +230,15 @@ export function isFoursquareEnabled(): boolean {
   return ENABLED;
 }
 
+/** Returns true if Foursquare is enabled AND an API key is configured. */
+export function isFoursquareConfigured(): boolean {
+  return ENABLED && !!API_KEY;
+}
+
 /** Maps a Firestore CachedPlace into the unified DiscoverItem UI shape. */
 export function cachedPlaceToDiscoverItem(p: CachedPlace): DiscoverItem {
+  // CachedPlace stores 0 when coordinates are unknown (rawToCachedPlace ?? 0 fallback).
+  // Treat 0 as missing rather than null-island — real travel destinations are never at 0,0.
   return {
     id: p.id,
     name: p.name,
@@ -210,7 +250,7 @@ export function cachedPlaceToDiscoverItem(p: CachedPlace): DiscoverItem {
     photoUrl: p.photoUrl ?? undefined,
     source: 'foursquare',
     fsqId: p.id,
-    latitude: p.latitude || undefined,
-    longitude: p.longitude || undefined,
+    latitude: p.latitude !== 0 ? p.latitude : undefined,
+    longitude: p.longitude !== 0 ? p.longitude : undefined,
   };
 }

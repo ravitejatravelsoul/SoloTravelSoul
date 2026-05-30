@@ -1,5 +1,5 @@
 export { app, isFirebaseConfigured } from './src/config';
-export { auth, signIn, signUp, signOut, resetPassword, deleteCurrentUser, subscribeToAuthState, getCurrentUser } from './src/auth';
+export { auth, signIn, signUp, signOut, resetPassword, deleteCurrentUser, reauthenticate, deleteAuthUser, subscribeToAuthState, getCurrentUser } from './src/auth';
 export {
   db,
   getUserProfile,
@@ -24,6 +24,7 @@ export {
   searchCachedPlaces,
   getTripReminderPrefs,
   setTripReminderPrefs,
+  deleteAllUserData,
 } from './src/firestore';
 export {
   storage,

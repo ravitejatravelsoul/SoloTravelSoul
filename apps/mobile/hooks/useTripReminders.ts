@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Alert } from 'react-native';
 import { getTripReminderPrefs, setTripReminderPrefs } from '@solotravelsoul/firebase';
 import type { PlannedTrip, TripReminderPrefs, ReminderType } from '@solotravelsoul/shared';
 import { DEFAULT_REMINDER_PREFS } from '@solotravelsoul/shared';
@@ -95,8 +96,21 @@ export function useTripReminders(trip: PlannedTrip) {
         if (anyEnabled) {
           let perm = permStatus;
           if (perm !== 'granted') {
-            perm = await requestNotificationPermission();
-            setPermStatus(perm);
+            // Show in-app explanation before triggering the system permission dialog
+            const confirmed = await new Promise<boolean>((resolve) => {
+              Alert.alert(
+                'Enable Trip Reminders',
+                'SoloTravelSoul will remind you before your trip so you never miss planning tasks or departure day.',
+                [
+                  { text: 'Not Now', style: 'cancel', onPress: () => resolve(false) },
+                  { text: 'Continue', onPress: () => resolve(true) },
+                ]
+              );
+            });
+            if (confirmed) {
+              perm = await requestNotificationPermission();
+              setPermStatus(perm);
+            }
           }
           if (perm === 'granted') {
             await scheduleReminderNotifications(uid, trip, newPrefs);

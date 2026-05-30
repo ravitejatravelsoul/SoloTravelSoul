@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import WebView from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview';
 import { Colors } from '@/constants/theme';
+import { LEAFLET_JS, LEAFLET_CSS } from '@/assets/leaflet/leaflet-bundle';
 
 export interface MapPin {
   id: string;
@@ -39,7 +40,7 @@ function buildMapHtml(pins: MapPin[]): string {
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>${LEAFLET_CSS}</style>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{width:100%;height:100%;overflow:hidden;background:#f8f9fb}
@@ -61,7 +62,7 @@ function buildMapHtml(pins: MapPin[]): string {
 </head>
 <body>
 <div id="map"></div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>${LEAFLET_JS}</script>
 <script>
 (function(){
   function post(obj){
@@ -199,12 +200,16 @@ export function WebLeafletMap({ pins, userLocation, onPinTap, onError }: Props) 
     onError?.();
   }, [onError]);
 
+  // Stable reference — changing on every render would reload the WebView unnecessarily
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const mapSource = useMemo(() => ({ html: buildMapHtml(pins) }), [pins]);
+
   if (errored) return null;
 
   return (
     <WebView
       ref={webViewRef}
-      source={{ html: buildMapHtml(pins) }}
+      source={mapSource}
       style={styles.webview}
       onMessage={handleMessage}
       onError={handleNativeError}

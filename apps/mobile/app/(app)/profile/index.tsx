@@ -50,7 +50,7 @@ export default function ProfileScreen() {
   const handleDeletePress = () => {
     Alert.alert(
       'Delete account',
-      'This permanently deletes your account and all your trips, journal entries, and saved places. This cannot be undone.',
+      'This permanently deletes your account, trips, journal entries, and saved places. Messages sent in chats may remain visible as "Deleted User". This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -218,7 +218,7 @@ export default function ProfileScreen() {
               <View style={styles.warningBanner}>
                 <Ionicons name="warning-outline" size={20} color={Colors.error} />
                 <Text style={styles.warningText}>
-                  This will permanently delete your account and all associated data. This action cannot be undone.
+                  This will permanently delete your account, trips, journal entries, and saved places. Messages sent in chats may remain visible as "Deleted User". This action cannot be undone.
                 </Text>
               </View>
 

@@ -32,6 +32,18 @@ GET https://api.foursquare.com/v3/places/search
 Authorization: <EXPO_PUBLIC_FOURSQUARE_API_KEY>
 ```
 
+**API Key type — Service API Key only:**
+
+The Foursquare Developer Dashboard (`developer.foursquare.com`) shows three credential types:
+
+| Credential type | Used here? | Notes |
+|---|---|---|
+| **Service API Keys** | **Yes** | For `/v3/places/search` — copy this key into `.env` |
+| OAuth Client ID / Secret | No | For user-facing OAuth flows — not needed |
+| Legacy API Keys | No | For deprecated v2 API — ignored by v3 endpoints |
+
+The `Authorization` header must contain the **Service API Key** exactly as shown in the dashboard. No `Bearer ` prefix, no `fsq3p_` prefix check — the key is passed as-is. A 401/403 response means the wrong key type was used or the key has been suspended.
+
 **Feature flag:**  
 `EXPO_PUBLIC_FOURSQUARE_ENABLED=false` in `.env`. The service returns `{ results: [], source: 'disabled' }` when false — zero API calls possible without explicitly enabling it. Set to `true` only after verifying the cost controls below.
 
@@ -103,10 +115,11 @@ The Discover screen currently operates in **local-only mode**:
 4. Debounce (600ms) runs regardless — it's in place for when live search is enabled.
 
 **Enabling live search (Phase 2 checklist):**
-- [ ] Sign up for Foursquare developer account, get API key
-- [ ] Set `EXPO_PUBLIC_FOURSQUARE_ENABLED=true` in `.env`
-- [ ] Set `EXPO_PUBLIC_FOURSQUARE_API_KEY=<key>` in `.env`
-- [ ] Restrict API key in Foursquare dashboard to this app's bundle ID
+- [ ] Sign up at `developer.foursquare.com`, create a project
+- [ ] Go to **Service API Keys** tab — copy the key shown there
+- [ ] Set `EXPO_PUBLIC_FOURSQUARE_ENABLED=true` in `apps/mobile/.env`
+- [ ] Set `EXPO_PUBLIC_FOURSQUARE_API_KEY=<service-api-key>` in `apps/mobile/.env`
 - [ ] Deploy Firestore `places_cache` security rules
-- [ ] Verify `searchPlaces()` returns real results in dev
+- [ ] Open the app, tap map mode, tap the locate button — Metro should log `[Foursquare] searchNearby at …`
+- [ ] If the map shows "Foursquare key rejected", the key is wrong type — re-check the **Service API Keys** tab
 - [ ] Monitor daily call count in Foursquare dashboard for first 48h
