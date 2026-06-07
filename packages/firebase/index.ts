@@ -84,6 +84,57 @@ export {
   deleteTripCoverPhoto,
 } from './src/storage';
 export {
+  // Phase 2: Posts
+  createPost,
+  updatePost,
+  deletePost,
+  getPost,
+  subscribePostsByAuthor,
+  subscribeExplorePosts,
+  getPostsByCountry,
+  getTrendingPosts,
+  getPostsByType,
+  getPostsFromUsers,
+  // Phase 2: Likes
+  likePost,
+  unlikePost,
+  isPostLiked,
+  // Phase 2: Comments
+  addComment,
+  editComment,
+  deleteComment,
+  subscribeComments,
+  subscribeReplies,
+  // Phase 2: Saved Posts
+  savePost,
+  unsavePost,
+  isSavedPost,
+  subscribeSavedPosts,
+  // Phase 2: Journals
+  createJournal,
+  updateJournal,
+  deleteJournal,
+  getJournal,
+  subscribeJournalsByAuthor,
+  subscribeExploreJournals,
+  likeJournal,
+  unlikeJournal,
+  isJournalLiked,
+  // Phase 2: Follow
+  followUser,
+  unfollowUser,
+  isFollowing,
+  getFollowCounts,
+  subscribeFollowers,
+  subscribeFollowing,
+  getFollowingIds,
+  // Phase 2: Reputation
+  getReputation,
+  upsertReputation,
+  // Phase 2: Social notifications
+  createSocialNotification,
+} from './src/posts';
+export {
   directChatId,
   upsertUserLookup,
   searchUserByEmail,

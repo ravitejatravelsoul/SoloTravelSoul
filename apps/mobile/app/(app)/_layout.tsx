@@ -92,7 +92,7 @@ export default function AppLayout() {
       <Tabs.Screen
         name="home/index"
         options={{
-          title: 'Home',
+          title: 'Feed',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name={focused ? 'home' : 'home-outline'} color={color} focused={focused} />
           ),
@@ -110,7 +110,7 @@ export default function AppLayout() {
       <Tabs.Screen
         name="discover"
         options={{
-          title: 'Discover',
+          title: 'Explore',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name={focused ? 'compass' : 'compass-outline'} color={color} focused={focused} />
           ),
@@ -163,7 +163,15 @@ export default function AppLayout() {
       <Tabs.Screen name="profile/safety" options={{ href: null }} />
       <Tabs.Screen name="profile/join-requests" options={{ href: null }} />
       <Tabs.Screen name="profile/blocked-users" options={{ href: null }} />
+      <Tabs.Screen name="profile/followers" options={{ href: null }} />
+      <Tabs.Screen name="profile/following" options={{ href: null }} />
       <Tabs.Screen name="saved-places/index" options={{ href: null }} />
+      <Tabs.Screen name="saved-posts/index" options={{ href: null }} />
+      {/* Phase 2: Posts & Journals */}
+      <Tabs.Screen name="post/create" options={{ href: null }} />
+      <Tabs.Screen name="post/[postId]" options={{ href: null }} />
+      <Tabs.Screen name="journal/create" options={{ href: null }} />
+      <Tabs.Screen name="journal/[journalId]" options={{ href: null }} />
     </Tabs>
     </View>
   );

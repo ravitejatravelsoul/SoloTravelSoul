@@ -1,364 +1,240 @@
-import { memo } from 'react';
-import { View, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { useCallback } from 'react';
+import {
+  View,
+  FlatList,
+  StyleSheet,
+  TouchableOpacity,
+  RefreshControl,
+  ActivityIndicator,
+} from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useShallow } from 'zustand/react/shallow';
-import { Text, Avatar, EmptyState, OfflineBanner } from '@/components/ui';
-import { TripCard } from '@/components/trips/TripCard';
+import { Text, Avatar, OfflineBanner } from '@/components/ui';
+import { PostCard } from '@/components/posts/PostCard';
 import { TripHeroCard } from '@/components/trips/TripHeroCard';
-import { useAuthStore } from '@/stores/authStore';
+import { useFeed } from '@/hooks/useFeed';
 import { useTrips } from '@/hooks/useTrips';
+import { useAuthStore } from '@/stores/authStore';
 import { useNetworkState } from '@/hooks/useNetworkState';
+import { useNotifications } from '@/hooks/useNotifications';
 import { getUserInitials } from '@solotravelsoul/shared';
 import { tripStatus } from '@/utils/dateUtils';
-import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
-import type { PlannedTrip } from '@solotravelsoul/shared';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import type { FeedItem } from '@/hooks/useFeed';
 
-function greeting(): string {
-  const h = new Date().getHours();
-  if (h < 5) return 'Still up?';
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Good afternoon';
-  return 'Good evening';
+function FeedHeader() {
+  const profile = useAuthStore((s) => s.profile);
+  const { unreadCount } = useNotifications();
+  const initials = getUserInitials(profile?.name ?? '?');
+
+  return (
+    <View style={styles.header}>
+      <View style={styles.logoRow}>
+        <Ionicons name="airplane" size={22} color={Colors.primary} />
+        <Text style={styles.logo}>SoloTravelSoul</Text>
+      </View>
+      <View style={styles.headerRight}>
+        <TouchableOpacity
+          onPress={() => router.push('/(app)/post/create' as never)}
+          hitSlop={10}
+          style={styles.headerBtn}
+        >
+          <Ionicons name="add-circle-outline" size={26} color={Colors.primary} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => router.push('/(app)/notifications/index' as never)}
+          hitSlop={10}
+          style={styles.headerBtn}
+        >
+          <Ionicons name="notifications-outline" size={24} color={Colors.textPrimary} />
+          {unreadCount > 0 && (
+            <View style={styles.notifBadge}>
+              <Text style={styles.notifBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => router.push('/(app)/profile')}
+          hitSlop={6}
+        >
+          <Avatar uri={profile?.photoURL} initials={initials} size={32} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 }
 
-export default function HomeScreen() {
-  const profile = useAuthStore((s) => s.profile);
-  const { upcoming, past, loading } = useTrips();
-  const { isConnected } = useNetworkState();
+function EmptyFeed({ isNewUser }: { isNewUser: boolean }) {
+  return (
+    <View style={styles.emptyWrap}>
+      <Ionicons name="earth-outline" size={56} color={Colors.border} />
+      <Text style={styles.emptyTitle}>
+        {isNewUser ? "Follow travelers to see their posts" : "No posts yet"}
+      </Text>
+      <Text style={styles.emptySub}>
+        {isNewUser
+          ? "Discover travelers in the Community tab to fill your feed"
+          : "Be the first to share a travel memory"}
+      </Text>
+      <View style={styles.emptyActions}>
+        {isNewUser ? (
+          <TouchableOpacity
+            style={styles.emptyBtn}
+            onPress={() => router.push('/(app)/community' as never)}
+          >
+            <Ionicons name="people-outline" size={16} color={Colors.white} />
+            <Text style={styles.emptyBtnText}>Explore Community</Text>
+          </TouchableOpacity>
+        ) : null}
+        <TouchableOpacity
+          style={[styles.emptyBtn, isNewUser && styles.emptyBtnSecondary]}
+          onPress={() => router.push('/(app)/post/create' as never)}
+        >
+          <Ionicons name="camera-outline" size={16} color={isNewUser ? Colors.primary : Colors.white} />
+          <Text style={[styles.emptyBtnText, isNewUser && { color: Colors.primary }]}>
+            Share a Post
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
 
-  const firstName = profile?.name?.split(' ')[0] ?? 'Traveler';
-  const initials = getUserInitials(profile?.name ?? '?');
+export default function FeedScreen() {
+  const { items, loading, refreshing, refresh, isEmpty, isNewUser } = useFeed();
+  const { upcoming } = useTrips();
+  const { isConnected } = useNetworkState();
 
   const activeTrip = upcoming.find((t) => tripStatus(t.startDate, t.endDate) === 'active');
   const nextTrip = activeTrip ?? upcoming.find((t) => tripStatus(t.startDate, t.endDate) === 'upcoming');
-  const recentPast = past.slice(0, 3);
-  const totalTrips = upcoming.length + past.length;
+
+  const renderItem = useCallback(({ item }: { item: FeedItem }) => {
+    return <PostCard post={item.data} />;
+  }, []);
+
+  const keyExtractor = useCallback((item: FeedItem) => item.data.postId, []);
+
+  const ListHeaderComponent = useCallback(() => (
+    <>
+      {!isConnected && <OfflineBanner />}
+      <FeedHeader />
+      {nextTrip ? (
+        <View style={styles.tripBanner}>
+          <TripHeroCard trip={nextTrip} />
+        </View>
+      ) : null}
+      {loading && items.length === 0 ? (
+        <View style={styles.centerLoader}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      ) : null}
+    </>
+  ), [isConnected, nextTrip, loading, items.length]);
 
   return (
-    <SafeAreaView style={styles.safe}>
-      {!isConnected && <OfflineBanner />}
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-
-        {/* ── Header ── */}
-        <View style={styles.header}>
-          <View>
-            <Text variant="caption" style={styles.greetingLabel}>{greeting()}</Text>
-            <Text variant="h2" style={styles.firstName}>{firstName}</Text>
-          </View>
-          <TouchableOpacity onPress={() => router.push('/(app)/profile')} activeOpacity={0.8}>
-            <Avatar uri={profile?.photoURL} initials={initials} size={46} />
-          </TouchableOpacity>
-        </View>
-
-        {/* ── Hero ── */}
-        {nextTrip ? (
-          <TripHeroCard trip={nextTrip} />
-        ) : loading ? (
-          <View style={[styles.emptyHero, styles.heroSkeleton]}>
-            <View style={{ padding: Spacing['2xl'], gap: Spacing.lg, minHeight: 180 }}>
-              <View style={styles.skeletonPill} />
-              <View style={[styles.skeletonBar, { width: '65%', height: 26 }]} />
-              <View style={[styles.skeletonBar, { width: '45%' }]} />
-            </View>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={styles.emptyHero}
-            onPress={() => router.push('/(app)/trips/create')}
-            activeOpacity={0.88}
-          >
-            <LinearGradient colors={Gradients.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.emptyHeroGradient}>
-              <View style={styles.emptyHeroDecCircle} />
-              <Text style={styles.emptyHeroEmoji}>🌍</Text>
-              <Text style={styles.emptyHeroTitle}>Where to next?</Text>
-              <Text style={styles.emptyHeroSub}>Plan your first adventure</Text>
-              <View style={styles.emptyHeroCta}>
-                <Text style={styles.emptyHeroCtaText}>Start planning</Text>
-                <Ionicons name="arrow-forward" size={14} color={Colors.white} />
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
-
-        {/* ── Passport stats ── */}
-        {totalTrips > 0 && (
-          <View style={styles.passport}>
-            <StatItem
-              value={upcoming.filter(t => tripStatus(t.startDate, t.endDate) === 'active').length}
-              label="Active"
-              icon="airplane"
-              color={Colors.success}
-            />
-            <View style={styles.passportDivider} />
-            <StatItem
-              value={upcoming.filter(t => tripStatus(t.startDate, t.endDate) === 'upcoming').length}
-              label="Upcoming"
-              icon="calendar-outline"
-              color={Colors.primary}
-            />
-            <View style={styles.passportDivider} />
-            <StatItem
-              value={past.length}
-              label="Completed"
-              icon="checkmark-circle-outline"
-              color={Colors.textSecondary}
-            />
-          </View>
-        )}
-
-        {/* ── Quick actions ── */}
-        <Text variant="label" style={styles.sectionLabel}>Quick actions</Text>
-        <View style={styles.actionsGrid}>
-          <QuickActionTile
-            gradient={Gradients.primary}
-            icon="add-circle-outline"
-            label="New Trip"
-            onPress={() => router.push('/(app)/trips/create')}
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <FlatList
+        data={isEmpty ? [] : items}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        ListHeaderComponent={ListHeaderComponent}
+        ListEmptyComponent={loading ? null : <EmptyFeed isNewUser={isNewUser} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refresh}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
           />
-          <QuickActionTile
-            gradient={Gradients.ocean}
-            icon="compass-outline"
-            label="Discover"
-            onPress={() => router.push('/(app)/discover')}
-          />
-          <QuickActionTile
-            gradient={Gradients.success}
-            icon="map-outline"
-            label="My Trips"
-            onPress={() => router.push('/(app)/trips')}
-          />
-          <QuickActionTile
-            gradient={Gradients.sunset}
-            icon="person-outline"
-            label="Profile"
-            onPress={() => router.push('/(app)/profile')}
-          />
-        </View>
-
-        {/* ── Recent trips ── */}
-        {recentPast.length > 0 && (
-          <>
-            <View style={styles.sectionHeader}>
-              <Text variant="label" style={styles.sectionLabel}>Recent adventures</Text>
-              <TouchableOpacity onPress={() => router.push('/(app)/trips')}>
-                <Text style={styles.seeAll}>See all</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.tripList}>
-              {recentPast.map((t) => <TripCard key={t.id} trip={t} />)}
-            </View>
-          </>
-        )}
-
-        {/* ── Empty state — no trips at all ── */}
-        {totalTrips === 0 && !loading && (
-          <View style={styles.emptySection}>
-            <EmptyState
-              emoji="🗺️"
-              title="Your journey starts here"
-              subtitle="Plan a trip, explore destinations, and capture every memory along the way."
-              actionLabel="Plan your first trip"
-              onAction={() => router.push('/(app)/trips/create')}
-            />
-          </View>
-        )}
-
-      </ScrollView>
+        }
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.list}
+        initialNumToRender={5}
+        maxToRenderPerBatch={5}
+        windowSize={10}
+      />
     </SafeAreaView>
   );
 }
 
-// ── Sub-components ────────────────────────────────────────────────────
-
-const StatItem = memo(function StatItem({
-  value, label, icon, color,
-}: { value: number; label: string; icon: string; color: string }) {
-  return (
-    <View style={styles.statItem}>
-      <Ionicons name={icon as never} size={16} color={color} />
-      <Text style={[styles.statValue, { color }]}>{value}</Text>
-      <Text variant="caption">{label}</Text>
-    </View>
-  );
-});
-
-const QuickActionTile = memo(function QuickActionTile({
-  gradient, icon, label, onPress,
-}: { gradient: readonly [string, string]; icon: string; label: string; onPress: () => void }) {
-  return (
-    <TouchableOpacity style={styles.actionWrapper} onPress={onPress} activeOpacity={0.82}>
-      <LinearGradient
-        colors={gradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.actionGradient}
-      >
-        <Ionicons name={icon as never} size={26} color={Colors.white} />
-      </LinearGradient>
-      <Text variant="label" center style={styles.actionLabel}>{label}</Text>
-    </TouchableOpacity>
-  );
-});
-
-// ── Styles ────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
-  content: { padding: Spacing.lg, paddingBottom: Spacing['4xl'] },
-
   header: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.xl,
-    paddingTop: Spacing.sm,
-  },
-  greetingLabel: { color: Colors.textSecondary, marginBottom: 2 },
-  firstName: { lineHeight: 30 },
-
-  // Empty hero CTA
-  emptyHero: {
-    borderRadius: Radius.xl,
-    overflow: 'hidden',
-    marginBottom: Spacing.xl,
-    ...Shadow.hero,
-  },
-  emptyHeroGradient: {
-    padding: Spacing['2xl'],
-    minHeight: 180,
-    alignItems: 'flex-start',
-    gap: Spacing.xs,
-    overflow: 'hidden',
-  },
-  emptyHeroDecCircle: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    top: -50,
-    right: -30,
-  },
-  emptyHeroEmoji: { fontSize: 36, lineHeight: 46, marginBottom: Spacing.xs },
-  emptyHeroTitle: {
-    fontSize: FontSize['2xl'],
-    lineHeight: 30,
-    fontWeight: FontWeight.extrabold,
-    color: Colors.white,
-  },
-  emptyHeroSub: {
-    fontSize: FontSize.md,
-    color: 'rgba(255,255,255,0.72)',
-    marginBottom: Spacing.md,
-  },
-  emptyHeroCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radius.full,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
-  },
-  emptyHeroCtaText: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.semibold,
-    color: Colors.white,
-  },
-
-  // Passport stats
-  passport: {
-    flexDirection: 'row',
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    marginBottom: Spacing.xl,
-    ...Shadow.sm,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
+    paddingHorizontal: Spacing['2xl'],
     paddingVertical: Spacing.md,
-    gap: 3,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
   },
-  statValue: {
-    fontSize: FontSize.xl,
+  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  logo: {
+    fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
+    color: Colors.textPrimary,
   },
-  passportDivider: {
-    width: 1,
-    backgroundColor: Colors.border,
-    marginVertical: Spacing.md,
-  },
-
-  // Section headers
-  sectionLabel: {
-    color: Colors.textSecondary,
-    marginBottom: Spacing.md,
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
-    fontSize: FontSize.xs,
-    fontWeight: FontWeight.bold,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
-  seeAll: {
-    fontSize: FontSize.sm,
-    color: Colors.primary,
-    fontWeight: FontWeight.medium,
-  },
-
-  // Quick actions
-  actionsGrid: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-    marginBottom: Spacing.xl,
-  },
-  actionWrapper: {
-    flex: 1,
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  actionGradient: {
-    width: '100%',
-    aspectRatio: 1,
-    borderRadius: Radius.lg,
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  headerBtn: { position: 'relative' },
+  notifBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: Colors.error,
+    borderRadius: Radius.full,
+    minWidth: 16,
+    height: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    ...Shadow.md,
+    paddingHorizontal: 3,
   },
-  actionLabel: {
+  notifBadgeText: {
+    fontSize: 9,
+    color: Colors.white,
+    fontWeight: FontWeight.bold,
+  },
+  tripBanner: {
+    marginHorizontal: Spacing['2xl'],
+    marginVertical: Spacing.lg,
+  },
+  list: { flexGrow: 1 },
+  centerLoader: { padding: Spacing['4xl'], alignItems: 'center' },
+  emptyWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing['4xl'],
+    gap: Spacing.md,
+    minHeight: 400,
+  },
+  emptyTitle: {
+    fontSize: FontSize.xl,
+    fontWeight: FontWeight.semibold,
     color: Colors.textPrimary,
-    fontSize: FontSize.xs,
+    textAlign: 'center',
   },
-
-  tripList: { gap: Spacing.md },
-  emptySection: { marginTop: Spacing.xl },
-
-  // Loading skeleton for hero slot
-  heroSkeleton: {
-    backgroundColor: Colors.chipBackground,
-    overflow: 'hidden',
+  emptySub: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
   },
-  skeletonBar: {
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: Colors.border,
-  },
-  skeletonPill: {
-    width: 80,
-    height: 24,
+  emptyActions: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.md, flexWrap: 'wrap', justifyContent: 'center' },
+  emptyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.primary,
     borderRadius: Radius.full,
-    backgroundColor: Colors.border,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
   },
+  emptyBtnSecondary: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+  },
+  emptyBtnText: { fontSize: FontSize.sm, color: Colors.white, fontWeight: FontWeight.semibold },
 });

@@ -7,6 +7,8 @@ export * from './src/types/Notification';
 export * from './src/types/Group';
 export * from './src/types/TripReminders';
 export * from './src/types/Chat';
+export * from './src/types/Post';
+export * from './src/types/Reputation';
 
 // Utils
 export * from './src/utils/dateUtils';

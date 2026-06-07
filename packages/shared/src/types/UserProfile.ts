@@ -27,6 +27,14 @@ export interface UserProfile {
   showInNearbyTravelers?: boolean;
   currentDestination?: string | null;
   tripCount?: number;
+
+  // ── Phase 2: Social Network fields ──────────────────────────────────
+  followersCount?: number;
+  followingCount?: number;
+  postsCount?: number;
+  journalsCount?: number;
+  coverPhotoURL?: string | null;
+  badges?: import('./Reputation').BadgeType[];
 }
 
 // Ported from Swift's computed `initials` property

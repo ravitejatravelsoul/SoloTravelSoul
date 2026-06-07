@@ -33,7 +33,9 @@ export type FeedItemType =
   | 'group_created'
   | 'joined_group'
   | 'memory_added'
-  | 'place_saved';
+  | 'place_saved'
+  | 'post_created'
+  | 'journal_published';
 
 export interface PublicProfile {
   uid: string;
@@ -50,6 +52,14 @@ export interface PublicProfile {
   tripCount: number;
   memberSince: Date;
   updatedAt: Date;
+
+  // ── Phase 2: Social Network fields (optional — no migration needed) ──
+  followersCount?: number;
+  followingCount?: number;
+  postsCount?: number;
+  journalsCount?: number;
+  coverPhotoURL?: string | null;
+  badges?: import('./Reputation').BadgeType[];
 }
 
 export interface PublicTrip {

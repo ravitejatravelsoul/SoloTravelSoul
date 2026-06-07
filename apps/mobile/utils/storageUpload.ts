@@ -25,6 +25,25 @@ export function isUploadsEnabled(): boolean {
   return (provider === 'r2' && workerUrl.length > 0) || provider === 'firebase';
 }
 
+// ── Post photo upload (R2 only — no Firebase Storage fallback for posts) ────────
+
+export async function uploadPostPhotoFromUri(
+  uid: string,
+  fileUri: string
+): Promise<string> {
+  const provider = process.env.EXPO_PUBLIC_STORAGE_PROVIDER ?? '';
+  const workerUrl = process.env.EXPO_PUBLIC_R2_UPLOAD_WORKER_URL ?? '';
+
+  if (provider === 'r2' && workerUrl) {
+    return uploadViaR2WorkerEndpoint(uid, fileUri, workerUrl, '/upload/post-photo');
+  }
+
+  throw Object.assign(
+    new Error('Photo uploads are temporarily unavailable. Set up Cloudflare R2 to enable post photos.'),
+    { code: 'upload/disabled' }
+  );
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export async function uploadProfilePhotoFromUri(
@@ -50,12 +69,14 @@ export async function uploadProfilePhotoFromUri(
 
 // ── R2 Worker path ────────────────────────────────────────────────────────────
 
-async function uploadViaR2Worker(
+// Generic endpoint-parameterized R2 upload — used by both profile and post photos
+async function uploadViaR2WorkerEndpoint(
   uid: string,
   fileUri: string,
-  workerUrl: string
+  workerUrl: string,
+  endpointPath: string
 ): Promise<string> {
-  devLog('provider: r2');
+  devLog('provider: r2, endpoint:', endpointPath);
   devLog('uid:', uid);
   devLog('fileUri (truncated):', fileUri.slice(0, 60));
 
@@ -65,7 +86,7 @@ async function uploadViaR2Worker(
   const idToken = await getIdToken(currentUser);
   devLog('got Firebase ID token');
 
-  const endpoint = `${workerUrl.replace(/\/$/, '')}/upload/profile-photo`;
+  const endpoint = `${workerUrl.replace(/\/$/, '')}${endpointPath}`;
   devLog('endpoint:', endpoint);
 
   devLog('calling uploadAsync (MULTIPART → Worker)...');
@@ -123,6 +144,14 @@ async function uploadViaR2Worker(
 
   devLog('upload succeeded, photoURL received');
   return data.photoURL;
+}
+
+async function uploadViaR2Worker(
+  uid: string,
+  fileUri: string,
+  workerUrl: string
+): Promise<string> {
+  return uploadViaR2WorkerEndpoint(uid, fileUri, workerUrl, '/upload/profile-photo');
 }
 
 // ── Firebase Storage path (fallback, requires Blaze plan) ─────────────────────
