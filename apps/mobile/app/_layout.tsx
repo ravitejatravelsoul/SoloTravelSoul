@@ -37,6 +37,12 @@ export default function RootLayout() {
       if (user) {
         try {
           const profile = await getUserProfile(user.uid);
+          if (__DEV__) {
+            const photoInfo = profile?.photoURL
+              ? 'set → ' + profile.photoURL.slice(0, 60)
+              : 'null';
+            console.log('[ProfileLoad] uid:', user.uid.slice(0, 8), '| photoURL:', photoInfo);
+          }
           setProfile(profile);
         } catch {
           // Firestore offline at startup — user is still authenticated.

@@ -1,0 +1,16 @@
+name            = "solotravelsoul-r2-upload"
+main            = "src/index.ts"
+compatibility_date = "2025-06-01"
+
+# ── R2 bucket binding ────────────────────────────────────────────────────────
+# No access keys needed — the binding authenticates automatically.
+[[r2_buckets]]
+binding     = "R2_BUCKET"
+bucket_name = "solotravelsoul-images"
+
+# ── Non-secret vars ──────────────────────────────────────────────────────────
+[vars]
+FIREBASE_PROJECT_ID = "solotravelsoul-57a9e"
+# PUBLIC_R2_BASE_URL is set as a secret so it can differ per environment:
+#   wrangler secret put PUBLIC_R2_BASE_URL
+#   → paste your r2.dev URL: https://pub-<hash>.r2.dev

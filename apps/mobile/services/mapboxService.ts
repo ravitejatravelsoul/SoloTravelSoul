@@ -4,8 +4,9 @@ const ENABLED = process.env.EXPO_PUBLIC_MAPBOX_ENABLED === 'true';
 const TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? '';
 const IS_EXPO_GO = Constants.appOwnership === 'expo';
 
-// Triple guard: feature flag + token present + not Expo Go.
-// In Expo Go this is always false — MapPlaceholder / TripMapFallback render instead.
+// Triple guard: feature flag + public token + not Expo Go.
+// In Expo Go this is always false — NativeMapCanvas renders instead.
+// In EAS dev/production builds with tokens set, this is true.
 export const canUseMapbox = ENABLED && !!TOKEN && !IS_EXPO_GO;
 
 let _loaded = false;
@@ -18,8 +19,6 @@ export function getMapboxGL(): any {
   _loaded = true;
   if (!canUseMapbox) return null;
 
-  // Runs only in EAS dev/production builds (canUseMapbox is false in Expo Go).
-  // try/catch guards against the native module not being linked on the device.
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     _mod = require('@rnmapbox/maps');

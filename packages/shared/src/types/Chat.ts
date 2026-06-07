@@ -73,4 +73,5 @@ export interface UserLookup {
   displayName: string;
   email: string;
   initials: string;
+  photoURL?: string | null;
 }

@@ -110,8 +110,15 @@ export async function upsertUserLookup(
   displayName: string,
   email: string,
   initials: string,
+  photoURL?: string | null,
 ): Promise<void> {
-  await setDoc(doc(db, 'userLookup', uid), { uid, displayName, email: email.toLowerCase(), initials });
+  await setDoc(doc(db, 'userLookup', uid), {
+    uid,
+    displayName,
+    email: email.toLowerCase(),
+    initials,
+    ...(photoURL !== undefined ? { photoURL: photoURL ?? null } : {}),
+  });
 }
 
 export async function searchUserByEmail(email: string): Promise<UserLookup | null> {
@@ -134,7 +141,10 @@ export function subscribeToDirectChats(
       where('participants', 'array-contains', uid),
       orderBy('updatedAt', 'desc'),
     ),
-    (snap) => callback(snap.docs.map((d) => docToDirectChat(d.id, d.data()))),
+    (snap) => {
+      if (process.env.NODE_ENV !== 'production') console.log('[Chats] direct_chats:', snap.docs.length);
+      callback(snap.docs.map((d) => docToDirectChat(d.id, d.data())));
+    },
     (err) => { if (err.code !== 'cancelled') callback([]); },
   );
 }
@@ -246,7 +256,10 @@ export function subscribeToGroups(
       where('members', 'array-contains', uid),
       orderBy('updatedAt', 'desc'),
     ),
-    (snap) => callback(snap.docs.map((d) => docToTravelGroup(d.id, d.data()))),
+    (snap) => {
+      if (process.env.NODE_ENV !== 'production') console.log('[Chats] group chats:', snap.docs.length);
+      callback(snap.docs.map((d) => docToTravelGroup(d.id, d.data())));
+    },
     (err) => { if (err.code !== 'cancelled') callback([]); },
   );
 }

@@ -9,6 +9,8 @@ import { useChatStore, totalChatUnread } from '@/stores/chatStore';
 import { useHaptics } from '@/hooks/useHaptics';
 import { Badge, OfflineBanner } from '@/components/ui';
 import { Colors } from '@/constants/theme';
+import { useBlockStore } from '@/stores/blockStore';
+import { useEffect } from 'react';
 
 const ICON_SIZE = 26;
 
@@ -42,8 +44,13 @@ export default function AppLayout() {
   const { isConnected } = useNetworkState();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const haptics = useHaptics();
+  const { loadBlockList } = useBlockStore();
   // Subscribes and keeps chatStore current for badge counts
   useDirectChats();
+
+  useEffect(() => {
+    if (uid) loadBlockList(uid);
+  }, [uid, loadBlockList]);
   const directChats = useChatStore((s) => s.directChats);
   const groups = useChatStore((s) => s.groups);
   const chatUnread = totalChatUnread(uid, directChats, groups);
@@ -101,7 +108,7 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen
-        name="discover/index"
+        name="discover"
         options={{
           title: 'Discover',
           tabBarIcon: ({ color, focused }) => (
@@ -124,6 +131,15 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen
+        name="community"
+        options={{
+          title: 'Community',
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name={focused ? 'people' : 'people-outline'} color={color} focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="profile/index"
         options={{
           title: 'Profile',
@@ -139,9 +155,14 @@ export default function AppLayout() {
       />
 
       {/* ── Hidden — navigable via push, never shown as tabs ─────────── */}
+      {/* Only flat files that live in (app)/ without their own _layout need href:null */}
       <Tabs.Screen name="groups" options={{ href: null }} />
       <Tabs.Screen name="notifications/index" options={{ href: null }} />
       <Tabs.Screen name="profile/edit" options={{ href: null }} />
+      <Tabs.Screen name="profile/privacy" options={{ href: null }} />
+      <Tabs.Screen name="profile/safety" options={{ href: null }} />
+      <Tabs.Screen name="profile/join-requests" options={{ href: null }} />
+      <Tabs.Screen name="profile/blocked-users" options={{ href: null }} />
       <Tabs.Screen name="saved-places/index" options={{ href: null }} />
     </Tabs>
     </View>

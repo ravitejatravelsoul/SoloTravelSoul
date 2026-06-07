@@ -23,11 +23,19 @@ const SECTIONS = [
   },
   {
     title: 'Data deletion',
-    body: 'You can delete your account at any time from the Profile screen. Deleting your account permanently removes your profile, trips, itinerary, journal entries, and saved places. Messages you sent in group or direct chats may remain visible to other participants as "Deleted User" — they are not recoverable. To request assistance with data removal, email privacy@solotravelsoul.app.',
+    body: 'You can delete your account at any time from the Profile screen. Deleting your account permanently removes your profile, trips, itinerary, journal entries, saved places, public profile, and traveler discovery data. Join requests you submitted are cancelled. Activity feed items you created are removed. Messages you sent in group or direct chats may remain visible to other participants as "Deleted User" — they are not recoverable. To request assistance with data removal, email privacy@solotravelsoul.app.',
+  },
+  {
+    title: 'Community features',
+    body: 'When you set your profile to Public, your display name, photo, bio, travel style, and destinations are visible to other authenticated users. Your email address is never shown publicly. The Nearby Travelers feature uses city-level text only — no GPS coordinates are stored or shared. You can opt out at any time from Profile → Privacy Settings. Blocking a user prevents them from seeing your profile, messaging you, or finding you in discovery.',
+  },
+  {
+    title: 'Location data',
+    body: 'SoloTravelSoul does not collect or store GPS coordinates. The "current city" and "destination" fields in your profile and in traveler discovery use free-text city names entered by you — not device location. No background location access is requested.',
   },
   {
     title: 'Contact',
-    body: 'For privacy questions, contact: privacy@solotravelsoul.app\n\nLast updated: May 2026',
+    body: 'For privacy questions: privacy@solotravelsoul.app\nFor safety concerns: safety@solotravelsoul.app\n\nLast updated: May 2026',
   },
 ];
 

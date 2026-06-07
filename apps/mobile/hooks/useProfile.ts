@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { updateUserProfile, uploadProfilePhoto } from '@solotravelsoul/firebase';
+import { updateUserProfile } from '@solotravelsoul/firebase';
+import { uploadProfilePhotoFromUri } from '@/utils/storageUpload';
 import type { UserProfile } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -26,10 +27,10 @@ export function useProfile() {
   );
 
   const updateAvatar = useCallback(
-    async (blob: Blob) => {
+    async (fileUri: string) => {
       if (!user) return;
       try {
-        const url = await uploadProfilePhoto(user.uid, blob);
+        const url = await uploadProfilePhotoFromUri(user.uid, fileUri);
         await updateUserProfile(user.uid, { photoURL: url });
         if (profile) setProfile({ ...profile, photoURL: url });
         addToast('Photo updated.', 'success');

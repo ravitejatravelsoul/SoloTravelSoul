@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Image,
@@ -28,6 +28,16 @@ export function Avatar({
   loading = false,
 }: AvatarProps) {
   const [imgError, setImgError] = useState(false);
+
+  // Reset error state whenever the URI prop changes so a newly-uploaded
+  // URL always gets a fresh load attempt instead of showing stale initials.
+  useEffect(() => {
+    setImgError(false);
+    if (__DEV__ && uri) {
+      console.log('[Avatar] uri set:', uri.slice(0, 80) + (uri.length > 80 ? '...' : ''));
+    }
+  }, [uri]);
+
   const showImage = !!uri && !imgError;
 
   const fontSize = Math.round(size * 0.35);
@@ -46,7 +56,14 @@ export function Avatar({
         <Image
           source={{ uri }}
           style={[StyleSheet.absoluteFill, { borderRadius: size / 2 }]}
-          onError={() => setImgError(true)}
+          onLoad={() => {
+            if (__DEV__) console.log('[Avatar] image loaded ok');
+          }}
+          onError={(e) => {
+            const reason = (e.nativeEvent as { error?: string }).error ?? 'unknown';
+            if (__DEV__) console.error('[Avatar] image load failed —', reason, '| uri:', uri?.slice(0, 80));
+            setImgError(true);
+          }}
         />
       ) : (
         <RNText

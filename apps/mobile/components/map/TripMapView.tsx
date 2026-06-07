@@ -3,8 +3,8 @@ import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui';
-import { WebLeafletMap } from './WebLeafletMap';
-import type { MapPin } from './WebLeafletMap';
+import { NativeMapCanvas } from './NativeMapCanvas';
+import type { NativeMapPin } from './NativeMapCanvas';
 import { canUseMapbox, getMapboxGL } from '@/services/mapboxService';
 import {
   Colors,
@@ -75,16 +75,15 @@ export function TripMapView({ itinerary }: Props) {
   return <TripWebMap places={mappablePlaces} />;
 }
 
-// ── WebLeaflet map (Expo Go) ──────────────────────────────────────────
+// ── Native canvas map ─────────────────────────────────────────────────
 
 function TripWebMap({ places }: { places: MappablePlace[] }) {
   const [selectedName, setSelectedName] = useState<string | null>(null);
-  const [mapErrored, setMapErrored] = useState(false);
   const { bottom } = useSafeAreaInsets();
 
   const { pins, placeLookup } = useMemo(() => {
     const lookup = new Map<string, string>(); // pin id → place name
-    const all: MapPin[] = places.map((p) => {
+    const all: NativeMapPin[] = places.map((p) => {
       const id = `trip_${p.id}`;
       lookup.set(id, p.name);
       return {
@@ -101,23 +100,19 @@ function TripWebMap({ places }: { places: MappablePlace[] }) {
   }, [places]);
 
   const handlePinTap = useCallback(
-    (pin: MapPin) => {
+    (pin: NativeMapPin) => {
       const name = placeLookup.get(pin.id);
       if (name) setSelectedName(name);
     },
     [placeLookup]
   );
 
-  if (mapErrored) {
-    return <TripMapEmpty />;
-  }
-
   return (
     <View style={styles.container}>
-      <WebLeafletMap
+      <NativeMapCanvas
         pins={pins}
         onPinTap={handlePinTap}
-        onError={() => setMapErrored(true)}
+        showConnections
       />
       {selectedName && (
         <View style={[styles.nameToast, { bottom: Spacing['2xl'] + bottom }]}>
@@ -146,6 +141,22 @@ function TripMapNative({ places }: { places: MappablePlace[] }) {
     return [lon, lat];
   }, [places]);
 
+  // GeoJSON LineString connecting places in day order — used by Mapbox LineLayer
+  const routeGeoJSON = useMemo(() => {
+    const sorted = [...places].sort((a, b) => a.dayIndex - b.dayIndex);
+    return {
+      type: 'FeatureCollection' as const,
+      features: [{
+        type: 'Feature' as const,
+        geometry: {
+          type: 'LineString' as const,
+          coordinates: sorted.map(p => [p.longitude, p.latitude]),
+        },
+        properties: {},
+      }],
+    };
+  }, [places]);
+
   const mapbox = getMapboxGL();
   if (!mapbox) return null;
 
@@ -155,6 +166,12 @@ function TripMapNative({ places }: { places: MappablePlace[] }) {
   const Camera = mapbox.Camera as React.ComponentType<any>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const PointAnnotation = mapbox.PointAnnotation as React.ComponentType<any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ShapeSource = mapbox.ShapeSource as React.ComponentType<any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const LineLayer = mapbox.LineLayer as React.ComponentType<any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const UserLocation = mapbox.UserLocation as React.ComponentType<any>;
 
   return (
     <View style={styles.container}>
@@ -168,6 +185,25 @@ function TripMapNative({ places }: { places: MappablePlace[] }) {
           zoomLevel={5}
           animationMode="none"
         />
+
+        {/* Native GPS blue dot */}
+        <UserLocation visible animated showsUserHeadingIndicator={false} />
+
+        {/* Day-order route line */}
+        {places.length > 1 && (
+          <ShapeSource id="trip-route" shape={routeGeoJSON}>
+            <LineLayer
+              id="trip-route-line"
+              style={{
+                lineColor: Colors.primary + '60',
+                lineWidth: 2,
+                lineDasharray: [2, 1.5],
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            />
+          </ShapeSource>
+        )}
 
         {places.map((p) => (
           <PointAnnotation
@@ -206,9 +242,9 @@ function TripMapEmpty() {
       <View style={styles.emptyIconWrap}>
         <Ionicons name="map-outline" size={40} color={Colors.placeholder} />
       </View>
-      <Text style={styles.emptyTitle}>No mappable places</Text>
+      <Text style={styles.emptyTitle}>No places on map yet</Text>
       <Text style={styles.emptySub}>
-        Add places to your itinerary to see them on the map.
+        Add places from Discover to see them on your trip map.
       </Text>
     </View>
   );

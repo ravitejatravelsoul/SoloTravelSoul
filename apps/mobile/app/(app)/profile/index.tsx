@@ -150,6 +150,36 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* ── Community ── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>COMMUNITY</Text>
+          <View style={styles.settingsCard}>
+            <SettingsRow
+              icon="paper-plane-outline"
+              label="My Join Requests"
+              iconBg={Colors.accent + '15'}
+              iconColor={Colors.accent}
+              onPress={() => router.push('/(app)/profile/join-requests' as never)}
+            />
+            <View style={styles.rowDivider} />
+            <SettingsRow
+              icon="lock-closed-outline"
+              label="Privacy Settings"
+              iconBg={Colors.primary + '15'}
+              iconColor={Colors.primary}
+              onPress={() => router.push('/(app)/profile/privacy' as never)}
+            />
+            <View style={styles.rowDivider} />
+            <SettingsRow
+              icon="shield-checkmark-outline"
+              label="Safety & Guidelines"
+              iconBg={Colors.success + '15'}
+              iconColor={Colors.success}
+              onPress={() => router.push('/(app)/profile/safety' as never)}
+            />
+          </View>
+        </View>
+
         {/* ── App settings ── */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>APP</Text>

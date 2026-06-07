@@ -1,5 +1,6 @@
 // Types
 export * from './src/types/UserProfile';
+export * from './src/types/Community';
 export * from './src/types/Trip';
 export * from './src/types/Place';
 export * from './src/types/Notification';

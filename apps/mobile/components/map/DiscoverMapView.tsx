@@ -3,9 +3,8 @@ import { View, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-nat
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui';
-import { MapPlaceholder } from './MapPlaceholder';
-import { WebLeafletMap } from './WebLeafletMap';
-import type { MapPin, UserLocation } from './WebLeafletMap';
+import { NativeMapCanvas } from './NativeMapCanvas';
+import type { NativeMapPin, UserLocation } from './NativeMapCanvas';
 import { canUseMapbox, getMapboxGL } from '@/services/mapboxService';
 import {
   Colors,
@@ -111,7 +110,7 @@ function LocationButton({
   );
 }
 
-// ── WebLeaflet map (Expo Go) ──────────────────────────────────────────
+// ── Native canvas map ─────────────────────────────────────────────────
 
 function DiscoverWebMap({
   attractions,
@@ -126,11 +125,10 @@ function DiscoverWebMap({
   userLocation,
 }: Omit<Props, 'locationLoading' | 'onRequestLocation'>) {
   const [selected, setSelected] = useState<SelectedPin | null>(null);
-  const [mapErrored, setMapErrored] = useState(false);
 
   const { pins, pinLookup } = useMemo(() => {
     const lookup = new Map<string, SelectedPin>();
-    const all: MapPin[] = [];
+    const all: NativeMapPin[] = [];
 
     attractions.forEach((a) => {
       const id = `att_${a.id}`;
@@ -163,25 +161,41 @@ function DiscoverWebMap({
     return { pins: all, pinLookup: lookup };
   }, [attractions, liveResults]);
 
+  useEffect(() => {
+    if (__DEV__) {
+      console.log(
+        `[DiscoverMapView] pins: ${pins.length} (attractions: ${attractions.length}, live: ${liveResults.length})`
+      );
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pins.length]);
+
   const handlePinTap = useCallback(
-    (pin: MapPin) => {
+    (pin: NativeMapPin) => {
       const found = pinLookup.get(pin.id);
       if (found) setSelected(found);
     },
     [pinLookup]
   );
 
-  if (mapErrored) {
-    return <MapPlaceholder attractions={attractions} totalCount={totalCount} />;
+  if (pins.length === 0) {
+    return (
+      <View style={styles.mapErrorContainer}>
+        <Ionicons name="map-outline" size={36} color={Colors.placeholder} />
+        <Text style={styles.mapErrorTitle}>No map pins available yet</Text>
+        <Text style={styles.mapErrorSub}>
+          Try a different filter, or switch to List to browse all {totalCount} destinations.
+        </Text>
+      </View>
+    );
   }
 
   return (
     <View style={styles.mapFill}>
-      <WebLeafletMap
+      <NativeMapCanvas
         pins={pins}
         userLocation={userLocation}
         onPinTap={handlePinTap}
-        onError={() => setMapErrored(true)}
       />
       {selected && (
         <PinInfoCard
@@ -249,6 +263,8 @@ function DiscoverMapNative({
   const Camera = mapbox.Camera as React.ComponentType<any>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const PointAnnotation = mapbox.PointAnnotation as React.ComponentType<any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const UserLocation = mapbox.UserLocation as React.ComponentType<any>;
 
   return (
     <View style={styles.mapFill}>
@@ -259,6 +275,9 @@ function DiscoverMapNative({
           animationMode="flyTo"
           animationDuration={800}
         />
+
+        {/* Native GPS blue dot — tracks user location automatically */}
+        <UserLocation visible animated showsUserHeadingIndicator={false} />
 
         {attractions.map((a) => (
           <PointAnnotation
@@ -285,16 +304,6 @@ function DiscoverMapNative({
             </View>
           </PointAnnotation>
         ))}
-
-        {userLocation && (
-          <PointAnnotation
-            key="user-location"
-            id="user-location"
-            coordinate={[userLocation.longitude, userLocation.latitude]}
-          >
-            <View style={styles.userDot} />
-          </PointAnnotation>
-        )}
       </MapView>
 
       {selected && (
@@ -582,5 +591,27 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     fontWeight: FontWeight.semibold,
     color: Colors.primary,
+  },
+
+  // Empty state (no pins match current filter)
+  mapErrorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing['2xl'],
+    gap: Spacing.md,
+    backgroundColor: Colors.background,
+  },
+  mapErrorTitle: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  mapErrorSub: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });

@@ -12,6 +12,7 @@ export default function TripsLayout() {
       <Stack.Screen name="[id]/itinerary/index" />
       <Stack.Screen name="[id]/itinerary/[dayId]" />
       <Stack.Screen name="[id]/journal/index" />
+      <Stack.Screen name="[id]/requests" />
     </Stack>
   );
 }

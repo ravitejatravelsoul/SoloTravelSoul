@@ -10,6 +10,8 @@ google-services.json
 GoogleService-Info.plist
 google-play-key.json
 *.keystore
+serviceAccountKey.json
+*serviceAccountKey*.json
 *.jks
 *.p8
 *.p12

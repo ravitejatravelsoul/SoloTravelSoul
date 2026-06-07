@@ -61,6 +61,14 @@ export interface PlannedTrip {
   isArchived: boolean;
   createdAt: Date;
   updatedAt: Date;
+
+  // ── Community fields (optional, additive) ────────────────────────────
+  visibility?: 'private' | 'public';
+  description?: string;
+  tags?: string[];
+  maxMembers?: number | null;
+  memberCount?: number;
+  isAcceptingMembers?: boolean;
 }
 
 // Derive an array of ItineraryDay stubs from trip date range

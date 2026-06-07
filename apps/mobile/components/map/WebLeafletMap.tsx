@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import WebView from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview';
+import type { WebViewErrorEvent } from 'react-native-webview/lib/WebViewTypes';
 import { Colors } from '@/constants/theme';
 import { LEAFLET_JS, LEAFLET_CSS } from '@/assets/leaflet/leaflet-bundle';
 
@@ -12,7 +13,7 @@ export interface MapPin {
   latitude: number;
   longitude: number;
   color: string;
-  label?: string; // short text rendered inside the circle (e.g. day number)
+  label?: string;
 }
 
 export interface UserLocation {
@@ -30,7 +31,12 @@ interface Props {
 type BridgeMessage =
   | { type: 'pinTap'; id: string }
   | { type: 'error'; message: string }
-  | { type: 'ready' };
+  | { type: 'ready' }
+  | { type: 'log'; message: string };
+
+// Pre-compute lengths once at module load (logged in HTML for diagnostics).
+const JS_LEN = LEAFLET_JS.length;
+const CSS_LEN = LEAFLET_CSS.length;
 
 function buildMapHtml(pins: MapPin[]): string {
   const pinsJson = JSON.stringify(pins).replace(/<\//g, '<\\/');
@@ -62,7 +68,29 @@ function buildMapHtml(pins: MapPin[]): string {
 </head>
 <body>
 <div id="map"></div>
+
+<!-- BLOCK 1: Null out AMD define so Leaflet's UMD uses the global path.
+     In Expo Go / react-native-webview dev mode an AMD define may be injected;
+     if Leaflet detects it, the module is deferred and window.L is never set
+     synchronously, causing "Can't find variable: L" in the next script. -->
+<script>
+var __rnwSavedDefine=window.define;
+window.define=undefined;
+</script>
+
+<!-- BLOCK 2: Leaflet 1.9.4 — inline bundle (${JS_LEN} chars). -->
 <script>${LEAFLET_JS}</script>
+
+<!-- BLOCK 3: Restore define; ensure window.L is accessible.
+     Leaflet's UMD sets both window.leaflet and window.L, but alias just in case. -->
+<script>
+window.define=__rnwSavedDefine;
+if(typeof window.L==='undefined'&&typeof window.leaflet!=='undefined'){
+  window.L=window.leaflet;
+}
+</script>
+
+<!-- BLOCK 4: Map initialisation. -->
 <script>
 (function(){
   function post(obj){
@@ -70,6 +98,14 @@ function buildMapHtml(pins: MapPin[]): string {
       window.ReactNativeWebView.postMessage(JSON.stringify(obj));
     }
   }
+
+  // Guard: Leaflet must be available before we try to use it.
+  if(typeof L==='undefined'){
+    post({type:'error',message:'Leaflet L undefined after bundle load. bundleLen=${JS_LEN} cssLen=${CSS_LEN} leafletProp='+typeof window.leaflet});
+    return;
+  }
+
+  post({type:'log',message:'Leaflet loaded ok. typeof L='+typeof L+' pins=${pins.length}'});
 
   try{
     var PINS=${pinsJson};
@@ -84,12 +120,11 @@ function buildMapHtml(pins: MapPin[]): string {
     });
 
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
-      attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      maxZoom:19,
-      crossOrigin:true
+      attribution:'\\u00a9 <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom:19
     }).addTo(map);
 
-    // User location marker — updated by centerOnUser() called from React Native
+    // User location marker — updated by centerOnUser() from React Native
     var userMarker=null;
 
     window.centerOnUser=function(lat,lng){
@@ -97,7 +132,7 @@ function buildMapHtml(pins: MapPin[]): string {
       var icon=L.divIcon({html:dotHtml,className:'',iconSize:[14,14],iconAnchor:[7,7]});
       if(userMarker){
         userMarker.setLatLng([lat,lng]);
-      } else {
+      }else{
         userMarker=L.marker([lat,lng],{icon:icon,zIndexOffset:1000}).addTo(map);
       }
       map.setView([lat,lng],12,{animate:true,duration:0.8});
@@ -121,17 +156,17 @@ function buildMapHtml(pins: MapPin[]): string {
 
     if(PINS.length===0){
       map.setView([39.8283,-98.5795],4);
-    } else if(PINS.length===1){
+    }else if(PINS.length===1){
       map.setView([PINS[0].latitude,PINS[0].longitude],13);
-    } else {
+    }else{
       var latlngs=PINS.map(function(p){return[p.latitude,p.longitude];});
       map.fitBounds(L.latLngBounds(latlngs),{padding:[40,40],maxZoom:12});
     }
 
-    // Signal to React Native that the map object is ready to accept commands
     post({type:'ready'});
+    post({type:'log',message:'map ready with '+PINS.length+' pins'});
 
-  } catch(e){
+  }catch(e){
     post({type:'error',message:String(e)});
   }
 })();
@@ -143,19 +178,15 @@ function buildMapHtml(pins: MapPin[]): string {
 export function WebLeafletMap({ pins, userLocation, onPinTap, onError }: Props) {
   const [errored, setErrored] = useState(false);
   const webViewRef = useRef<WebView>(null);
-  // Tracks whether the Leaflet map has finished initialising (received 'ready' message)
   const mapReadyRef = useRef(false);
-  // Location queued while map was still loading — injected on next 'ready'
   const pendingCenterRef = useRef<UserLocation | null>(null);
 
-  // Reset ready flag whenever pins change — the WebView reloads its HTML source
   useEffect(() => {
     mapReadyRef.current = false;
     pendingCenterRef.current = userLocation ?? null;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pins]);
 
-  // Center map on user location whenever it changes
   useEffect(() => {
     if (!userLocation) return;
     if (mapReadyRef.current && webViewRef.current) {
@@ -163,7 +194,6 @@ export function WebLeafletMap({ pins, userLocation, onPinTap, onError }: Props) 
         `window.centerOnUser(${userLocation.latitude},${userLocation.longitude}); true;`
       );
     } else {
-      // Map not ready yet — queue and inject after 'ready' message arrives
       pendingCenterRef.current = userLocation;
     }
   }, [userLocation]);
@@ -174,6 +204,7 @@ export function WebLeafletMap({ pins, userLocation, onPinTap, onError }: Props) 
         const msg = JSON.parse(event.nativeEvent.data) as BridgeMessage;
         if (msg.type === 'ready') {
           mapReadyRef.current = true;
+          if (__DEV__) console.log('[WebLeafletMap] map ready');
           const pending = pendingCenterRef.current;
           if (pending && webViewRef.current) {
             webViewRef.current.injectJavaScript(
@@ -181,10 +212,13 @@ export function WebLeafletMap({ pins, userLocation, onPinTap, onError }: Props) 
             );
             pendingCenterRef.current = null;
           }
+        } else if (msg.type === 'log') {
+          if (__DEV__) console.log('[WebLeafletMap]', msg.message);
         } else if (msg.type === 'pinTap' && onPinTap) {
           const pin = pins.find((p) => p.id === msg.id);
           if (pin) onPinTap(pin);
         } else if (msg.type === 'error') {
+          if (__DEV__) console.warn('[WebLeafletMap] JS error:', msg.message);
           setErrored(true);
           onError?.();
         }
@@ -195,13 +229,18 @@ export function WebLeafletMap({ pins, userLocation, onPinTap, onError }: Props) 
     [pins, onPinTap, onError]
   );
 
-  const handleNativeError = useCallback(() => {
+  const handleNativeError = useCallback((event: WebViewErrorEvent) => {
+    if (__DEV__) {
+      console.warn(
+        '[WebLeafletMap] native WebView error:',
+        event.nativeEvent.description,
+        'code:', event.nativeEvent.code,
+      );
+    }
     setErrored(true);
     onError?.();
   }, [onError]);
 
-  // Stable reference — changing on every render would reload the WebView unnecessarily
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const mapSource = useMemo(() => ({ html: buildMapHtml(pins) }), [pins]);
 
   if (errored) return null;

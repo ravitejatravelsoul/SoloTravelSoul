@@ -148,5 +148,163 @@ service cloud.firestore {
         && request.resource.data.id == placeId
         && request.resource.data.source in ['foursquare', 'manual'];
     }
+
+    // ── Community: Public Profiles ────────────────────────────────────
+    match /publicProfiles/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ── Community: Public Trips ───────────────────────────────────────
+    match /publicTrips/{tripId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if request.auth != null
+        && resource != null
+        && resource.data.ownerUid == request.auth.uid;
+      // Allow delete even when doc doesn't exist (batch delete when trip goes private).
+      allow delete: if request.auth != null
+        && (resource == null
+            || resource.data.ownerUid == request.auth.uid);
+    }
+
+    // ── Community: Trip Members subcollection ────────────────────────
+    // Write is restricted to the trip owner. Two-phase check handles the
+    // batch that creates publicTrips + member doc at the same time.
+    match /trips/{tripId}/members/{memberId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && (
+        // Phase 1 — initial trip publication: publicTrip doesn't exist yet
+        // (same-batch create), so verify via the user's private trips subcollection.
+        (!exists(/databases/$(database)/documents/publicTrips/$(tripId))
+          && request.resource.data.role == 'owner'
+          && request.resource.data.uid == request.auth.uid
+          && exists(/databases/$(database)/documents/users/$(request.auth.uid)/trips/$(tripId)))
+        ||
+        // Phase 2 — join-request approval: publicTrip already exists.
+        (exists(/databases/$(database)/documents/publicTrips/$(tripId))
+          && get(/databases/$(database)/documents/publicTrips/$(tripId)).data.ownerUid == request.auth.uid)
+      );
+      allow delete: if request.auth != null && (
+        memberId == request.auth.uid   // member removing themselves
+        || (exists(/databases/$(database)/documents/publicTrips/$(tripId))
+            && get(/databases/$(database)/documents/publicTrips/$(tripId)).data.ownerUid == request.auth.uid)
+      );
+      allow update: if false;
+    }
+
+    // ── Community: Trip Join Requests ─────────────────────────────────
+    match /tripJoinRequests/{requestId} {
+      allow create: if request.auth != null
+        && request.resource.data.requestorUid == request.auth.uid
+        && request.resource.data.ownerUid != request.auth.uid
+        && request.resource.data.status == 'pending';
+      // Allow read when resource == null so getTripJoinRequestStatus returns null
+      // instead of throwing permission-denied for trips with no previous request.
+      allow read: if request.auth != null
+        && (resource == null
+            || resource.data.ownerUid == request.auth.uid
+            || resource.data.requestorUid == request.auth.uid);
+      allow update: if request.auth != null
+        && resource != null
+        && (
+          (resource.data.ownerUid == request.auth.uid
+            && request.resource.data.status in ['approved', 'rejected'])
+          || (resource.data.requestorUid == request.auth.uid
+              && request.resource.data.status == 'cancelled')
+        );
+      allow delete: if false;
+    }
+
+    // ── Community: Travel Groups ──────────────────────────────────────
+    match /travelGroups/{groupId} {
+      // List/get: public groups readable by all auth users; private groups by owner only.
+      allow read: if request.auth != null
+        && (resource == null
+            || resource.data.visibility == 'public'
+            || resource.data.ownerUid == request.auth.uid);
+      allow create: if request.auth != null
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if request.auth != null
+        && resource != null
+        && resource.data.ownerUid == request.auth.uid;
+      allow delete: if request.auth != null
+        && resource != null
+        && resource.data.ownerUid == request.auth.uid;
+
+      // Group members: restricted to group owner; two-phase check mirrors trip members.
+      match /members/{memberId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null && (
+          // Phase 1 — group creation batch: group doc doesn't exist yet in Firestore.
+          (!exists(/databases/$(database)/documents/travelGroups/$(groupId))
+            && request.resource.data.role == 'owner'
+            && request.resource.data.uid == request.auth.uid)
+          ||
+          // Phase 2 — join-request approval: group already exists.
+          (exists(/databases/$(database)/documents/travelGroups/$(groupId))
+            && get(/databases/$(database)/documents/travelGroups/$(groupId)).data.ownerUid == request.auth.uid)
+        );
+        allow delete: if request.auth != null && (
+          memberId == request.auth.uid   // member leaving themselves
+          || (exists(/databases/$(database)/documents/travelGroups/$(groupId))
+              && get(/databases/$(database)/documents/travelGroups/$(groupId)).data.ownerUid == request.auth.uid)
+        );
+        allow update: if false;
+      }
+    }
+
+    // ── Community: Group Join Requests ────────────────────────────────
+    match /groupJoinRequests/{requestId} {
+      allow create: if request.auth != null
+        && request.resource.data.requestorUid == request.auth.uid
+        && request.resource.data.ownerUid != request.auth.uid
+        && request.resource.data.status == 'pending';
+      // resource == null guard matches tripJoinRequests pattern.
+      allow read: if request.auth != null
+        && (resource == null
+            || resource.data.ownerUid == request.auth.uid
+            || resource.data.requestorUid == request.auth.uid);
+      allow update: if request.auth != null
+        && resource != null
+        && (
+          (resource.data.ownerUid == request.auth.uid
+            && request.resource.data.status in ['approved', 'rejected'])
+          || (resource.data.requestorUid == request.auth.uid
+              && request.resource.data.status == 'cancelled')
+        );
+      allow delete: if false;
+    }
+
+    // ── Community: Nearby Travelers ───────────────────────────────────
+    match /nearbyTravelers/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ── Community: Activity Feed ──────────────────────────────────────
+    match /activityFeed/{feedItemId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.actorUid == request.auth.uid;
+      allow delete: if request.auth != null
+        && resource.data.actorUid == request.auth.uid;
+      allow update: if false;
+    }
+
+    // ── Community: Blocks ─────────────────────────────────────────────
+    match /blocks/{uid}/blocked/{blockedUid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ── Community: Reports ────────────────────────────────────────────
+    match /reports/{reportId} {
+      allow create: if request.auth != null
+        && request.resource.data.reporterUid == request.auth.uid;
+      allow read: if false;
+      allow update, delete: if false;
+    }
   }
 }

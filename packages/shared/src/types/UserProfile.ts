@@ -18,6 +18,15 @@ export interface UserProfile {
   fcmToken: string | null;      // Phase 2 — push notifications
   createdAt: Date;
   updatedAt: Date;
+
+  // ── Community fields (all optional — additive, no migration needed) ──
+  travelStyles?: import('./Community').TravelStyle[];
+  countriesVisited?: string[];
+  interests?: import('./Community').Interest[];
+  profileVisibility?: import('./Community').ProfileVisibility;
+  showInNearbyTravelers?: boolean;
+  currentDestination?: string | null;
+  tripCount?: number;
 }
 
 // Ported from Swift's computed `initials` property

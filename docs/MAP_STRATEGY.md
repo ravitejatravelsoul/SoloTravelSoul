@@ -1,156 +1,97 @@
 # Map Strategy
 
-## Architecture
-
-SoloTravelSoul uses a **two-tier map architecture** that gives every user a real interactive
-map regardless of build type.
+## Production Architecture
 
 ```
-canUseMapbox?  (ENABLED=true AND TOKEN present AND NOT Expo Go)
+canUseMapbox?  (MAPBOX_ENABLED=true AND pk token set AND NOT Expo Go)
 │
-├─ yes → Mapbox native  (@rnmapbox/maps 10.3.1, GPU-rendered vector tiles)
+├─ YES → Mapbox native SDK                    ← EAS dev/production builds
+│         DiscoverMapNative  (interactive street map, attraction + live pins, UserLocation)
+│         TripMapNative      (interactive street map, day pins, route line, UserLocation)
 │
-└─ no  → WebLeafletMap  (react-native-webview + Leaflet.js + OpenStreetMap)
-            │
-            └─ mapErrored? → empty-state placeholder
+└─ NO  → NativeMapCanvas                      ← Expo Go + fallback for any build
+           Pure React Native coordinate projection
+           No WebView · No CDN · No paid API at render time
+           Works everywhere
 ```
 
 ---
 
-## Tier 1 — WebLeafletMap (Expo Go + fallback)
+## Foursquare Places
 
-Active whenever `canUseMapbox` is false:
-- Flag disabled (`EXPO_PUBLIC_MAPBOX_ENABLED ≠ 'true'`)
-- Token missing (`EXPO_PUBLIC_MAPBOX_TOKEN` empty)
-- Running in Expo Go (`Constants.appOwnership === 'expo'`)
+```
+isFoursquareEnabled()?  (FOURSQUARE_ENABLED=true AND API key set)
+│
+├─ YES → Live search (text + nearby) in Discover
+│         Results cached in Firestore places_cache (7-day TTL)
+│         50 calls/user/day hard limit in app code
+│
+└─ NO  → Bundled attractions only (33 places, always available)
+```
 
-### How it works
+---
 
-- `WebLeafletMap` renders a `react-native-webview` with self-contained HTML
-- Leaflet.js loaded from `unpkg.com` CDN (`leaflet@1.9.4`)
-- Map tiles: `tile.openstreetmap.org` — free, no API key, no billing
-- Markers are styled `L.divIcon` circles; day-numbered trip pins include a label
-- Pin taps post `{ type: 'pinTap', id }` over the WebView bridge to React Native
-- React Native looks up the full pin by ID and shows native UI (bottom card or name toast)
-- On error, gracefully degrades to an empty-state placeholder
+## Feature Flag Matrix
 
-### Components
+| Scenario | Mapbox | Foursquare | Map UI | Places |
+|---|---|---|---|---|
+| Expo Go (any config) | off | off | NativeMapCanvas | Bundled only |
+| EAS build, no tokens | off | off | NativeMapCanvas | Bundled only |
+| EAS build, Mapbox only | on | off | Real street map | Bundled only |
+| EAS build, both on | on | on | Real street map | Bundled + live search |
 
-| Component | Used in | Purpose |
+---
+
+## Why not WebLeaflet?
+
+`WebLeafletMap.tsx` was removed from the production path because Expo Go's debugging
+bridge injects an AMD-compatible `define()` into the WebView JavaScript context.
+Leaflet's UMD factory detects `define.amd` and defers module initialization asynchronously,
+meaning `window.L` is never assigned synchronously when the next `<script>` block runs.
+This is an Expo Go environment issue that cannot be patched from the app side without
+a full native EAS build — which would remove the reason for using WebLeaflet.
+
+`WebLeafletMap.tsx` is kept for reference only. Do not use it in production paths.
+
+---
+
+## Files
+
+| File | Status | Used in |
 |---|---|---|
-| `WebLeafletMap` | `DiscoverMapView`, `TripMapView` | Shared WebView renderer |
-| `DiscoverWebMap` | `DiscoverMapView` | Bundled + Foursquare pins with bottom card |
-| `TripWebMap` | `TripMapView` | Day-numbered pins with name toast |
-
-### No Google APIs
-
-Google Maps and Google Places are never used. Reasons:
-- No free tier; meters every tile and API call
-- Prior billing incident with Google APIs in the original SwiftUI app
-- Foursquare + OpenStreetMap provide equivalent functionality at zero metered cost
-
-OSM attribution control is always visible (links to OSM copyright notice).
+| `components/map/NativeMapCanvas.tsx` | **Active fallback** | DiscoverMapView, TripMapView |
+| `components/map/DiscoverMapView.tsx` | **Active** | Discover screen |
+| `components/map/TripMapView.tsx` | **Active** | Trip detail screen |
+| `services/mapboxService.ts` | **Active** | Drives `canUseMapbox` |
+| `services/foursquareService.ts` | **Active** | Drives live search |
+| `components/map/WebLeafletMap.tsx` | Reference only | Not imported in prod |
+| `components/map/MapPlaceholder.tsx` | Reference only | Not imported in prod |
+| `assets/leaflet/leaflet-bundle.ts` | Reference only | Not imported in prod |
 
 ---
 
-## Tier 2 — Mapbox Native (EAS dev / production builds)
+## Environment Variables
 
-### Package
+| Variable | Required for | Default |
+|---|---|---|
+| `EXPO_PUBLIC_MAPBOX_ENABLED` | Mapbox maps | `false` |
+| `EXPO_PUBLIC_MAPBOX_TOKEN` | Mapbox maps (public pk token) | `""` |
+| `MAPBOX_DOWNLOADS_TOKEN` | EAS build (sk token, secret) | not set |
+| `EXPO_PUBLIC_FOURSQUARE_ENABLED` | Live place search | `false` |
+| `EXPO_PUBLIC_FOURSQUARE_API_KEY` | Live place search | set, unused when disabled |
+| `EXPO_PUBLIC_FIREBASE_*` (6 vars) | Auth + Firestore + Storage | set in EAS |
+| `GOOGLE_SERVICES_JSON` | Firebase Android native | EAS secret |
+| `GOOGLE_SERVICE_INFO_PLIST` | Firebase iOS native | EAS secret |
 
-`@rnmapbox/maps@10.3.1` — installed in `apps/mobile/package.json`, plugin in `app.json`.
+---
 
-### Guard (triple condition — all must be true)
+## Phase 2+ Roadmap
 
-```ts
-// apps/mobile/services/mapboxService.ts
-export const canUseMapbox = ENABLED && !!TOKEN && !IS_EXPO_GO;
-```
-
-| Condition | How to satisfy |
+| Feature | What it needs |
 |---|---|
-| `EXPO_PUBLIC_MAPBOX_ENABLED === 'true'` | Set in `.env` |
-| `EXPO_PUBLIC_MAPBOX_TOKEN` present | Set in `.env` |
-| Not Expo Go | Run an EAS dev or production build |
-
-In Expo Go, `IS_EXPO_GO` is always true → `canUseMapbox` is always false → Mapbox is never imported.
-
-### Lazy-load with safety
-
-`getMapboxGL()` in `mapboxService.ts` only executes the `require('@rnmapbox/maps')` if
-`canUseMapbox` is true, and wraps it in `try/catch`. If the native module fails to link,
-`getMapboxGL()` returns `null` and the components fall back to WebLeafletMap.
-
-### Components
-
-| Component | Used in | Purpose |
-|---|---|---|
-| `DiscoverMapNative` | `DiscoverMapView` | Native map with attraction + live pins, bottom card |
-| `TripMapNative` | `TripMapView` | Native map with day-numbered circle pins, name toast |
-
----
-
-## Enabling Mapbox for an EAS Build
-
-### Step 1 — Get tokens from Mapbox
-
-1. Go to https://account.mapbox.com/
-2. **Public token** (`pk.eyJ1...`) — runtime token, used by the app
-3. **Secret downloads token** (`sk.eyJ1...`) — build-time token, Android only
-
-> **Note on Foursquare keys:** Live place search uses the Foursquare **Service API Key** from `developer.foursquare.com → Service API Keys`. The OAuth Client ID/Secret and Legacy API Keys shown in the same dashboard are **not used** by this app. The service API key is passed as the `Authorization` header value with no prefix.
-
-### Step 2 — Set local env vars
-
-In `apps/mobile/.env`:
-
-```
-EXPO_PUBLIC_MAPBOX_ENABLED=true
-EXPO_PUBLIC_MAPBOX_TOKEN=pk.eyJ1...your-public-token...
-```
-
-### Step 3 — Add EAS secrets
-
-```bash
-cd apps/mobile
-
-# Public token (used at runtime; safe to expose but store as secret for cleanliness)
-eas secret:create --scope project --name EXPO_PUBLIC_MAPBOX_TOKEN --value "pk.eyJ1..."
-
-# Downloads token (Android build-time only; MUST be secret)
-eas secret:create --scope project --name MAPBOX_DOWNLOADS_TOKEN --value "sk.eyJ1..."
-```
-
-### Step 4 — Build
-
-```bash
-# iOS development build (install on device via TestFlight or direct install)
-eas build --profile development --platform ios
-
-# Android development build (install .apk directly)
-eas build --profile development --platform android
-```
-
-Do NOT open in Expo Go after building — install the dev build directly on device.
-
----
-
-## Cost Notes
-
-| Service | Cost model | Risk |
-|---|---|---|
-| OpenStreetMap tiles | Free (tile.openstreetmap.org) | None for low traffic; consider a tile CDN at scale |
-| Mapbox mobile SDK | Free up to 50,000 monthly active users, then $0.50/MAU | Low — disabled by default; enable when ready to pay |
-| Foursquare Places API | Free tier: 1,000 calls/day | None — disabled by default |
-
----
-
-## Mapbox Android Downloads Token — Why It's Needed
-
-Mapbox distributes the Android SDK via a private Maven repository. Android builds must
-authenticate with a secret token (`sk.eyJ1...`) to download the `.aar` artifacts.
-
-- This token is consumed only during `eas build --platform android`
-- It is NOT needed for iOS builds or Expo Go development
-- It is stored as an EAS project secret (`MAPBOX_DOWNLOADS_TOKEN`)
-- The `app.json` plugin config references it as `"$MAPBOX_DOWNLOADS_TOKEN"` — EAS
-  substitutes the real value at build time; this literal string is harmless in Expo Go
+| WebLeaflet in prod | Custom EAS dev build; AMD fix via `injectedJavaScriptBeforeContentLoaded` |
+| Foursquare server-side | Firebase Cloud Function wrapping FSQ API; key never in bundle |
+| Map clusters | `@rnmapbox/maps` clustering API or client-side binning in NativeMapCanvas |
+| Routing / turn-by-turn | Mapbox Navigation SDK (separate paid product) |
+| Custom map style | Mapbox Studio (free); replace `streets-v12` URL |
+| Offline maps | Mapbox Offline API (already in @rnmapbox/maps) |

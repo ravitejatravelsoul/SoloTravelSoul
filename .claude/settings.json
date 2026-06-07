@@ -23,7 +23,25 @@
       "Bash(npx --yes expo-env-info)",
       "Bash(findstr /i \"expo mapbox\")",
       "Bash(ipconfig)",
-      "Bash(Select-String \"IPv4|Wireless\")"
+      "Bash(Select-String \"IPv4|Wireless\")",
+      "Bash(npx expo-doctor *)",
+      "Bash(eas secret:list)",
+      "Bash(npx eas-cli *)",
+      "Bash(node -e \"const a=require\\('./assets/attractions.json'\\); console.log\\('Total:', a.length\\); const withCoords=a.filter\\(x=>typeof x.latitude==='number' && typeof x.longitude==='number'\\); console.log\\('With coords:', withCoords.length\\); console.log\\('Sample:', JSON.stringify\\(a[0], null, 2\\)\\);\")",
+      "Bash(node -e ' *)",
+      "Bash(cd \"c:/Users/ravit/Desktop/SoloTravelSoul\" && sed -i 's/variant=\"outline\"/variant=\"secondary\"/g' \"apps/mobile/app/\\(app\\)/community/groups/[groupId].tsx\" \"apps/mobile/app/\\(app\\)/discover/trips/[tripId].tsx\")",
+      "Bash(xargs grep -l \"photoURL\\\\|avatarUrl\\\\|avatar\\\\|profileImage\")",
+      "Bash(node -e \"const p=require\\('./apps/mobile/package.json'\\); console.log\\('expo-image-picker:', p.dependencies['expo-image-picker']\\); console.log\\('expo-image-manipulator:', p.dependencies['expo-image-manipulator']\\); console.log\\('expo version:', p.dependencies['expo']\\);\")",
+      "Bash(node -e \"const fs=require\\('./node_modules/firebase/storage'\\);console.log\\(Object.keys\\(fs\\).filter\\(k=>k.includes\\('upload'\\)\\)\\)\")",
+      "Bash(node -e \"const p=require\\('./apps/mobile/node_modules/expo-image-picker/package.json'\\);console.log\\('expo-image-picker version:', p.version\\)\")",
+      "Bash(node -e \"const p=require\\('./node_modules/expo-image-picker/package.json'\\);console.log\\('expo-image-picker version:', p.version\\)\")",
+      "Bash(node -e \"console.log\\(require\\('c:/Users/ravit/Desktop/SoloTravelSoul/node_modules/expo-file-system/package.json'\\).version\\)\")",
+      "Bash(node -e \"const fs = require\\('c:/Users/ravit/Desktop/SoloTravelSoul/node_modules/expo-file-system'\\); console.log\\(Object.keys\\(fs\\).filter\\(k => k.includes\\('Upload'\\) || k.includes\\('upload'\\)\\)\\)\")",
+      "Bash(git check-ignore *)",
+      "Bash(git add *)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\ravit\\Desktop\\SoloTravelSoul\\apps\\mobile\\app\\(app)\\community\\groups"
     ]
   }
 }
