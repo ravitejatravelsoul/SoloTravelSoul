@@ -82,7 +82,7 @@ export default function PublicTripsScreen() {
         </View>
       ) : error ? (
         <View style={styles.center}>
-          <Text style={styles.emptyTitle}>Couldn't load trips</Text>
+          <Text style={styles.emptyTitle}>Couldn&apos;t load trips</Text>
           <TouchableOpacity onPress={reload} style={styles.retryBtn}>
             <Text style={styles.retryLabel}>Try again</Text>
           </TouchableOpacity>

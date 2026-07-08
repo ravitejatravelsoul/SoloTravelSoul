@@ -75,7 +75,7 @@ export function ReceivedRequestCard({ request, onApprove, onReject }: ReceivedCa
         </View>
       </View>
       {request.message ? (
-        <Text style={styles.message} numberOfLines={3}>"{request.message}"</Text>
+        <Text style={styles.message} numberOfLines={3}>&ldquo;{request.message}&rdquo;</Text>
       ) : null}
       {request.status === 'pending' && (
         <View style={styles.actionsRow}>

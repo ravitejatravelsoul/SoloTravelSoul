@@ -240,7 +240,7 @@ const MemoryCard = memo(function MemoryCard({
         )}
 
         {/* ── Quote decoration + body text ── */}
-        <Text style={styles.quoteMark}>"</Text>
+        <Text style={styles.quoteMark}>&quot;</Text>
         <Text
           variant="body"
           style={styles.entryText}

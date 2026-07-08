@@ -91,7 +91,7 @@ export default function PublicProfileScreen() {
       <SafeAreaView style={styles.safe} edges={['top']}>
         <NavBar />
         <View style={styles.center}>
-          <Text style={styles.emptyTitle}>Couldn't load profile</Text>
+          <Text style={styles.emptyTitle}>Couldn&apos;t load profile</Text>
           <TouchableOpacity onPress={() => {
             setError(false);
             setLoading(true);

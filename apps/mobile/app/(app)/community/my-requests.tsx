@@ -55,7 +55,7 @@ function RequestCard({
         </View>
       </View>
       {bio ? <Text style={styles.bio} numberOfLines={2}>{bio}</Text> : null}
-      {message ? <Text style={styles.message}>"{message}"</Text> : null}
+      {message ? <Text style={styles.message}>&ldquo;{message}&rdquo;</Text> : null}
       <View style={styles.actions}>
         <TouchableOpacity style={[styles.btn, styles.rejectBtn]} onPress={onReject} activeOpacity={0.8}>
           <Text style={[styles.btnLabel, styles.rejectLabel]}>Reject</Text>

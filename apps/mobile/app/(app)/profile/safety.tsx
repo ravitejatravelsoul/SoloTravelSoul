@@ -92,7 +92,7 @@ export default function SafetyScreen() {
         <Text style={styles.sectionLabel}>HOW TO BLOCK</Text>
         <View style={styles.card}>
           <Text style={styles.bodyText}>
-            Tap the 3-dot menu on any user's profile and select "Block". Blocked users cannot see your profile, message you, or find you in discovery. Blocking is private and reversible.
+            Tap the 3-dot menu on any user&apos;s profile and select &quot;Block&quot;. Blocked users cannot see your profile, message you, or find you in discovery. Blocking is private and reversible.
           </Text>
         </View>
 

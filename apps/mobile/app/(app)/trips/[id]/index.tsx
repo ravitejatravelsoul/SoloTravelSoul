@@ -102,6 +102,22 @@ export default function TripDetailScreen() {
     await Promise.all(suggestions.slice(0, 8).map((s) => addItem(s.text)));
   }, [suggestions, addItem]);
 
+  const handleAddItem = useCallback(async () => {
+    if (!newItemText.trim()) return;
+    setAddingItem(true);
+    await addItem(newItemText);
+    setNewItemText('');
+    setAddingItem(false);
+    addInputRef.current?.blur();
+  }, [newItemText, addItem]);
+
+  const handleDeleteItem = useCallback((itemId: string) => {
+    Alert.alert('Remove item', 'Remove this item from the checklist?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => deleteItem(itemId) },
+    ]);
+  }, [deleteItem]);
+
   if (!trip) {
     return (
       <SafeAreaView style={styles.safe}>
@@ -141,22 +157,6 @@ export default function TripDetailScreen() {
       },
     ]);
   };
-
-  const handleAddItem = useCallback(async () => {
-    if (!newItemText.trim()) return;
-    setAddingItem(true);
-    await addItem(newItemText);
-    setNewItemText('');
-    setAddingItem(false);
-    addInputRef.current?.blur();
-  }, [newItemText, addItem]);
-
-  const handleDeleteItem = useCallback((itemId: string) => {
-    Alert.alert('Remove item', 'Remove this item from the checklist?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => deleteItem(itemId) },
-    ]);
-  }, [deleteItem]);
 
   // Separate checked/unchecked so unchecked items always show first
   const uncheckedItems = checklist.filter((c) => !c.checked);

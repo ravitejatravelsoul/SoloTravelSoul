@@ -41,14 +41,14 @@ export default function ForgotPasswordScreen() {
           <Text style={styles.sentIcon}>📬</Text>
           <Text variant="h3" center>Check your inbox</Text>
           <Text variant="body" center style={styles.sentDesc}>
-            We sent a password reset link to {email}. Check your spam folder if you don't see it.
+            We sent a password reset link to {email}. Check your spam folder if you don&apos;t see it.
           </Text>
           <Button label="Back to sign in" onPress={() => router.replace('/(auth)/login')} fullWidth />
         </View>
       ) : (
         <View style={styles.form}>
           <Text variant="body" style={styles.desc}>
-            Enter your email and we'll send you a link to reset your password.
+            Enter your email and we&apos;ll send you a link to reset your password.
           </Text>
           <Input
             label="Email"

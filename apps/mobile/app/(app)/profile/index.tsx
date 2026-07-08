@@ -420,7 +420,7 @@ export default function ProfileScreen() {
               <View style={styles.warningBanner}>
                 <Ionicons name="warning-outline" size={20} color={Colors.error} />
                 <Text style={styles.warningText}>
-                  This will permanently delete your account, trips, journal entries, and saved places. Messages sent in chats may remain visible as "Deleted User". This action cannot be undone.
+                  This will permanently delete your account, trips, journal entries, and saved places. Messages sent in chats may remain visible as &quot;Deleted User&quot;. This action cannot be undone.
                 </Text>
               </View>
               <Text style={styles.passwordLabel}>Enter your password to confirm</Text>

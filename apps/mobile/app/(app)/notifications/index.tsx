@@ -60,7 +60,7 @@ function NotificationRow({ notif, onPress }: { notif: AppNotification; onPress: 
               <Text style={styles.bold}>{notif.actorName} </Text>
               {meta.label.toLowerCase()}
               {notif.targetTitle ? (
-                <Text style={styles.target}>{' '}"{notif.targetTitle}"</Text>
+                <Text style={styles.target}>{' '}&ldquo;{notif.targetTitle}&rdquo;</Text>
               ) : null}
             </Text>
           </>

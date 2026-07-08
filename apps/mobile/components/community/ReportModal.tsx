@@ -131,7 +131,7 @@ export function ReportModal({ visible, targetType, targetId, onClose }: ReportMo
 
             {step === 2 && (
               <>
-                <Text style={styles.stepTitle}>What's the issue?</Text>
+                <Text style={styles.stepTitle}>What&apos;s the issue?</Text>
                 {REASONS.map((r) => (
                   <TouchableOpacity
                     key={r.value}

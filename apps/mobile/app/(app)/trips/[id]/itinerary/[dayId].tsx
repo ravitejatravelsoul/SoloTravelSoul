@@ -493,7 +493,7 @@ export default function DayDetailScreen() {
                     {filteredAttractions.length === 0 ? (
                       <View style={styles.browseEmpty}>
                         <Ionicons name="search-outline" size={28} color={Colors.border} />
-                        <Text style={styles.browseEmptyText}>No matches for "{browseQuery}"</Text>
+                        <Text style={styles.browseEmptyText}>No matches for &ldquo;{browseQuery}&rdquo;</Text>
                       </View>
                     ) : (
                       filteredAttractions.map((a) => (

@@ -96,7 +96,7 @@ export default function GroupRequestsScreen() {
                 </View>
               </View>
               {item.message ? (
-                <Text style={styles.message}>"{item.message}"</Text>
+                <Text style={styles.message}>&ldquo;{item.message}&rdquo;</Text>
               ) : null}
               <View style={styles.actionsRow}>
                 <TouchableOpacity

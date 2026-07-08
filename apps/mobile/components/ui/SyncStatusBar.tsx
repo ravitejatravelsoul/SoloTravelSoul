@@ -47,7 +47,7 @@ export function SyncStatusBar({
       >
         <Ionicons name="warning-outline" size={13} color={Colors.warning} />
         <Text style={[styles.label, { color: Colors.warning, flex: 1 }]}>
-          Some changes couldn't sync · Tap to retry
+          Some changes couldn&apos;t sync · Tap to retry
         </Text>
         <Ionicons name="refresh-outline" size={13} color={Colors.warning} />
       </TouchableOpacity>

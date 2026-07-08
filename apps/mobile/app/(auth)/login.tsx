@@ -100,7 +100,7 @@ export default function LoginScreen() {
       </View>
 
       <View style={styles.footer}>
-        <Text variant="caption">Don't have an account? </Text>
+        <Text variant="caption">Don&apos;t have an account? </Text>
         <TouchableOpacity onPress={() => router.push('/(auth)/signup')}>
           <Text variant="caption" color={Colors.primary} bold>Create one</Text>
         </TouchableOpacity>
