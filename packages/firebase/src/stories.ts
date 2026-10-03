@@ -17,7 +17,7 @@ import {
   orderBy,
   Timestamp,
 } from 'firebase/firestore';
-import { db } from './config';
+import { db } from './firestore';
 import type { TravelStory } from '@solotravelsoul/shared';
 
 const STORIES_ENABLED = false; // Server-side guard — always off until feature launches

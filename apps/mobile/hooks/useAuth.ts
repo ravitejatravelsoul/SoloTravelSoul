@@ -85,18 +85,25 @@ export function useAuth() {
   );
 
   const logout = useCallback(async () => {
-    await signOut();
-    router.replace('/(auth)/login');
-  }, []);
+    try {
+      await signOut();
+      router.replace('/(auth)/login');
+    } catch (err: unknown) {
+      const code = (err as { code?: string }).code ?? '';
+      addToast(friendlyAuthError(code), 'error');
+    }
+  }, [addToast]);
 
   const forgotPassword = useCallback(
-    async (email: string) => {
+    async (email: string): Promise<boolean> => {
       try {
         await resetPassword(email);
         addToast('Password reset email sent.', 'success');
+        return true;
       } catch (err: unknown) {
         const code = (err as { code?: string }).code ?? '';
         addToast(friendlyAuthError(code), 'error');
+        return false;
       }
     },
     [addToast]

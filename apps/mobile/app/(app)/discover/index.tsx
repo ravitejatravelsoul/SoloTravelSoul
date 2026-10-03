@@ -97,9 +97,10 @@ export default function ExploreScreen() {
     setRefreshing(false);
   }, []);
 
-  const trendingDests = groupByCountry(allPosts);
-  const hiddenGems = allPosts.filter((p) => p.postType === 'hidden_gem').slice(0, 8);
-  const foodPosts = allPosts.filter((p) => p.postType === 'food').slice(0, 8);
+  const visiblePosts = allPosts.filter((p) => !blockedUids.includes(p.authorId));
+  const trendingDests = groupByCountry(visiblePosts);
+  const hiddenGems = visiblePosts.filter((p) => p.postType === 'hidden_gem').slice(0, 8);
+  const foodPosts = visiblePosts.filter((p) => p.postType === 'food').slice(0, 8);
   const loading = postsLoading || journalsLoading;
 
   return (
@@ -223,9 +224,9 @@ export default function ExploreScreen() {
           )}
 
           {/* ── All Recent Posts ── */}
-          {allPosts.length > 0 && (
+          {visiblePosts.length > 0 && (
             <ExploreSection title="Recent Travel Posts" icon="images-outline" horizontal={false}>
-              {allPosts.slice(0, 5).map((p) => (
+              {visiblePosts.slice(0, 5).map((p) => (
                 <PostCard key={p.postId} post={p} />
               ))}
             </ExploreSection>

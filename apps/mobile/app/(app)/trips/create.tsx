@@ -10,13 +10,14 @@ const today = new Date();
 today.setHours(0, 0, 0, 0);
 
 export default function CreateTripScreen() {
-  const { createTrip, loading } = useTrips();
+  const { createTrip } = useTrips();
 
   const [destination, setDestination] = useState('');
   const [startDate, setStartDate] = useState<Date>(today);
   const [endDate, setEndDate] = useState<Date>(today);
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -27,7 +28,8 @@ export default function CreateTripScreen() {
   };
 
   const handleCreate = async () => {
-    if (!validate()) return;
+    if (submitting || !validate()) return;
+    setSubmitting(true);
     const id = await createTrip({
       destination: destination.trim(),
       startDate,
@@ -35,7 +37,11 @@ export default function CreateTripScreen() {
       notes: notes.trim(),
       coverPhotoURL: null,
     });
-    if (id) router.replace(`/(app)/trips/${id}`);
+    if (id) {
+      router.replace(`/(app)/trips/${id}`);
+    } else {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -89,7 +95,8 @@ export default function CreateTripScreen() {
         <Button
           label="Create Trip"
           onPress={handleCreate}
-          loading={loading}
+          loading={submitting}
+          disabled={submitting}
           fullWidth
           size="lg"
           style={styles.cta}

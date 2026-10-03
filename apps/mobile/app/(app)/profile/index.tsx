@@ -27,6 +27,7 @@ import { useSavedPlaces } from '@/hooks/useSavedPlaces';
 import { useTrips } from '@/hooks/useTrips';
 import { useAuthorPosts } from '@/hooks/usePosts';
 import { useAuthorJournals } from '@/hooks/useJournals';
+import { useFollowCounts } from '@/hooks/useFollows';
 import { getUserInitials } from '@solotravelsoul/shared';
 import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 
@@ -78,6 +79,7 @@ export default function ProfileScreen() {
   const uid = profile?.id ?? '';
   const { posts, loading: postsLoading } = useAuthorPosts(uid, 30);
   const { journals, loading: journalsLoading } = useAuthorJournals(uid, 20);
+  const { followersCount, followingCount } = useFollowCounts(uid);
   const allTrips = [...upcoming, ...past];
 
   if (!profile) {
@@ -92,8 +94,6 @@ export default function ProfileScreen() {
 
   const initials = getUserInitials(profile.name);
   const countriesCount = profile.countriesVisited?.length ?? 0;
-  const followersCount = profile.followersCount ?? 0;
-  const followingCount = profile.followingCount ?? 0;
   const postsCount = posts.length;
   const journalsCount = journals.length;
 
@@ -118,9 +118,9 @@ export default function ProfileScreen() {
   const handleDeleteConfirm = async () => {
     if (!deletePassword.trim()) return;
     setDeleteLoading(true);
-    await deleteAccount(deletePassword);
+    const success = await deleteAccount(deletePassword);
     setDeleteLoading(false);
-    setShowDeleteModal(false);
+    if (success) setShowDeleteModal(false);
   };
 
   return (

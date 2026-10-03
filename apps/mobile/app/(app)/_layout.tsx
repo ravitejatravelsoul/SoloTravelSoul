@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { View, StyleSheet } from 'react-native';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useNetworkState } from '@/hooks/useNetworkState';
+import { useSyncEngine } from '@/hooks/useSyncEngine';
 import { useDirectChats } from '@/hooks/useDirectChats';
 import { useAuthStore } from '@/stores/authStore';
 import { useChatStore, totalChatUnread } from '@/stores/chatStore';
@@ -47,6 +48,9 @@ export default function AppLayout() {
   const { loadBlockList } = useBlockStore();
   // Subscribes and keeps chatStore current for badge counts
   useDirectChats();
+  // Mounted globally so queued offline changes flush on reconnect/foreground
+  // regardless of which screen the user is on (not just trip detail).
+  useSyncEngine(uid || undefined);
 
   useEffect(() => {
     if (uid) loadBlockList(uid);

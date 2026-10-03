@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import {
   getChecklist,
@@ -38,16 +38,23 @@ function pushPendingCount(uid: string) {
 
 export function useChecklist(tripId: string) {
   const uid = useAuthStore((s) => s.user?.uid);
-  const { checklist, setChecklist, addChecklistItem, patchChecklistItem, removeChecklistItem } =
+  const { checklist: rawChecklist, checklistTripId, setChecklist, addChecklistItem, patchChecklistItem, removeChecklistItem } =
     useTripStore(
       useShallow((s) => ({
         checklist: s.checklist,
+        checklistTripId: s.checklistTripId,
         setChecklist: s.setChecklist,
         addChecklistItem: s.addChecklistItem,
         patchChecklistItem: s.patchChecklistItem,
         removeChecklistItem: s.removeChecklistItem,
       }))
     );
+  // Guard against rendering/editing the previous trip's checklist while this
+  // trip's data is still loading (the store's checklist is a single shared array).
+  const checklist = useMemo(
+    () => (checklistTripId === tripId ? rawChecklist : []),
+    [checklistTripId, tripId, rawChecklist]
+  );
   const addToast = useUIStore((s) => s.addToast);
   const haptics = useHaptics();
   const { isConnected } = useNetworkState();
@@ -59,7 +66,7 @@ export function useChecklist(tripId: string) {
     // Show cached data immediately — no spinner if we have it
     const cached = await getCachedChecklist(uid, tripId);
     if (cached) {
-      setChecklist(cached);
+      setChecklist(cached, tripId);
       setLoading(false);
     } else {
       setLoading(true);
@@ -87,7 +94,7 @@ export function useChecklist(tripId: string) {
         items = defaults;
       }
 
-      setChecklist(items);
+      setChecklist(items, tripId);
       await cacheChecklist(uid, tripId, items);
       await setLastSync(uid, `checklist:${tripId}`);
     } catch {

@@ -3,6 +3,17 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ── Helpers ───────────────────────────────────────────────────────
+    // True when the update changes only the counter field `key`, by exactly
+    // +1 or -1, and never below zero (i.e. a single increment()).
+    function isCounterStep(key) {
+      let next = request.resource.data.get(key, null);
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([key])
+        && next is int
+        && next >= 0
+        && (next - resource.data.get(key, 0)) in [1, -1];
+    }
+
     // ── Default: deny everything ──────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
@@ -118,11 +129,17 @@ service cloud.firestore {
       // Creator can update any field (rename group, add/remove members, etc.)
       allow update: if request.auth != null
         && request.auth.uid == resource.data.createdBy;
-      // Members (non-creator) can only write chat metadata — not group structure
+      // Members (non-creator) can only write chat metadata, or remove themselves from the group.
       allow update: if request.auth != null
         && request.auth.uid in resource.data.members
-        && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['lastMessage', 'unreadCounts', 'updatedAt']);
+        && (
+          request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['lastMessage', 'unreadCounts', 'updatedAt'])
+          || (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+            && request.resource.data.members == resource.data.members.removeAll([request.auth.uid])
+          )
+        );
       allow delete: if request.auth != null
         && request.auth.uid == resource.data.createdBy;
 
@@ -152,7 +169,15 @@ service cloud.firestore {
     // ── Community: Public Profiles ────────────────────────────────────
     match /publicProfiles/{uid} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow create, delete: if request.auth != null && request.auth.uid == uid;
+      // Owner can update any field. Any other authenticated user may only
+      // step follower/following counts by ±1 (follow/unfollow actions on this profile).
+      allow update: if request.auth != null
+        && (
+          request.auth.uid == uid
+          || isCounterStep('followersCount')
+          || isCounterStep('followingCount')
+        );
     }
 
     // ── Community: Public Trips ───────────────────────────────────────
@@ -312,8 +337,15 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow create: if request.auth != null
         && request.resource.data.authorId == request.auth.uid;
+      // Author can update any field. Any other authenticated user may only
+      // step one aggregate counter by ±1 (like/comment/save actions on this post).
       allow update: if request.auth != null
-        && resource.data.authorId == request.auth.uid;
+        && (
+          resource.data.authorId == request.auth.uid
+          || isCounterStep('likeCount')
+          || isCounterStep('commentCount')
+          || isCounterStep('saveCount')
+        );
       allow delete: if request.auth != null
         && resource.data.authorId == request.auth.uid;
     }
@@ -330,8 +362,13 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow create: if request.auth != null
         && request.resource.data.authorId == request.auth.uid;
+      // Author can update any field. Any other authenticated user may only
+      // step replyCount by ±1 (posting/deleting a reply to this comment).
       allow update: if request.auth != null
-        && resource.data.authorId == request.auth.uid;
+        && (
+          resource.data.authorId == request.auth.uid
+          || isCounterStep('replyCount')
+        );
       allow delete: if request.auth != null
         && resource.data.authorId == request.auth.uid;
     }
@@ -354,8 +391,13 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow create: if request.auth != null
         && request.resource.data.authorId == request.auth.uid;
+      // Author can update any field. Any other authenticated user may only
+      // step likeCount by ±1 (like/unlike actions on this journal).
       allow update: if request.auth != null
-        && resource.data.authorId == request.auth.uid;
+        && (
+          resource.data.authorId == request.auth.uid
+          || isCounterStep('likeCount')
+        );
       allow delete: if request.auth != null
         && resource.data.authorId == request.auth.uid;
     }

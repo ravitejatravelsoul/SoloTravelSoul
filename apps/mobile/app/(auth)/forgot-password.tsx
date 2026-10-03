@@ -21,9 +21,9 @@ export default function ForgotPasswordScreen() {
     }
     setError('');
     setLoading(true);
-    await forgotPassword(email.trim().toLowerCase());
+    const success = await forgotPassword(email.trim().toLowerCase());
     setLoading(false);
-    setSent(true);
+    if (success) setSent(true);
   };
 
   return (

@@ -13,6 +13,9 @@ interface TripState {
   itinerary: ItineraryDay[];
   currentItineraryTripId: string | null;
   checklist: ChecklistItem[];
+  /** Which trip's checklist is currently loaded in `checklist` — guards against
+   *  rendering/editing a stale trip's items while a different trip's checklist loads. */
+  checklistTripId: string | null;
   loading: boolean;
 
   /** Number of queued offline operations waiting to sync */
@@ -23,7 +26,7 @@ interface TripState {
   setActiveTrip: (trip: PlannedTrip | null) => void;
   setItinerary: (days: ItineraryDay[]) => void;
   setCurrentItineraryTripId: (id: string | null) => void;
-  setChecklist: (items: ChecklistItem[]) => void;
+  setChecklist: (items: ChecklistItem[], tripId: string) => void;
   setLoading: (v: boolean) => void;
   setPendingOpsCount: (n: number) => void;
   setSyncStatus: (patch: Partial<SyncStatus>) => void;
@@ -45,6 +48,7 @@ export const useTripStore = create<TripState>((set, get) => ({
   itinerary: [],
   currentItineraryTripId: null,
   checklist: [],
+  checklistTripId: null,
   loading: false,
   pendingOpsCount: 0,
   syncStatus: { syncing: false, hasFailed: false, lastSyncedAt: null },
@@ -53,7 +57,7 @@ export const useTripStore = create<TripState>((set, get) => ({
   setActiveTrip: (trip) => set({ activeTrip: trip }),
   setItinerary: (itinerary) => set({ itinerary }),
   setCurrentItineraryTripId: (id) => set({ currentItineraryTripId: id }),
-  setChecklist: (checklist) => set({ checklist }),
+  setChecklist: (checklist, tripId) => set({ checklist, checklistTripId: tripId }),
   setLoading: (loading) => set({ loading }),
   setPendingOpsCount: (pendingOpsCount) => set({ pendingOpsCount }),
   setSyncStatus: (patch) =>

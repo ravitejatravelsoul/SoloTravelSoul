@@ -621,6 +621,9 @@ export async function updateProfileVisibility(
     await upsertPublicProfile(uid, { ...profile, profileVisibility: 'public' });
   } else {
     await deletePublicProfile(uid);
+    // Going private must also remove any stale nearbyTravelers opt-in doc —
+    // otherwise the user keeps showing up in other travelers' Nearby list.
+    await deleteNearbyTraveler(uid);
   }
 }
 

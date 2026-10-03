@@ -14,6 +14,10 @@ export interface SyncEngineState {
   hasFailed: boolean;
 }
 
+// Module-level so multiple mounted instances (app layout + trip detail) never
+// process the queue concurrently — that would double-send queued DMs.
+let syncInFlight = false;
+
 export function useSyncEngine(uid: string | undefined): SyncEngineState & {
   sync: () => Promise<void>;
   notifyEnqueued: () => void;
@@ -29,7 +33,6 @@ export function useSyncEngine(uid: string | undefined): SyncEngineState & {
   );
 
   const prevConnected = useRef(false);
-  const syncingRef = useRef(false);
 
   const refreshPending = useCallback(async () => {
     if (!uid) return;
@@ -46,8 +49,8 @@ export function useSyncEngine(uid: string | undefined): SyncEngineState & {
   }, [uid, setPendingOpsCount]);
 
   const sync = useCallback(async () => {
-    if (!uid || !isConnected || syncingRef.current) return;
-    syncingRef.current = true;
+    if (!uid || !isConnected || syncInFlight) return;
+    syncInFlight = true;
     setSyncStatus({ syncing: true, hasFailed: false });
     try {
       const [result, chatResult] = await Promise.all([
@@ -68,7 +71,7 @@ export function useSyncEngine(uid: string | undefined): SyncEngineState & {
     } catch {
       setSyncStatus({ syncing: false, hasFailed: true });
     } finally {
-      syncingRef.current = false;
+      syncInFlight = false;
     }
   }, [uid, isConnected, setSyncStatus, setPendingOpsCount]);
 
