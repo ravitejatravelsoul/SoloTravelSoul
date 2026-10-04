@@ -768,9 +768,11 @@ test('final completed-job write fails: late media is still swept and scheduled f
   assert.equal(await deletion.sweepRecentlyDeletedMedia(h.deps), 1);
   assert.ok(![...h.r2.objects, ...h.storage.objects].some((k) => k.includes(`/${ME}/`)));
 
-  // Recovery runs while the dead attempt's lease is still active: Auth is gone, so it is safe.
+  // Recovery never acts under a live lease; once the dead attempt's lease lapses it finishes.
   restore();
   h.r2.objects.add(`profile_photos/${ME}/later.jpg`);
+  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, swept: 1 });
+  h.advance(LEASE_MS + 1);
   assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 1, swept: 1 });
   job = (await store.get(`accountDeletions/${ME}`)).data;
   assert.deepEqual([job.status, job.pendingFinalization, job.recoveredBy], ['completed', false, 'scheduled-finalization']);
@@ -796,6 +798,100 @@ test('Auth removal failed after media was cleared: finalization removes Auth wit
   assert.equal((await store.get(`accountDeletions/${ME}`)).data.status, 'completed');
   assert.equal((await store.get(`accountDeletions/${BOB}`)).data.status, 'in_progress');
   await expectState(store, h);
+});
+
+// ── Cron finalization concurrency ─────────────────────────────────────────────
+
+// Records the job state at every Auth removal: Auth may only be removed by the
+// party that currently owns the job (in_progress, live lease, at the auth step).
+function guardAuthRemoval(store, h) {
+  const removals = [];
+  const original = h.deps.deleteAuthUser;
+  h.deps.deleteAuthUser = async (uid) => {
+    const job = (await store.get(`accountDeletions/${uid}`))?.data;
+    removals.push({ status: job?.status, step: job?.currentStep, live: (job?.leaseUntil ?? 0) > h.now(), attemptId: job?.attemptId });
+    return original(uid);
+  };
+  return removals;
+}
+
+async function failedAtAuth(store, h) {
+  h.auth.fail = 1;
+  await assert.rejects(deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps), (e) => e.step === 'auth');
+  assert.equal(await h.deps.authUserExists(ME), true);
+}
+
+test('cron finalization: a retry that starts while cron is checking Auth is never undercut by cron Auth removal', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  await failedAtAuth(store, h);
+  const removals = guardAuthRemoval(store, h);
+
+  // The user's retry starts exactly while cron awaits the Auth lookup, and pauses mid-way.
+  const exists = h.deps.authUserExists;
+  const base = store.commit.bind(store);
+  let retry, pauseRetry, releaseRetry;
+  const retryPaused = new Promise((r) => { pauseRetry = r; });
+  const retryGo = new Promise((r) => { releaseRetry = r; });
+  let paused = false;
+  h.deps.authUserExists = async (uid) => {
+    if (!retry) {
+      retry = deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps);
+      retry.catch(() => {});
+      store.commit = async (writes) => {
+        if (!paused && writes.some((w) => !w.path.startsWith('accountDeletions/'))) { paused = true; pauseRetry(); await retryGo; }
+        return base(writes);
+      };
+      await Promise.race([retryPaused, retry.then(() => {}, () => {})]);
+    }
+    return exists(uid);
+  };
+
+  await deletion.finalizePendingDeletions(h.deps);
+  releaseRetry();
+  await retry.catch(() => {});
+  store.commit = base;
+  h.deps.authUserExists = exists;
+  await deletion.runScheduledMaintenance(h.deps); // finish whoever lost the race
+  h.advance(LEASE_MS + 1);
+  await deletion.runScheduledMaintenance(h.deps);
+
+  assert.ok(removals.length >= 1);
+  for (const r of removals) {
+    assert.deepEqual([r.status, r.step, r.live], ['in_progress', 'auth', true], `Auth removed while job was ${JSON.stringify(r)}`);
+  }
+  assert.equal(await h.deps.authUserExists(ME), false);
+  const job = (await store.get(`accountDeletions/${ME}`)).data;
+  assert.deepEqual([job.status, job.pendingFinalization], ['completed', false]);
+  await expectState(store, h);
+});
+
+test('cron finalization: concurrent cron runs remove Auth and finalize exactly once', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  await failedAtAuth(store, h);
+  const removals = guardAuthRemoval(store, h);
+  const exists = h.deps.authUserExists;
+  h.deps.authUserExists = async (uid) => { await new Promise((r) => setTimeout(r, 20)); return exists(uid); };
+  const results = await Promise.all([deletion.finalizePendingDeletions(h.deps), deletion.finalizePendingDeletions(h.deps), deletion.finalizePendingDeletions(h.deps)]);
+  assert.equal(results.reduce((a, b) => a + b, 0), 1);
+  assert.equal(removals.length, 1, 'Auth removed exactly once');
+  assert.deepEqual([removals[0].status, removals[0].step, removals[0].live], ['in_progress', 'auth', true]);
+  assert.equal((await store.get(`accountDeletions/${ME}`)).data.status, 'completed');
+});
+
+test('cron finalization holds a lease: a retry during recovery is refused, then succeeds after completion', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  await failedAtAuth(store, h);
+  const exists = h.deps.authUserExists;
+  let retryOutcome;
+  h.deps.authUserExists = async (uid) => {
+    retryOutcome = await deletion.deleteAccount({ uid: ME, email: null }, { ...h.deps, deleteAuthUser: async () => { throw new Error('retry must not remove Auth here'); } })
+      .then(() => 'ran', (e) => e.name);
+    return exists(uid);
+  };
+  assert.equal(await deletion.finalizePendingDeletions(h.deps), 1);
+  assert.equal(retryOutcome, 'DeletionInProgress');
+  h.deps.authUserExists = exists;
+  assert.deepEqual(await deletion.deleteAccount({ uid: ME, email: null }, h.deps), { status: 'deleted' });
 });
 
 // ── Worker entry point ────────────────────────────────────────────────────────
@@ -905,7 +1001,9 @@ test('entry point: barrier read through Firestore REST blocks uploads; final-wri
     let job = (await store.get(`accountDeletions/${ME}`)).data;
     assert.deepEqual([job.status, job.pendingFinalization], ['in_progress', true]);
 
-    // A late upload lands; the deleted user never signs in again.
+    // The dead attempt's lease lapses (time passes before the next cron run);
+    // a late upload lands; the deleted user never signs in again.
+    await store.commit([{ kind: 'update', path: `accountDeletions/${ME}`, set: { leaseUntil: Date.now() - 1 } }]);
     bucket.objects.add(`post_photos/${ME}/late.jpg`);
     storageObjects.add(`journals/${ME}/t1/late.jpg`);
     fakes.state.failFinalWrite = false;

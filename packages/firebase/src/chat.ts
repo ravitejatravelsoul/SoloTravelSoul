@@ -6,6 +6,8 @@ import {
   writeBatch,
   runTransaction,
   updateDoc,
+  deleteDoc,
+  arrayUnion,
   onSnapshot,
   query,
   where,
@@ -267,6 +269,10 @@ export function subscribeToGroups(
   );
 }
 
+// Rules check each newly added member against the account-deletion barrier
+// and accept at most this many additions per write.
+const GROUP_MEMBERS_PER_WRITE = 8;
+
 export async function createGroup(
   createdBy: string,
   name: string,
@@ -275,17 +281,29 @@ export async function createGroup(
   tripId?: string,
 ): Promise<string> {
   const groupRef = doc(collection(db, 'groups'));
+  const ordered = [createdBy, ...members.filter((m) => m !== createdBy)];
+  const chunks: string[][] = [];
+  for (let i = 0; i < ordered.length; i += GROUP_MEMBERS_PER_WRITE) chunks.push(ordered.slice(i, i + GROUP_MEMBERS_PER_WRITE));
   await setDoc(groupRef, {
     name: name.trim(),
     createdBy,
-    members,
+    members: chunks[0],
     memberInfo,
     tripId: tripId ?? null,
     lastMessage: null,
     updatedAt: serverTimestamp(),
-    unreadCounts: Object.fromEntries(members.map((m) => [m, 0])),
+    unreadCounts: Object.fromEntries(ordered.map((m) => [m, 0])),
     createdAt: serverTimestamp(),
   });
+  try {
+    for (const chunk of chunks.slice(1)) {
+      await updateDoc(groupRef, { members: arrayUnion(...chunk) });
+    }
+  } catch (err) {
+    // A member was refused (e.g. account being deleted): don't leave a partial group.
+    await deleteDoc(groupRef).catch(() => {});
+    throw err;
+  }
   return groupRef.id;
 }
 

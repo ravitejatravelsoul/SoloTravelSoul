@@ -600,40 +600,72 @@ export async function sweepRecentlyDeletedMedia(deps: DeletionDeps, windowMs = S
 }
 
 /**
+ * Claims a job pending finalization for this recovery run: a conditional write
+ * on fresh state that takes the lease exactly like a user retry would. Refuses
+ * when the job is completed, no longer pending, or held by a live attempt.
+ */
+async function claimForRecovery(store: DocStore, uid: string, now: () => number, attempt: Attempt): Promise<boolean> {
+  const path = `${JOBS}/${uid}`;
+  const job = await store.get(path);
+  if (!job || job.data.pendingFinalization !== true || job.data.status === 'completed') return false;
+  if (job.data.status === 'in_progress' && num(job.data.leaseUntil) > now()) return false;
+  const leaseUntil = now() + LEASE_MS;
+  try {
+    await store.commit([{
+      kind: 'update',
+      path,
+      set: { status: 'in_progress', attemptId: attempt.id, leaseUntil, currentStep: 'finalization', lastError: null },
+      serverTime: ['updatedAt'],
+      updateTime: job.updateTime,
+    }]);
+    attempt.leaseUntil = leaseUntil;
+    return true;
+  } catch (e) {
+    if (e instanceof StoreConflict) return false; // a retry or another cron run got there first
+    throw e;
+  }
+}
+
+/**
  * Completes jobs that reached Auth removal but whose final bookkeeping never
  * landed (or whose Auth removal failed after all data and media were gone),
- * without needing the deleted user to sign in again. Skips a job only while
- * its Auth user still exists under an active lease (an attempt is running).
+ * without needing the deleted user to sign in again.
+ *
+ * Fencing: the run first claims the job lease (claimForRecovery), so user
+ * retries and other cron runs are refused while it works; it then re-verifies
+ * ownership with a conditional lease renewal immediately before removing Auth,
+ * and stops if the lease was lost. Jobs held by a live attempt are skipped.
  */
 export async function finalizePendingDeletions(deps: DeletionDeps): Promise<number> {
   const now = deps.now ?? Date.now;
-  const pending = await deps.store.query(JOBS, [{ field: 'pendingFinalization', op: 'EQUAL', value: true }]);
+  const { store } = deps;
+  const pending = await store.query(JOBS, [{ field: 'pendingFinalization', op: 'EQUAL', value: true }]);
   let finalized = 0;
-  for (const job of pending) {
-    const uid = lastSegment(job.path);
-    const activeLease = job.data.status === 'in_progress' && num(job.data.leaseUntil) > now();
-    if (await deps.authUserExists(uid)) {
-      if (activeLease) continue;
-      await deps.deleteAuthUser(uid);
-    }
+  for (const listed of pending) {
+    const uid = lastSegment(listed.path);
+    const attempt: Attempt = { id: `recovery-${deps.newAttemptId?.() ?? crypto.randomUUID()}`, leaseUntil: 0 };
+    if (!(await claimForRecovery(store, uid, now, attempt))) continue;
     try {
-      await deps.store.commit([{
-        kind: 'update',
-        path: job.path,
-        set: {
-          status: 'completed',
-          currentStep: null,
-          leaseUntil: 0,
-          pendingFinalization: false,
-          completedAtMs: num(job.data.completedAtMs) || now(),
-          recoveredBy: 'scheduled-finalization',
-        },
-        serverTime: ['updatedAt'],
-        updateTime: job.updateTime, // never overwrite a concurrent change
-      }]);
+      if (await deps.authUserExists(uid)) {
+        // Fence: still the owner with a live lease right before the destructive call.
+        await updateOwnJob(store, uid, attempt, now, { currentStep: 'auth' });
+        await deps.deleteAuthUser(uid);
+      }
+      await updateOwnJob(store, uid, attempt, now, {
+        status: 'completed',
+        currentStep: null,
+        pendingFinalization: false,
+        completedAtMs: num(listed.data.completedAtMs) || now(),
+        recoveredBy: 'scheduled-finalization',
+      });
       finalized++;
     } catch (e) {
-      if (!(e instanceof StoreConflict)) throw e;
+      if (e instanceof DeletionAttemptLost) continue;
+      // Release the claim so a later run or a user retry can take over.
+      await updateOwnJob(store, uid, attempt, now, {
+        status: 'failed',
+        lastError: { step: 'finalization', message: safeMessage(e) },
+      }).catch(() => {});
     }
   }
   return finalized;

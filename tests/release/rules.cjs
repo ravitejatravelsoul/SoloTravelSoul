@@ -134,6 +134,53 @@ function client(file, db) {
     assert.equal((await get('travelPosts/leavingPost')).likeCount, 0);
     assert.equal((await get('publicProfiles/leaving')).followersCount, 0);
     assert.equal((await get('travelPosts/stayingPost')).likeCount, 1);
+
+    // Chats: no new group membership, direct chat or direct message may reach an
+    // account with a deletion barrier — in progress ('leaving') or completed ('gone').
+    await env.withSecurityRulesDisabled(async ctx => {
+      const adb = ctx.firestore();
+      await sdk.setDoc(sdk.doc(adb, 'accountDeletions/gone'), { uid: 'gone', status: 'completed' });
+      for (const target of ['leaving', 'gone', 'staying']) {
+        await sdk.setDoc(sdk.doc(adb, `groups/existing-${target}`), { createdBy: 'actor', members: ['actor', 'friend'], memberInfo: {}, unreadCounts: { actor: 0, friend: 0 }, lastMessage: null });
+        const chatId = chat.directChatId('actor', target);
+        await sdk.setDoc(sdk.doc(adb, `direct_chats/${chatId}`), { participants: ['actor', target].sort(), participantInfo: {}, lastMessage: null, unreadCounts: { actor: 0, [target]: 0 } });
+        await sdk.setDoc(sdk.doc(adb, `direct_chats/${chatId}/messages/history`), { senderId: target, text: 'old', clientId: 'history', sentAt: sdk.Timestamp.now() });
+      }
+    });
+    const info = { name: 'X', initials: 'X' };
+    const chatActions = (target, tag) => [
+      ['create group containing it', () => chat.createGroup('actor', 'Trip', ['actor', 'friend', target], {})],
+      ['create large group containing it late in the list', () => chat.createGroup('actor', 'Big', ['actor', ...Array.from({ length: 12 }, (_, i) => `member${i}`), target], {})],
+      ['add it to an existing group', () => sdk.updateDoc(sdk.doc(db, `groups/existing-${target}`), { members: sdk.arrayUnion(target) })],
+      ['replace group members to include it', () => sdk.updateDoc(sdk.doc(db, `groups/existing-${target}`), { members: ['actor', 'friend', 'other', target] })],
+      ['create direct chat with it', async () => {
+        await env.withSecurityRulesDisabled(ctx => sdk.deleteDoc(sdk.doc(ctx.firestore(), `direct_chats/${chat.directChatId('actor', target)}`)));
+        try { await chat.getOrCreateDirectChat('actor', info, target, info); }
+        finally {
+          await env.withSecurityRulesDisabled(ctx => sdk.setDoc(sdk.doc(ctx.firestore(), `direct_chats/${chat.directChatId('actor', target)}`),
+            { participants: ['actor', target].sort(), participantInfo: {}, lastMessage: null, unreadCounts: { actor: 0, [target]: 0 } }));
+        }
+      }],
+      ['send a direct message to it', () => chat.sendDirectMessage(chat.directChatId('actor', target), 'actor', 'hello', `msg-${tag}`, [target])],
+    ];
+    for (const target of ['leaving', 'gone']) {
+      for (const [name, action] of chatActions(target, target)) await check(`reject chat: ${name} (${target})`, () => assertFails(action()));
+      // Existing history stays readable and can be marked read.
+      await check(`keep chat history with ${target}`, async () => {
+        const msgs = await sdk.getDocs(sdk.collection(db, `direct_chats/${chat.directChatId('actor', target)}/messages`));
+        assert.equal(msgs.size, 1);
+        await chat.markDirectChatRead(chat.directChatId('actor', target), 'actor');
+      });
+    }
+    for (const [name, action] of chatActions('staying', 'staying')) await check(`allow chat: ${name} (unaffected)`, () => action());
+    assert.ok((await get(`groups/existing-staying`)).members.includes('staying'));
+    await check('refused chunked group creation leaves no partial group', async () => {
+      await env.withSecurityRulesDisabled(async ctx => {
+        const big = await sdk.getDocs(sdk.query(sdk.collection(ctx.firestore(), 'groups'), sdk.where('name', '==', 'Big')));
+        assert.equal(big.size, 1, 'only the unaffected large group exists');
+        assert.equal(big.docs[0].data().members.length, 14);
+      });
+    });
     await env.withSecurityRulesDisabled(ctx => sdk.setDoc(sdk.doc(ctx.firestore(), 'blocks/owner/blocked/actor'), {}));
     await check('blocked sender cannot send', () => assertFails(chat.sendDirectMessage('chat', 'actor', 'Blocked', 'blocked', ['owner'])));
     console.log(`${checks} release rule checks passed`);

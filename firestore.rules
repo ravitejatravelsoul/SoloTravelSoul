@@ -15,6 +15,16 @@ service cloud.firestore {
     }
     // No new inbound relationships (likes, saves, follows, comments, replies,
     // memberships, join requests) may target an account being deleted.
+    // Group membership lists cannot be iterated in rules, so each write may add
+    // at most 8 members, each checked against the barrier (createGroup adds
+    // larger groups in chunks). Unchanged members are not re-checked.
+    function noDeletingIn(uids) {
+      return uids.size() <= 8
+        && (uids.size() <= 0 || !deleting(uids[0])) && (uids.size() <= 1 || !deleting(uids[1]))
+        && (uids.size() <= 2 || !deleting(uids[2])) && (uids.size() <= 3 || !deleting(uids[3]))
+        && (uids.size() <= 4 || !deleting(uids[4])) && (uids.size() <= 5 || !deleting(uids[5]))
+        && (uids.size() <= 6 || !deleting(uids[6])) && (uids.size() <= 7 || !deleting(uids[7]));
+    }
     function authorOf(collectionName, id) {
       return get(/databases/$(database)/documents/$(collectionName)/$(id)).data.authorId;
     }
@@ -223,14 +233,15 @@ service cloud.firestore {
         && request.auth.uid in request.resource.data.participants
         && request.resource.data.participants.size() == 2
         && request.resource.data.participants[0] != request.resource.data.participants[1]
-        && unblocked(request.resource.data.participants[0], request.resource.data.participants[1]));
+        && unblocked(request.resource.data.participants[0], request.resource.data.participants[1])
+        && !deleting(request.resource.data.participants[0]) && !deleting(request.resource.data.participants[1]));
       // A preview must point to the message created in this same transaction.
       function sentMessage() {
         let id = request.resource.data.lastMessage.messageId;
         let message = /databases/$(database)/documents/direct_chats/$(chatId)/messages/$(id);
         let other = resource.data.participants[0] == request.auth.uid
           ? resource.data.participants[1] : resource.data.participants[0];
-        return unblocked(request.auth.uid, other) && !exists(message) && existsAfter(message)
+        return unblocked(request.auth.uid, other) && !deleting(other) && !exists(message) && existsAfter(message)
           && getAfter(message).data.senderId == request.auth.uid
           && request.resource.data.lastMessage.senderId == request.auth.uid
           && request.resource.data.lastMessage.text == getAfter(message).data.text
@@ -257,6 +268,8 @@ service cloud.firestore {
              get(/databases/$(database)/documents/direct_chats/$(chatId)).data.participants
           && unblocked(get(/databases/$(database)/documents/direct_chats/$(chatId)).data.participants[0],
             get(/databases/$(database)/documents/direct_chats/$(chatId)).data.participants[1])
+          && !deleting(get(/databases/$(database)/documents/direct_chats/$(chatId)).data.participants[0])
+          && !deleting(get(/databases/$(database)/documents/direct_chats/$(chatId)).data.participants[1])
           && request.resource.data.senderId == request.auth.uid
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
@@ -275,10 +288,12 @@ service cloud.firestore {
       // Creator must be a member, and must set themselves as createdBy.
       allow create: if notDeleting() && (request.auth != null
         && request.auth.uid in request.resource.data.members
-        && request.auth.uid == request.resource.data.createdBy);
+        && request.auth.uid == request.resource.data.createdBy
+        && noDeletingIn(request.resource.data.members));
       // Creator can update any field (rename group, add/remove members, etc.)
       allow update: if notDeleting() && (request.auth != null
-        && request.auth.uid == resource.data.createdBy);
+        && request.auth.uid == resource.data.createdBy
+        && noDeletingIn(request.resource.data.members.removeAll(resource.data.members)));
       // Members (non-creator) can only write chat metadata, or remove themselves from the group.
       allow update: if notDeleting() && (request.auth != null
         && request.auth.uid in resource.data.members
