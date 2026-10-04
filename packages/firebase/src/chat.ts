@@ -2,8 +2,9 @@ import {
   collection,
   doc,
   getDoc,
-  getDocs,
   setDoc,
+  writeBatch,
+  runTransaction,
   updateDoc,
   onSnapshot,
   query,
@@ -112,21 +113,27 @@ export async function upsertUserLookup(
   initials: string,
   photoURL?: string | null,
 ): Promise<void> {
-  await setDoc(doc(db, 'userLookup', uid), {
-    uid,
-    displayName,
-    email: email.toLowerCase(),
-    initials,
-    ...(photoURL !== undefined ? { photoURL: photoURL ?? null } : {}),
-  });
+  const directoryRef = doc(db, 'userLookup', uid);
+  const previous = await getDoc(directoryRef);
+  const data = { uid, displayName, email: email.trim().toLowerCase(), initials,
+    ...(photoURL !== undefined ? { photoURL: photoURL ?? null } : {}) };
+  const batch = writeBatch(db);
+  const oldEmail = previous.data()?.email as string | undefined;
+  if (oldEmail && emailLookupId(oldEmail) !== emailLookupId(email)) {
+    batch.delete(doc(db, 'userLookupByEmail', emailLookupId(oldEmail)));
+  }
+  batch.set(directoryRef, data);
+  batch.set(doc(db, 'userLookupByEmail', emailLookupId(email)), data);
+  await batch.commit();
+}
+
+export function emailLookupId(email: string): string {
+  return email.trim().toLowerCase().replace(/%/g, '%25').replace(/\//g, '%2F');
 }
 
 export async function searchUserByEmail(email: string): Promise<UserLookup | null> {
-  const snap = await getDocs(
-    query(collection(db, 'userLookup'), where('email', '==', email.toLowerCase().trim())),
-  );
-  if (snap.empty) return null;
-  return snap.docs[0].data() as UserLookup;
+  const snap = await getDoc(doc(db, 'userLookupByEmail', emailLookupId(email)));
+  return snap.exists() ? snap.data() as UserLookup : null;
 }
 
 // ── Direct chats ──────────────────────────────────────────────────────
@@ -201,40 +208,36 @@ export function subscribeToDirectMessages(
   return onSnapshot(
     query(
       collection(db, 'direct_chats', chatId, 'messages'),
-      orderBy('sentAt', 'asc'),
+      orderBy('sentAt', 'desc'),
       limit(msgLimit),
     ),
-    (snap) => callback(snap.docs.map((d) => docToDirectMessage(d.id, d.data()))),
+    (snap) => callback(snap.docs.map((d) => docToDirectMessage(d.id, d.data())).reverse()),
   );
 }
 
 /**
- * clientId doubles as the Firestore document ID — setDoc is idempotent,
- * so retrying after a network failure will not create duplicate messages.
+ * Message and preview/unread metadata commit together. Reusing clientId is a
+ * no-op after a successful commit, compatible with immutable message rules.
  */
 export async function sendDirectMessage(
   chatId: string,
   senderId: string,
   text: string,
   clientId: string,
-  otherUids: string[],
+  _otherUids: string[],
 ): Promise<void> {
-  await setDoc(doc(db, 'direct_chats', chatId, 'messages', clientId), {
-    senderId,
-    text: text.trim(),
-    sentAt: serverTimestamp(),
-    clientId,
-  });
-
-  const unreadIncrements: Record<string, ReturnType<typeof increment>> = {};
-  otherUids.forEach((uid) => {
-    unreadIncrements[`unreadCounts.${uid}`] = increment(1);
-  });
-
-  await updateDoc(doc(db, 'direct_chats', chatId), {
-    lastMessage: { text: text.trim(), senderId, sentAt: Timestamp.now() },
-    updatedAt: serverTimestamp(),
-    ...unreadIncrements,
+  const messageRef = doc(db, 'direct_chats', chatId, 'messages', clientId);
+  const chatRef = doc(db, 'direct_chats', chatId);
+  await runTransaction(db, async (tx) => {
+    const [message, chat] = await Promise.all([tx.get(messageRef), tx.get(chatRef)]);
+    if (message.exists()) return; // A previous attempt committed both writes.
+    if (!chat.exists()) throw new Error('Chat not found');
+    const participants: string[] = chat.data().participants;
+    const unread: Record<string, ReturnType<typeof increment>> = {};
+    // Use persisted participants, never caller-supplied recipients.
+    participants.filter((uid) => uid !== senderId).forEach((uid) => { unread[`unreadCounts.${uid}`] = increment(1); });
+    tx.set(messageRef, { senderId, text: text.trim(), sentAt: serverTimestamp(), clientId });
+    tx.update(chatRef, { lastMessage: { text: text.trim(), senderId, messageId: clientId, sentAt: serverTimestamp() }, updatedAt: serverTimestamp(), ...unread });
   });
 }
 
@@ -294,10 +297,10 @@ export function subscribeToGroupMessages(
   return onSnapshot(
     query(
       collection(db, 'groups', groupId, 'messages'),
-      orderBy('sentAt', 'asc'),
+      orderBy('sentAt', 'desc'),
       limit(msgLimit),
     ),
-    (snap) => callback(snap.docs.map((d) => docToGroupMessage(d.id, d.data()))),
+    (snap) => callback(snap.docs.map((d) => docToGroupMessage(d.id, d.data())).reverse()),
   );
 }
 
@@ -309,30 +312,17 @@ export async function sendGroupMessage(
   clientId: string,
   type: 'user' | 'system' = 'user',
 ): Promise<void> {
-  await setDoc(doc(db, 'groups', groupId, 'messages', clientId), {
-    senderId,
-    senderName,
-    text: text.trim(),
-    type,
-    sentAt: serverTimestamp(),
-    clientId,
-  });
-
-  const unreadIncrements: Record<string, ReturnType<typeof increment>> = {};
-  const groupSnap = await getDoc(doc(db, 'groups', groupId));
-  if (groupSnap.exists()) {
-    const members: string[] = groupSnap.data().members ?? [];
-    members
-      .filter((m) => m !== senderId)
-      .forEach((uid) => {
-        unreadIncrements[`unreadCounts.${uid}`] = increment(1);
-      });
-  }
-
-  await updateDoc(doc(db, 'groups', groupId), {
-    lastMessage: { text: text.trim(), senderId, senderName, sentAt: Timestamp.now() },
-    updatedAt: serverTimestamp(),
-    ...unreadIncrements,
+  const messageRef = doc(db, 'groups', groupId, 'messages', clientId);
+  const groupRef = doc(db, 'groups', groupId);
+  await runTransaction(db, async (tx) => {
+    const [message, group] = await Promise.all([tx.get(messageRef), tx.get(groupRef)]);
+    if (message.exists()) return;
+    if (!group.exists()) throw new Error('Group not found');
+    const unread: Record<string, ReturnType<typeof increment>> = {};
+    const members: string[] = group.data().members;
+    members.filter((uid) => uid !== senderId).forEach((uid) => { unread[`unreadCounts.${uid}`] = increment(1); });
+    tx.set(messageRef, { senderId, senderName, text: text.trim(), type, sentAt: serverTimestamp(), clientId });
+    tx.update(groupRef, { lastMessage: { text: text.trim(), senderId, senderName, sentAt: Timestamp.now() }, updatedAt: serverTimestamp(), ...unread });
   });
 }
 

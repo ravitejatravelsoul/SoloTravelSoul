@@ -111,7 +111,7 @@ export function useAuth() {
 
   // Safe 3-step account deletion:
   //   1. reauthenticate  — verifies password; throws before any data is touched if wrong
-  //   2. deleteAllUserData — wipes Firestore data; best-effort, never blocks deletion
+  //   2. deleteAllUserData — cleanup must succeed before the Auth identity is removed
   //   3. deleteAuthUser  — removes the Firebase Auth account
   // onAuthStateChanged fires null after step 3 and root layout redirects to login.
   const deleteAccount = useCallback(
@@ -121,7 +121,7 @@ export function useAuth() {
       if (!uid) { setLoading(false); return false; }
       try {
         await reauthenticate(password);
-        await deleteAllUserData(uid).catch(() => {});
+        await deleteAllUserData(uid);
         await deleteAuthUser();
         return true;
       } catch (err: unknown) {

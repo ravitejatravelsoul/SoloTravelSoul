@@ -8,6 +8,7 @@ export interface SyncStatus {
 }
 
 interface TripState {
+  reset: () => void;
   trips: PlannedTrip[];
   activeTrip: PlannedTrip | null;
   itinerary: ItineraryDay[];
@@ -43,6 +44,9 @@ interface TripState {
 }
 
 export const useTripStore = create<TripState>((set, get) => ({
+  reset: () => set({ trips: [], activeTrip: null, itinerary: [], currentItineraryTripId: null,
+    checklist: [], checklistTripId: null, loading: false, pendingOpsCount: 0,
+    syncStatus: { syncing: false, hasFailed: false, lastSyncedAt: null } }),
   trips: [],
   activeTrip: null,
   itinerary: [],

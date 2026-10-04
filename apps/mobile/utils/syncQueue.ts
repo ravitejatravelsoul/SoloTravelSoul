@@ -5,6 +5,7 @@ import {
   upsertItineraryDay,
 } from '@solotravelsoul/firebase';
 import type { ChecklistItem, ItineraryDay } from '@solotravelsoul/shared';
+import { withQueueLock } from './queueLock';
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -23,27 +24,21 @@ export interface QueueEntry {
 
 export type SyncResult = { succeeded: number; failed: number };
 
-const MAX_RETRIES = 3;
+const drains = new Map<string, Promise<SyncResult>>();
 
 // ── Storage helpers ───────────────────────────────────────────────────
 
 const queueKey = (uid: string) => `@sts:queue:${uid}`;
 
 async function load(uid: string): Promise<QueueEntry[]> {
-  try {
-    const raw = await AsyncStorage.getItem(queueKey(uid));
-    return raw ? (JSON.parse(raw) as QueueEntry[]) : [];
-  } catch {
-    return [];
-  }
+  const raw = await AsyncStorage.getItem(queueKey(uid));
+  const entries = raw ? JSON.parse(raw) : [];
+  if (!Array.isArray(entries)) throw new Error('Invalid offline queue');
+  return entries as QueueEntry[];
 }
 
 async function save(uid: string, queue: QueueEntry[]): Promise<void> {
-  try {
-    await AsyncStorage.setItem(queueKey(uid), JSON.stringify(queue));
-  } catch {
-    // silently skip — worst case: op is retried on next launch
-  }
+  await AsyncStorage.setItem(queueKey(uid), JSON.stringify(queue));
 }
 
 // ── Public API ────────────────────────────────────────────────────────
@@ -53,58 +48,69 @@ export async function getQueueSize(uid: string): Promise<number> {
 }
 
 export async function enqueueOp(uid: string, op: QueuedOp): Promise<void> {
-  const queue = await load(uid);
+  await withQueueLock(queueKey(uid), async () => {
+    const queue = await load(uid);
 
-  // Coalesce itinerary.day ops — replace any existing pending entry for the same dayId
-  // so that only the latest full-day snapshot is kept.
-  const filtered =
-    op.type === 'itinerary.day'
-      ? queue.filter(
-          (e) =>
-            !(e.op.type === 'itinerary.day' &&
-              (e.op as { dayId: string }).dayId === op.dayId)
-        )
-      : queue;
+    // Coalesce itinerary.day ops — replace any existing pending entry for the same dayId
+    // so that only the latest full-day snapshot is kept.
+    const filtered =
+      op.type === 'itinerary.day'
+        ? queue.filter(
+            (e) =>
+              !(e.op.type === 'itinerary.day' &&
+                e.op.tripId === op.tripId &&
+                (e.op as { dayId: string }).dayId === op.dayId)
+          )
+        : queue;
 
-  filtered.push({
-    id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    op,
-    createdAt: Date.now(),
-    retries: 0,
+    filtered.push({
+      id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      op,
+      createdAt: Date.now(),
+      retries: 0,
   });
 
   await save(uid, filtered);
+  });
 }
 
 export async function processQueue(uid: string): Promise<SyncResult> {
-  const queue = await load(uid);
+  const existing = drains.get(uid);
+  if (existing) return existing;
+  const drain = drainQueue(uid);
+  drains.set(uid, drain);
+  try { return await drain; }
+  finally { if (drains.get(uid) === drain) drains.delete(uid); }
+}
+
+async function drainQueue(uid: string): Promise<SyncResult> {
+  const queue = await withQueueLock(queueKey(uid), () => load(uid));
   if (queue.length === 0) return { succeeded: 0, failed: 0 };
 
-  const remaining: QueueEntry[] = [];
   let succeeded = 0;
   let failed = 0;
 
   for (const entry of queue) {
     try {
       await applyOp(uid, entry.op);
+      await withQueueLock(queueKey(uid), async () => {
+        const current = await load(uid);
+        await save(uid, current.filter((e) => e.id !== entry.id));
+      });
       succeeded++;
     } catch (err) {
       if (isNetworkError(err)) {
         // Still offline — stop processing and keep everything remaining
-        remaining.push(entry, ...queue.slice(queue.indexOf(entry) + 1));
         break;
       }
-      if (entry.retries >= MAX_RETRIES) {
-        // Exceeded retries — drop and count as failed
-        failed++;
-      } else {
-        remaining.push({ ...entry, retries: entry.retries + 1 });
-        failed++;
-      }
+      await withQueueLock(queueKey(uid), async () => {
+        const current = await load(uid);
+        await save(uid, current.map((e) => e.id === entry.id ? { ...e, retries: e.retries + 1 } : e));
+      });
+      failed++;
     }
   }
 
-  await save(uid, remaining);
   return { succeeded, failed };
 }
 

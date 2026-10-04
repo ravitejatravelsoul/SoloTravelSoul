@@ -33,6 +33,7 @@ export function useTrips() {
 
     // Hydrate from cache immediately for instant cold-start display
     getCachedTrips(uid).then((cached) => {
+      if (useAuthStore.getState().user?.uid !== uid) return;
       if (cached && cached.length > 0 && useTripStore.getState().trips.length === 0) {
         setTrips(cached);
       }
@@ -40,6 +41,7 @@ export function useTrips() {
 
     setLoading(true);
     const unsub = subscribeToTrips(uid, async (data) => {
+      if (useAuthStore.getState().user?.uid !== uid) return;
       setTrips(data);
       setLoading(false);
       // Keep cache fresh so next cold-start is instant

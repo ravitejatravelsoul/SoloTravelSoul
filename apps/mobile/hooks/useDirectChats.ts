@@ -28,11 +28,13 @@ export function useDirectChats() {
     setLoadingChats(true);
 
     const unsubDM = subscribeToDirectChats(uid, (chats) => {
+      if (useAuthStore.getState().user?.uid !== uid) return;
       setDirectChats(chats);
       setLoadingChats(false);
     });
 
     const unsubGroups = subscribeToGroups(uid, (grps) => {
+      if (useAuthStore.getState().user?.uid !== uid) return;
       setGroups(grps);
     });
 

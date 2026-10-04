@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { DirectChat, TravelGroup } from '@solotravelsoul/shared';
 
 interface ChatState {
+  reset: () => void;
   directChats: DirectChat[];
   groups: TravelGroup[];
   loadingChats: boolean;
@@ -12,6 +13,7 @@ interface ChatState {
 }
 
 export const useChatStore = create<ChatState>((set) => ({
+  reset: () => set({ directChats: [], groups: [], loadingChats: false }),
   directChats: [],
   groups: [],
   loadingChats: false,

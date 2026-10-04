@@ -4,7 +4,8 @@ import { useShallow } from 'zustand/react/shallow';
 import { useNetworkState } from './useNetworkState';
 import { useTripStore } from '@/stores/tripStore';
 import { processQueue, getQueueSize } from '@/utils/syncQueue';
-import { processChatQueue } from '@/utils/chatQueue';
+import { processChatQueue, getChatQueueSize } from '@/utils/chatQueue';
+import { useAuthStore } from '@/stores/authStore';
 import { getLatestSyncTime, setLastSync } from '@/utils/offlineCache';
 
 export interface SyncEngineState {
@@ -16,7 +17,11 @@ export interface SyncEngineState {
 
 // Module-level so multiple mounted instances (app layout + trip detail) never
 // process the queue concurrently — that would double-send queued DMs.
-let syncInFlight = false;
+const syncingUsers = new Set<string>();
+const pendingCount = async (uid: string) => {
+  const counts = await Promise.all([getQueueSize(uid), getChatQueueSize(uid)]);
+  return counts[0] + counts[1];
+};
 
 export function useSyncEngine(uid: string | undefined): SyncEngineState & {
   sync: () => Promise<void>;
@@ -36,21 +41,25 @@ export function useSyncEngine(uid: string | undefined): SyncEngineState & {
 
   const refreshPending = useCallback(async () => {
     if (!uid) return;
-    const count = await getQueueSize(uid);
+    const count = await pendingCount(uid);
+    if (useAuthStore.getState().user?.uid !== uid) return;
     setPendingOpsCount(count);
     const lastSyncedAt = await getLatestSyncTime(uid);
+    if (useAuthStore.getState().user?.uid !== uid) return;
     setSyncStatus({ lastSyncedAt });
   }, [uid, setPendingOpsCount, setSyncStatus]);
 
   /** Called by hooks immediately after they enqueue an op — updates the badge without AsyncStorage round-trip delay. */
   const notifyEnqueued = useCallback(() => {
     if (!uid) return;
-    getQueueSize(uid).then((n) => setPendingOpsCount(n));
+    pendingCount(uid).then((n) => {
+      if (useAuthStore.getState().user?.uid === uid) setPendingOpsCount(n);
+    });
   }, [uid, setPendingOpsCount]);
 
   const sync = useCallback(async () => {
-    if (!uid || !isConnected || syncInFlight) return;
-    syncInFlight = true;
+    if (!uid || useAuthStore.getState().user?.uid !== uid || !isConnected || syncingUsers.has(uid)) return;
+    syncingUsers.add(uid);
     setSyncStatus({ syncing: true, hasFailed: false });
     try {
       const [result, chatResult] = await Promise.all([
@@ -60,8 +69,9 @@ export function useSyncEngine(uid: string | undefined): SyncEngineState & {
       if (result.succeeded > 0 || chatResult.succeeded > 0) {
         await setLastSync(uid, 'queue');
       }
-      const count = await getQueueSize(uid);
+      const count = await pendingCount(uid);
       const lastSyncedAt = await getLatestSyncTime(uid);
+      if (useAuthStore.getState().user?.uid !== uid) return;
       setPendingOpsCount(count);
       setSyncStatus({
         syncing: false,
@@ -69,9 +79,9 @@ export function useSyncEngine(uid: string | undefined): SyncEngineState & {
         lastSyncedAt,
       });
     } catch {
-      setSyncStatus({ syncing: false, hasFailed: true });
+      if (useAuthStore.getState().user?.uid === uid) setSyncStatus({ syncing: false, hasFailed: true });
     } finally {
-      syncInFlight = false;
+      syncingUsers.delete(uid);
     }
   }, [uid, isConnected, setSyncStatus, setPendingOpsCount]);
 
@@ -87,7 +97,7 @@ export function useSyncEngine(uid: string | undefined): SyncEngineState & {
   useEffect(() => {
     const sub = AppState.addEventListener('change', async (status: AppStateStatus) => {
       if (status !== 'active' || !uid || !isConnected) return;
-      const count = await getQueueSize(uid);
+      const count = await pendingCount(uid);
       if (count > 0) sync();
     });
     return () => sub.remove();

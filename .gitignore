@@ -64,3 +64,7 @@ xcuserdata/
 
 # ── TypeScript ────────────────────────────────────────────────────────
 *.tsbuildinfo
+
+# Firebase emulator logs
+firebase-debug.log*
+firestore-debug.log*

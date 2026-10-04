@@ -7,6 +7,7 @@ import {
 import { enqueueChatOp } from '@/utils/chatQueue';
 import { useAuthStore } from '@/stores/authStore';
 import { useNetworkState } from '@/hooks/useNetworkState';
+import { useSyncEngine } from '@/hooks/useSyncEngine';
 import type { DirectMessage } from '@solotravelsoul/shared';
 
 function generateClientId(): string {
@@ -22,17 +23,21 @@ function generateClientId(): string {
 export function useMessages(chatId: string, otherUids: string[]) {
   const uid = useAuthStore((s) => s.user?.uid);
   const { isConnected } = useNetworkState();
+  const { notifyEnqueued } = useSyncEngine(uid);
 
   const [confirmed, setConfirmed] = useState<DirectMessage[]>([]);
   const [pending, setPending] = useState<DirectMessage[]>([]);
 
   // Subscribe to Firestore snapshot
   useEffect(() => {
+    setConfirmed([]);
+    setPending([]);
     if (!chatId || !uid) return;
 
     markDirectChatRead(chatId, uid).catch(() => {});
 
     const unsub = subscribeToDirectMessages(chatId, (msgs) => {
+      if (useAuthStore.getState().user?.uid !== uid) return;
       setConfirmed(msgs);
       // Drop any pending messages that now appear in the snapshot
       const confirmedIds = new Set(msgs.map((m) => m.clientId));
@@ -75,6 +80,7 @@ export function useMessages(chatId: string, otherUids: string[]) {
           clientId,
           otherUids,
         });
+        notifyEnqueued();
         return;
       }
 
@@ -90,9 +96,10 @@ export function useMessages(chatId: string, otherUids: string[]) {
           clientId,
           otherUids,
         });
+        notifyEnqueued();
       }
     },
-    [uid, chatId, isConnected, otherUids],
+    [uid, chatId, isConnected, otherUids, notifyEnqueued],
   );
 
   return { messages, sendMessage };

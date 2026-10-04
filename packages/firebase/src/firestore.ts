@@ -455,7 +455,7 @@ export async function upsertCachedPlace(place: CachedPlace): Promise<void> {
 // Deletes all Firestore data owned by a user before their auth account is removed.
 // Subcollections (itinerary, checklist, reminders) must be deleted explicitly â€”
 // deleting a parent doc in Firestore does NOT cascade to subcollections.
-// Group removal is best-effort: failures are swallowed so auth deletion still proceeds.
+// Propagate cleanup failures so the caller retains the Auth identity for retry.
 export async function deleteAllUserData(uid: string): Promise<void> {
   // 1. Delete all trips and their subcollections
   const tripsSnap = await getDocs(collection(db, 'users', uid, 'trips'));
@@ -478,55 +478,63 @@ export async function deleteAllUserData(uid: string): Promise<void> {
   const savedSnap = await getDocs(collection(db, 'users', uid, 'saved_places'));
   await Promise.all(savedSnap.docs.map((d) => deleteDoc(d.ref)));
 
+  // Remove the current exact-address alias, which otherwise exposes stale identity data.
+  const profile = await getDoc(doc(db, 'users', uid));
+  const email = profile.data()?.email as string | undefined;
+  if (email) {
+    const alias = email.trim().toLowerCase().replace(/%/g, '%25').replace(/\//g, '%2F');
+    await deleteDoc(doc(db, 'userLookupByEmail', alias));
+  }
+
   // 3. Delete user profile document
-  await deleteDoc(doc(db, 'users', uid)).catch(() => {});
+  await deleteDoc(doc(db, 'users', uid));
 
   // 4. Delete userLookup entry
-  await deleteDoc(doc(db, 'userLookup', uid)).catch(() => {});
+  await deleteDoc(doc(db, 'userLookup', uid));
 
   // 5. Best-effort: remove from any groups (non-fatal â€” group doc not owned by user)
   const groupsSnap = await getDocs(
     query(collection(db, 'groups'), where('members', 'array-contains', uid))
-  ).catch(() => null);
+  );
   if (groupsSnap) {
     await Promise.all(
       groupsSnap.docs.map((d) =>
-        updateDoc(d.ref, { members: arrayRemove(uid) }).catch(() => {})
+        updateDoc(d.ref, { members: arrayRemove(uid) })
       )
     );
   }
 
   // 6. Community data cleanup
-  await deleteDoc(doc(db, 'publicProfiles', uid)).catch(() => {});
-  await deleteDoc(doc(db, 'nearbyTravelers', uid)).catch(() => {});
+  await deleteDoc(doc(db, 'publicProfiles', uid));
+  await deleteDoc(doc(db, 'nearbyTravelers', uid));
 
   const pendingTripReqs = await getDocs(
     query(collection(db, 'tripJoinRequests'), where('requestorUid', '==', uid), where('status', '==', 'pending'))
-  ).catch(() => null);
+  );
   if (pendingTripReqs) {
     await Promise.all(
       pendingTripReqs.docs.map((d) =>
-        updateDoc(d.ref, { status: 'cancelled', updatedAt: serverTimestamp() }).catch(() => {})
+        updateDoc(d.ref, { status: 'cancelled', updatedAt: serverTimestamp() })
       )
     );
   }
 
   const pendingGroupReqs = await getDocs(
     query(collection(db, 'groupJoinRequests'), where('requestorUid', '==', uid), where('status', '==', 'pending'))
-  ).catch(() => null);
+  );
   if (pendingGroupReqs) {
     await Promise.all(
       pendingGroupReqs.docs.map((d) =>
-        updateDoc(d.ref, { status: 'cancelled', updatedAt: serverTimestamp() }).catch(() => {})
+        updateDoc(d.ref, { status: 'cancelled', updatedAt: serverTimestamp() })
       )
     );
   }
 
   const feedItems = await getDocs(
     query(collection(db, 'activityFeed'), where('actorUid', '==', uid))
-  ).catch(() => null);
+  );
   if (feedItems) {
-    await Promise.all(feedItems.docs.map((d) => deleteDoc(d.ref).catch(() => {})));
+    await Promise.all(feedItems.docs.map((d) => deleteDoc(d.ref)));
   }
 }
 
@@ -598,8 +606,9 @@ export async function upsertPublicProfile(
     interests: profile.interests ?? [],
     tripCount: profile.tripCount ?? 0,
     memberSince: profile.createdAt ? dateToTs(profile.createdAt) : serverTimestamp(),
+    profileVisibility: profile.profileVisibility ?? 'private',
     updatedAt: serverTimestamp(),
-  });
+  }, { merge: true });
 
   await batch.commit();
 }
@@ -617,10 +626,9 @@ export async function updateProfileVisibility(
     profileVisibility: visibility,
     updatedAt: serverTimestamp(),
   });
-  if (visibility === 'public') {
-    await upsertPublicProfile(uid, { ...profile, profileVisibility: 'public' });
-  } else {
-    await deletePublicProfile(uid);
+  // Keep relationship counters when visibility changes. Rules hide private profiles.
+  await upsertPublicProfile(uid, { ...profile, profileVisibility: visibility });
+  if (visibility !== 'public') {
     // Going private must also remove any stale nearbyTravelers opt-in doc —
     // otherwise the user keeps showing up in other travelers' Nearby list.
     await deleteNearbyTraveler(uid);

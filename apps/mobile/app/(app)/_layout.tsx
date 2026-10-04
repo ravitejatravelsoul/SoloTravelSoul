@@ -1,4 +1,4 @@
-import { Tabs } from 'expo-router';
+import { Tabs, Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View, StyleSheet } from 'react-native';
 import { useNotifications } from '@/hooks/useNotifications';
@@ -44,6 +44,7 @@ export default function AppLayout() {
   const { unreadCount } = useNotifications();
   const { isConnected } = useNetworkState();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
+  const initialized = useAuthStore((s) => s.initialized);
   const haptics = useHaptics();
   const { loadBlockList } = useBlockStore();
   // Subscribes and keeps chatStore current for badge counts
@@ -58,6 +59,9 @@ export default function AppLayout() {
   const directChats = useChatStore((s) => s.directChats);
   const groups = useChatStore((s) => s.groups);
   const chatUnread = totalChatUnread(uid, directChats, groups);
+
+  if (!initialized) return null;
+  if (!uid) return <Redirect href="/(auth)/login" />;
 
   return (
     <View style={styles.root}>

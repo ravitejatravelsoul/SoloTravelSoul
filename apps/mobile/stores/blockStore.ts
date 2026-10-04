@@ -25,7 +25,7 @@ export const useBlockStore = create<BlockState>((set, get) => ({
     if (prev) prev();
 
     const unsub = subscribeBlockList(uid, (uids) => {
-      set({ blockedUids: uids });
+      if (_currentUid === uid) set({ blockedUids: uids });
     });
 
     set({ _unsubscribe: unsub });

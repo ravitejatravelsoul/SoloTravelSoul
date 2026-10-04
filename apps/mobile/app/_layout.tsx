@@ -4,7 +4,11 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useShallow } from 'zustand/react/shallow';
-import { subscribeToAuthState, getUserProfile, isFirebaseConfigured } from '@solotravelsoul/firebase';
+import { subscribeToAuthState, getUserProfile, isFirebaseConfigured, upsertUserLookup } from '@solotravelsoul/firebase';
+import { getUserInitials } from '@solotravelsoul/shared';
+import { useTripStore } from '@/stores/tripStore';
+import { useChatStore } from '@/stores/chatStore';
+import { useBlockStore } from '@/stores/blockStore';
 import { useAuthStore } from '@/stores/authStore';
 import { ToastContainer } from '@/components/ui';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -32,11 +36,21 @@ export default function RootLayout() {
       return;
     }
 
+    let active = true;
+    let version = 0;
     const unsub = subscribeToAuthState(async (user) => {
+      if (!active) return;
+      const currentVersion = ++version;
+      if (useAuthStore.getState().user?.uid !== user?.uid) {
+        useTripStore.getState().reset();
+        useChatStore.getState().reset();
+        useBlockStore.getState().reset();
+      }
       setUser(user);
       if (user) {
         try {
           const profile = await getUserProfile(user.uid);
+          if (!active || version !== currentVersion) return;
           if (__DEV__) {
             const photoInfo = profile?.photoURL
               ? 'set → ' + profile.photoURL.slice(0, 60)
@@ -44,18 +58,24 @@ export default function RootLayout() {
             console.log('[ProfileLoad] uid:', user.uid.slice(0, 8), '| photoURL:', photoInfo);
           }
           setProfile(profile);
+          // Existing users populate the exact-email alias on their next sign-in.
+          if (profile && user.email) {
+            void upsertUserLookup(user.uid, profile.name, user.email, getUserInitials(profile.name), profile.photoURL).catch(() => {});
+          }
         } catch {
           // Firestore offline at startup — user is still authenticated.
           // Profile will be null until next foreground event or app restart.
+          if (!active || version !== currentVersion) return;
           setProfile(null);
         }
       } else {
         setProfile(null);
       }
+      if (!active || version !== currentVersion) return;
       setInitialized(true);
       SplashScreen.hideAsync();
     });
-    return unsub;
+    return () => { active = false; version++; unsub(); };
   }, []);
 
   return (

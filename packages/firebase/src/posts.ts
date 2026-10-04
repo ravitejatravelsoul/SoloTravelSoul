@@ -21,6 +21,7 @@ import {
   type QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import { db } from './firestore';
+import { auth } from './auth';
 import type {
   TravelPost,
   PostLike,
@@ -149,13 +150,14 @@ export function subscribePostsByAuthor(
   pageLimit: number,
   callback: (posts: TravelPost[], last: QueryDocumentSnapshot | null) => void
 ): () => void {
-  const q = query(
+  let q = query(
     collection(db, 'travelPosts'),
     where('authorId', '==', authorId),
     where('isArchived', '==', false),
     orderBy('createdAt', 'desc'),
     limit(pageLimit)
   );
+  if (authorId !== auth.currentUser?.uid) q = query(q, where('visibility', '==', 'public'));
   return onSnapshot(q, (snap) => {
     const posts = snap.docs.map((d) => postFromDoc(d.id, d.data()));
     callback(posts, (snap.docs[snap.docs.length - 1] ?? null) as QueryDocumentSnapshot | null);
@@ -264,6 +266,7 @@ export async function getPostsFromUsers(
           query(
             collection(db, 'travelPosts'),
             where('authorId', 'in', chunk),
+            where('visibility', '==', 'public'),
             where('isArchived', '==', false),
             orderBy('createdAt', 'desc'),
             limit(pageLimit)
@@ -294,7 +297,7 @@ export async function likePost(postId: string, userId: string): Promise<void> {
     const likeRef = doc(db, 'postLikes', id);
     const likeSnap = await tx.get(likeRef);
     if (likeSnap.exists()) return; // already liked
-    tx.set(likeRef, { postId, userId, createdAt: serverTimestamp() });
+    tx.set(likeRef, { postId, userId, targetType: 'post', createdAt: serverTimestamp() });
     tx.update(doc(db, 'travelPosts', postId), { likeCount: increment(1) });
   });
 }
@@ -354,6 +357,7 @@ export async function addComment(
   // Increment post commentCount
   batch.update(doc(db, 'travelPosts', comment.postId), {
     commentCount: increment(1),
+    lastCommentId: ref.id,
     updatedAt: serverTimestamp(),
   });
 
@@ -361,6 +365,7 @@ export async function addComment(
   if (comment.parentCommentId) {
     batch.update(doc(db, 'postComments', comment.parentCommentId), {
       replyCount: increment(1),
+      lastReplyId: ref.id,
     });
   }
 
@@ -376,26 +381,15 @@ export async function editComment(commentId: string, text: string): Promise<void
 }
 
 export async function deleteComment(commentId: string, postId: string, parentCommentId: string | null): Promise<void> {
-  const batch = writeBatch(db);
-
-  batch.update(doc(db, 'postComments', commentId), {
-    isDeleted: true,
-    text: '',
-    updatedAt: serverTimestamp(),
+  const commentRef = doc(db, 'postComments', commentId);
+  await runTransaction(db, async (tx) => {
+    const existing = await tx.get(commentRef);
+    if (!existing.exists() || existing.data().isDeleted) return;
+    if (existing.data().postId !== postId || existing.data().parentCommentId !== parentCommentId) throw new Error('Comment target mismatch');
+    tx.update(commentRef, { isDeleted: true, text: '', updatedAt: serverTimestamp() });
+    tx.update(doc(db, 'travelPosts', postId), { commentCount: increment(-1), lastCommentId: commentId, updatedAt: serverTimestamp() });
+    if (parentCommentId) tx.update(doc(db, 'postComments', parentCommentId), { replyCount: increment(-1), lastReplyId: commentId });
   });
-
-  batch.update(doc(db, 'travelPosts', postId), {
-    commentCount: increment(-1),
-    updatedAt: serverTimestamp(),
-  });
-
-  if (parentCommentId) {
-    batch.update(doc(db, 'postComments', parentCommentId), {
-      replyCount: increment(-1),
-    });
-  }
-
-  await batch.commit();
 }
 
 export function subscribeComments(
@@ -423,19 +417,21 @@ export function subscribeReplies(
   parentCommentId: string,
   callback: (replies: PostComment[]) => void
 ): () => void {
-  const q = query(
-    collection(db, 'postComments'),
-    where('parentCommentId', '==', parentCommentId),
-    orderBy('createdAt', 'asc'),
-    limit(50)
-  );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => commentFromDoc(d.id, d.data())));
-  }, (err) => {
-    if (err.code !== 'permission-denied') {
-      console.error('[Posts] subscribeReplies error:', err.code, err.message);
-    }
-  });
+  let active = true;
+  let unsubscribe: (() => void) | undefined;
+  // Include postId so rules can prove every result belongs to a readable post.
+  getDoc(doc(db, 'postComments', parentCommentId)).then((parent) => {
+    if (!active) return;
+    if (!parent.exists()) { callback([]); return; }
+    const q = query(collection(db, 'postComments'),
+      where('postId', '==', parent.data().postId),
+      where('parentCommentId', '==', parentCommentId),
+      orderBy('createdAt', 'asc'), limit(50));
+    unsubscribe = onSnapshot(q,
+      (snap) => callback(snap.docs.map((d) => commentFromDoc(d.id, d.data()))),
+      () => callback([]));
+  }).catch(() => { if (active) callback([]); });
+  return () => { active = false; unsubscribe?.(); };
 }
 
 // ── Saved Posts ───────────────────────────────────────────────────────────────
@@ -454,24 +450,23 @@ export async function savePost(
   userId: string,
   collectionName = 'Saved'
 ): Promise<void> {
-  const id = savedPostId(userId, postId);
-  const batch = writeBatch(db);
-  batch.set(doc(db, 'savedPosts', id), {
-    postId,
-    userId,
-    collectionName,
-    savedAt: serverTimestamp(),
+  const savedRef = doc(db, 'savedPosts', savedPostId(userId, postId));
+  await runTransaction(db, async (tx) => {
+    const saved = await tx.get(savedRef);
+    if (saved.exists()) return;
+    tx.set(savedRef, { postId, userId, collectionName, savedAt: serverTimestamp() });
+    tx.update(doc(db, 'travelPosts', postId), { saveCount: increment(1) });
   });
-  batch.update(doc(db, 'travelPosts', postId), { saveCount: increment(1) });
-  await batch.commit();
 }
 
 export async function unsavePost(postId: string, userId: string): Promise<void> {
-  const id = savedPostId(userId, postId);
-  const batch = writeBatch(db);
-  batch.delete(doc(db, 'savedPosts', id));
-  batch.update(doc(db, 'travelPosts', postId), { saveCount: increment(-1) });
-  await batch.commit();
+  const savedRef = doc(db, 'savedPosts', savedPostId(userId, postId));
+  await runTransaction(db, async (tx) => {
+    const saved = await tx.get(savedRef);
+    if (!saved.exists()) return;
+    tx.delete(savedRef);
+    tx.update(doc(db, 'travelPosts', postId), { saveCount: increment(-1) });
+  });
 }
 
 export async function isSavedPost(postId: string, userId: string): Promise<boolean> {
@@ -590,13 +585,14 @@ export function subscribeJournalsByAuthor(
   pageLimit: number,
   callback: (journals: TravelJournal[], last: QueryDocumentSnapshot | null) => void
 ): () => void {
-  const q = query(
+  let q = query(
     collection(db, 'travelJournals'),
     where('authorId', '==', authorId),
     where('isArchived', '==', false),
     orderBy('createdAt', 'desc'),
     limit(pageLimit)
   );
+  if (authorId !== auth.currentUser?.uid) q = query(q, where('visibility', '==', 'public'));
   return onSnapshot(q, (snap) => {
     const journals = snap.docs.map((d) => journalFromDoc(d.id, d.data()));
     callback(journals, (snap.docs[snap.docs.length - 1] ?? null) as QueryDocumentSnapshot | null);
@@ -633,7 +629,7 @@ export async function likeJournal(journalId: string, userId: string): Promise<vo
     const likeRef = doc(db, 'postLikes', id);
     const likeSnap = await tx.get(likeRef);
     if (likeSnap.exists()) return;
-    tx.set(likeRef, { postId: journalId, userId, createdAt: serverTimestamp() });
+    tx.set(likeRef, { postId: journalId, userId, targetType: 'journal', createdAt: serverTimestamp() });
     tx.update(doc(db, 'travelJournals', journalId), { likeCount: increment(1) });
   });
 }
@@ -670,47 +666,29 @@ function followFromDoc(id: string, d: DocumentData): Follow {
 
 export async function followUser(followerId: string, followingId: string): Promise<void> {
   if (followerId === followingId) return;
-  const id = followId(followerId, followingId);
-  const batch = writeBatch(db);
-
-  batch.set(doc(db, 'follows', id), {
-    followerId,
-    followingId,
-    createdAt: serverTimestamp(),
+  const ownProfile = doc(db, 'publicProfiles', followerId);
+  await runTransaction(db, async (tx) => {
+    const own = await tx.get(ownProfile);
+    if (!own.exists()) tx.set(ownProfile, { uid: followerId, profileVisibility: 'private', followersCount: 0, followingCount: 0 });
   });
-
-  // Increment counts on publicProfiles (best-effort)
-  batch.update(doc(db, 'publicProfiles', followingId), {
-    followersCount: increment(1),
-  });
-  batch.update(doc(db, 'publicProfiles', followerId), {
-    followingCount: increment(1),
-  });
-
-  await batch.commit().catch(async () => {
-    // Fallback: just write the follow doc if profile updates fail
-    await setDoc(doc(db, 'follows', id), {
-      followerId,
-      followingId,
-      createdAt: serverTimestamp(),
-    });
+  const edge = doc(db, 'follows', followId(followerId, followingId));
+  await runTransaction(db, async (tx) => {
+    const existing = await tx.get(edge);
+    if (existing.exists()) return;
+    tx.set(edge, { followerId, followingId, createdAt: serverTimestamp() });
+    tx.update(doc(db, 'publicProfiles', followingId), { followersCount: increment(1) });
+    tx.update(doc(db, 'publicProfiles', followerId), { followingCount: increment(1), lastFollowingId: followingId });
   });
 }
 
 export async function unfollowUser(followerId: string, followingId: string): Promise<void> {
-  const id = followId(followerId, followingId);
-  const batch = writeBatch(db);
-
-  batch.delete(doc(db, 'follows', id));
-  batch.update(doc(db, 'publicProfiles', followingId), {
-    followersCount: increment(-1),
-  });
-  batch.update(doc(db, 'publicProfiles', followerId), {
-    followingCount: increment(-1),
-  });
-
-  await batch.commit().catch(async () => {
-    await deleteDoc(doc(db, 'follows', id));
+  const edge = doc(db, 'follows', followId(followerId, followingId));
+  await runTransaction(db, async (tx) => {
+    const existing = await tx.get(edge);
+    if (!existing.exists()) return;
+    tx.delete(edge);
+    tx.update(doc(db, 'publicProfiles', followingId), { followersCount: increment(-1) });
+    tx.update(doc(db, 'publicProfiles', followerId), { followingCount: increment(-1), lastFollowingId: followingId });
   });
 }
 

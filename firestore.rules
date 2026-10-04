@@ -3,15 +3,105 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Helpers ───────────────────────────────────────────────────────
-    // True when the update changes only the counter field `key`, by exactly
-    // +1 or -1, and never below zero (i.e. a single increment()).
-    function isCounterStep(key) {
+    // Ownership is enforced on relationship documents AND their atomic counter
+    // updates. A numeric +/-1 change by itself is not evidence of an action.
+    function unblocked(a, b) {
+      return a == b || (!exists(/databases/$(database)/documents/blocks/$(a)/blocked/$(b))
+        && !exists(/databases/$(database)/documents/blocks/$(b)/blocked/$(a)));
+    }
+    function visible(data) {
+      return request.auth != null && (data.authorId == request.auth.uid
+        || (data.get('visibility', 'private') == 'public' && !data.get('isArchived', false)));
+    }
+    function readablePost(id) {
+      return exists(/databases/$(database)/documents/travelPosts/$(id))
+        && visible(get(/databases/$(database)/documents/travelPosts/$(id)).data);
+    }
+    function likeKind(data) {
+      return data.get('targetType', exists(/databases/$(database)/documents/travelPosts/$(data.postId)) ? 'post' : 'journal');
+    }
+    function readableLike(data) {
+      return (likeKind(data) == 'post' && readablePost(data.postId))
+        || (likeKind(data) == 'journal'
+          && exists(/databases/$(database)/documents/travelJournals/$(data.postId))
+          && visible(get(/databases/$(database)/documents/travelJournals/$(data.postId)).data));
+    }
+    function counterStep(key, keys) {
       let next = request.resource.data.get(key, null);
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([key])
-        && next is int
-        && next >= 0
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys)
+        && next is int && next >= 0
         && (next - resource.data.get(key, 0)) in [1, -1];
+    }
+    function edgeTransition(path, delta) {
+      return (delta == 1 && !exists(path) && existsAfter(path))
+        || (delta == -1 && exists(path) && !existsAfter(path));
+    }
+    function linkedCounter(collectionName, id, key, delta) {
+      let path = /databases/$(database)/documents/$(collectionName)/$(id);
+      return exists(path) && existsAfter(path)
+        && getAfter(path).data.get(key, 0) == get(path).data.get(key, 0) + delta;
+    }
+    function likeCounter(id, kind) {
+      let edge = /databases/$(database)/documents/postLikes/$(id + '___' + request.auth.uid);
+      let delta = request.resource.data.get('likeCount', 0) - resource.data.get('likeCount', 0);
+      return counterStep('likeCount', ['likeCount']) && edgeTransition(edge, delta)
+        && ((delta == 1 && likeKind(getAfter(edge).data) == kind)
+          || (delta == -1 && likeKind(get(edge).data) == kind));
+    }
+    function saveCounter(id) {
+      let edge = /databases/$(database)/documents/savedPosts/$(request.auth.uid + '___' + id);
+      let delta = request.resource.data.get('saveCount', 0) - resource.data.get('saveCount', 0);
+      return counterStep('saveCount', ['saveCount']) && edgeTransition(edge, delta);
+    }
+    function followerCounter(uid) {
+      let edge = /databases/$(database)/documents/follows/$(request.auth.uid + '___' + uid);
+      let delta = request.resource.data.get('followersCount', 0) - resource.data.get('followersCount', 0);
+      return counterStep('followersCount', ['followersCount']) && edgeTransition(edge, delta);
+    }
+    function followingCounter(uid) {
+      let target = request.resource.data.get('lastFollowingId', '');
+      let edge = /databases/$(database)/documents/follows/$(uid + '___' + target);
+      let delta = request.resource.data.get('followingCount', 0) - resource.data.get('followingCount', 0);
+      return request.auth.uid == uid && target is string && target != uid
+        && counterStep('followingCount', ['followingCount', 'lastFollowingId']) && edgeTransition(edge, delta);
+    }
+    function commentTransition(id, postId, delta) {
+      let path = /databases/$(database)/documents/postComments/$(id);
+      let next = getAfter(path);
+      return next != null && next.data.authorId == request.auth.uid && next.data.postId == postId
+        && ((delta == 1 && !exists(path) && next.data.isDeleted == false)
+          || (delta == -1 && exists(path) && get(path).data.isDeleted == false && next.data.isDeleted == true));
+    }
+    function commentCounter(postId) {
+      let id = request.resource.data.get('lastCommentId', '');
+      let delta = request.resource.data.get('commentCount', 0) - resource.data.get('commentCount', 0);
+      return counterStep('commentCount', ['commentCount', 'lastCommentId', 'updatedAt'])
+        && request.resource.data.updatedAt == request.time && id is string
+        && commentTransition(id, postId, delta);
+    }
+    function replyCounter(parentId) {
+      let id = request.resource.data.get('lastReplyId', '');
+      let delta = request.resource.data.get('replyCount', 0) - resource.data.get('replyCount', 0);
+      return counterStep('replyCount', ['replyCount', 'lastReplyId']) && id is string
+        && commentTransition(id, resource.data.postId, delta)
+        && getAfter(/databases/$(database)/documents/postComments/$(id)).data.parentCommentId == parentId;
+    }
+    function postCommentLinked(id, postId, delta) {
+      return linkedCounter('travelPosts', postId, 'commentCount', delta)
+        && getAfter(/databases/$(database)/documents/travelPosts/$(postId)).data.lastCommentId == id;
+    }
+    function replyLinked(data, id, delta) {
+      let parent = data.get('parentCommentId', null);
+      return parent == null || (linkedCounter('postComments', parent, 'replyCount', delta)
+        && getAfter(/databases/$(database)/documents/postComments/$(parent)).data.lastReplyId == id
+        && get(/databases/$(database)/documents/postComments/$(parent)).data.postId == data.postId);
+    }
+    function followLinked(data, delta) {
+      return ((!exists(/databases/$(database)/documents/publicProfiles/$(data.followingId)) && delta == -1)
+          || linkedCounter('publicProfiles', data.followingId, 'followersCount', delta))
+        && ((!exists(/databases/$(database)/documents/publicProfiles/$(data.followerId)) && delta == -1)
+          || (linkedCounter('publicProfiles', data.followerId, 'followingCount', delta)
+            && getAfter(/databases/$(database)/documents/publicProfiles/$(data.followerId)).data.lastFollowingId == data.followingId));
     }
 
     // ── Default: deny everything ──────────────────────────────────────
@@ -77,13 +167,27 @@ service cloud.firestore {
     // Written by owner on profile create/update.
     // Any authenticated user can read for email-based user discovery.
     match /userLookup/{uid} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && request.auth.uid == uid;
       // Validate that the stored email matches the caller's verified auth token email.
       // Prevents a user from writing another user's email into their own lookup entry.
       allow create, update: if request.auth != null
         && request.auth.uid == uid
         && request.resource.data.email.lower() == request.auth.token.email.lower();
       allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Exact-address lookup: get is permitted, list is never permitted. IDs
+    // escape % and / consistently with emailLookupId in the client.
+    match /userLookupByEmail/{address} {
+      allow get: if request.auth != null && (resource == null || unblocked(request.auth.uid, resource.data.uid));
+      allow list: if false;
+      allow create, update: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email.lower()
+        && address == request.auth.token.email.lower().replace('%', '%25').replace('/', '%2F')
+        && (resource == null || resource.data.uid == request.auth.uid);
+      allow delete: if request.auth != null && (resource != null ? resource.data.uid == request.auth.uid
+        : address == request.auth.token.email.lower().replace('%', '%25').replace('/', '%2F'));
     }
 
     // ── Direct chats ─────────────────────────────────────────────────
@@ -95,12 +199,32 @@ service cloud.firestore {
         && (resource == null || request.auth.uid in resource.data.participants);
       allow create: if request.auth != null
         && request.auth.uid in request.resource.data.participants
-        && request.resource.data.participants.size() == 2;
-      // Participants can update metadata (lastMessage, unreadCounts).
-      // The participants array itself must not change after creation.
-      allow update: if request.auth != null
-        && request.auth.uid in resource.data.participants
-        && request.resource.data.participants == resource.data.participants;
+        && request.resource.data.participants.size() == 2
+        && request.resource.data.participants[0] != request.resource.data.participants[1]
+        && unblocked(request.resource.data.participants[0], request.resource.data.participants[1]);
+      // A preview must point to the message created in this same transaction.
+      function sentMessage() {
+        let id = request.resource.data.lastMessage.messageId;
+        let message = /databases/$(database)/documents/direct_chats/$(chatId)/messages/$(id);
+        let other = resource.data.participants[0] == request.auth.uid
+          ? resource.data.participants[1] : resource.data.participants[0];
+        return unblocked(request.auth.uid, other) && !exists(message) && existsAfter(message)
+          && getAfter(message).data.senderId == request.auth.uid
+          && request.resource.data.lastMessage.senderId == request.auth.uid
+          && request.resource.data.lastMessage.text == getAfter(message).data.text
+          && request.resource.data.lastMessage.sentAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessage', 'updatedAt', 'unreadCounts'])
+          && request.resource.data.unreadCounts.diff(resource.data.unreadCounts).affectedKeys().hasOnly([other])
+          && request.resource.data.unreadCounts.get(other, 0) == resource.data.unreadCounts.get(other, 0) + 1;
+      }
+      function markRead() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unreadCounts'])
+          && request.resource.data.unreadCounts.diff(resource.data.unreadCounts).affectedKeys().hasOnly([request.auth.uid])
+          && request.resource.data.unreadCounts.get(request.auth.uid, -1) == 0;
+      }
+      allow update: if request.auth != null && request.auth.uid in resource.data.participants
+        && (markRead() || sentMessage());
 
       match /messages/{messageId} {
         allow read: if request.auth != null
@@ -109,10 +233,14 @@ service cloud.firestore {
         allow create: if request.auth != null
           && request.auth.uid in
              get(/databases/$(database)/documents/direct_chats/$(chatId)).data.participants
+          && unblocked(get(/databases/$(database)/documents/direct_chats/$(chatId)).data.participants[0],
+            get(/databases/$(database)/documents/direct_chats/$(chatId)).data.participants[1])
           && request.resource.data.senderId == request.auth.uid
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 1000;
+          && request.resource.data.text.size() <= 1000
+          && request.resource.data.sentAt == request.time
+          && getAfter(/databases/$(database)/documents/direct_chats/$(chatId)).data.lastMessage.messageId == messageId;
         // Messages are immutable once sent.
         allow update, delete: if false;
       }
@@ -168,16 +296,15 @@ service cloud.firestore {
 
     // ── Community: Public Profiles ────────────────────────────────────
     match /publicProfiles/{uid} {
-      allow read: if request.auth != null;
-      allow create, delete: if request.auth != null && request.auth.uid == uid;
-      // Owner can update any field. Any other authenticated user may only
-      // step follower/following counts by ±1 (follow/unfollow actions on this profile).
-      allow update: if request.auth != null
-        && (
-          request.auth.uid == uid
-          || isCounterStep('followersCount')
-          || isCounterStep('followingCount')
-        );
+      allow get: if request.auth != null && (request.auth.uid == uid
+        || (resource != null && resource.data.get('profileVisibility', 'public') == 'public' && unblocked(request.auth.uid, uid)));
+      allow list: if request.auth != null && resource.data.get('profileVisibility', 'public') == 'public';
+      allow create: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.get('followersCount', 0) == 0 && request.resource.data.get('followingCount', 0) == 0;
+      allow delete: if request.auth != null && request.auth.uid == uid;
+      allow update: if request.auth != null && (
+        (request.auth.uid == uid && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['followersCount', 'followingCount']))
+        || followerCounter(uid) || followingCounter(uid));
     }
 
     // ── Community: Public Trips ───────────────────────────────────────
@@ -332,78 +459,84 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // ── Phase 2: Travel Posts ─────────────────────────────────────────
+    // ── Phase 2: Travel Posts and Journals ────────────────────────────
     match /travelPosts/{postId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null
-        && request.resource.data.authorId == request.auth.uid;
-      // Author can update any field. Any other authenticated user may only
-      // step one aggregate counter by ±1 (like/comment/save actions on this post).
-      allow update: if request.auth != null
-        && (
-          resource.data.authorId == request.auth.uid
-          || isCounterStep('likeCount')
-          || isCounterStep('commentCount')
-          || isCounterStep('saveCount')
-        );
-      allow delete: if request.auth != null
-        && resource.data.authorId == request.auth.uid;
+      allow read: if visible(resource.data);
+      allow create: if request.auth != null && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.likeCount == 0 && request.resource.data.commentCount == 0 && request.resource.data.saveCount == 0;
+      allow update: if request.auth != null && (
+        (resource.data.authorId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['caption', 'body', 'location', 'country', 'hashtags', 'visibility', 'images', 'updatedAt', 'isArchived']))
+        || likeCounter(postId, 'post') || saveCounter(postId) || commentCounter(postId));
+      allow delete: if request.auth != null && resource.data.authorId == request.auth.uid;
     }
-
-    // ── Phase 2: Post Likes ───────────────────────────────────────────
-    // Composite docId {postId}___{userId} enforces ownership at the ID level.
+    match /travelJournals/{journalId} {
+      allow read: if visible(resource.data);
+      allow create: if request.auth != null && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.likeCount == 0 && request.resource.data.commentCount == 0 && request.resource.data.saveCount == 0;
+      allow update: if request.auth != null && (
+        (resource.data.authorId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['title', 'subtitle', 'body', 'coverImageURL', 'images', 'location', 'country', 'hashtags', 'visibility', 'readTimeMinutes', 'updatedAt', 'isArchived']))
+        || likeCounter(journalId, 'journal'));
+      allow delete: if request.auth != null && resource.data.authorId == request.auth.uid;
+    }
     match /postLikes/{likeId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow get: if request.auth != null && (resource == null || resource.data.userId == request.auth.uid || readableLike(resource.data));
+      allow list: if request.auth != null && readableLike(resource.data);
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid
+        && likeId == request.resource.data.postId + '___' + request.auth.uid && readableLike(request.resource.data)
+        && ((likeKind(request.resource.data) == 'post'
+          && unblocked(request.auth.uid, get(/databases/$(database)/documents/travelPosts/$(request.resource.data.postId)).data.authorId)
+          && linkedCounter('travelPosts', request.resource.data.postId, 'likeCount', 1))
+          || (likeKind(request.resource.data) == 'journal'
+            && unblocked(request.auth.uid, get(/databases/$(database)/documents/travelJournals/$(request.resource.data.postId)).data.authorId)
+            && linkedCounter('travelJournals', request.resource.data.postId, 'likeCount', 1)));
+      allow update: if false;
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid
+        && likeId == resource.data.postId + '___' + request.auth.uid
+        && ((likeKind(resource.data) == 'post' && linkedCounter('travelPosts', resource.data.postId, 'likeCount', -1))
+          || (likeKind(resource.data) == 'journal' && linkedCounter('travelJournals', resource.data.postId, 'likeCount', -1)));
     }
-
-    // ── Phase 2: Post Comments ────────────────────────────────────────
-    match /postComments/{commentId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null
-        && request.resource.data.authorId == request.auth.uid;
-      // Author can update any field. Any other authenticated user may only
-      // step replyCount by ±1 (posting/deleting a reply to this comment).
-      allow update: if request.auth != null
-        && (
-          resource.data.authorId == request.auth.uid
-          || isCounterStep('replyCount')
-        );
-      allow delete: if request.auth != null
-        && resource.data.authorId == request.auth.uid;
-    }
-
-    // ── Phase 2: Saved Posts ──────────────────────────────────────────
-    // Composite docId {userId}___{postId} enforces ownership at the ID level.
     match /savedPosts/{savedId} {
-      allow read, write: if request.auth != null;
+      allow get: if request.auth != null && (resource != null ? resource.data.userId == request.auth.uid : savedId.split('___')[0] == request.auth.uid);
+      allow list: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid
+        && savedId == request.auth.uid + '___' + request.resource.data.postId && readablePost(request.resource.data.postId)
+        && linkedCounter('travelPosts', request.resource.data.postId, 'saveCount', 1);
+      allow update: if request.auth != null && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['collectionName']);
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid
+        && linkedCounter('travelPosts', resource.data.postId, 'saveCount', -1);
     }
-
-    // ── Phase 2: Follows ──────────────────────────────────────────────
-    // Composite docId {followerId}___{followingId}.
     match /follows/{followId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow create: if request.auth != null && request.resource.data.followerId == request.auth.uid
+        && request.resource.data.followingId != request.auth.uid
+        && followId == request.auth.uid + '___' + request.resource.data.followingId
+        && unblocked(request.auth.uid, request.resource.data.followingId) && followLinked(request.resource.data, 1);
+      allow update: if false;
+      allow delete: if request.auth != null && resource.data.followerId == request.auth.uid
+        && followId == request.auth.uid + '___' + resource.data.followingId && followLinked(resource.data, -1);
+    }
+    match /postComments/{commentId} {
+      allow read: if request.auth != null && (resource.data.authorId == request.auth.uid || readablePost(resource.data.postId));
+      allow create: if request.auth != null && request.resource.data.authorId == request.auth.uid
+        && readablePost(request.resource.data.postId)
+        && unblocked(request.auth.uid, get(/databases/$(database)/documents/travelPosts/$(request.resource.data.postId)).data.authorId)
+        && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 500
+        && request.resource.data.replyCount == 0 && request.resource.data.isDeleted == false
+        && postCommentLinked(commentId, request.resource.data.postId, 1) && replyLinked(request.resource.data, commentId, 1);
+      allow update: if request.auth != null && (
+        (resource.data.authorId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'updatedAt'])
+          && resource.data.isDeleted == false && request.resource.data.text is string
+          && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 500)
+        || (resource.data.authorId == request.auth.uid && resource.data.isDeleted == false && request.resource.data.isDeleted == true
+          && request.resource.data.text == '' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isDeleted', 'text', 'updatedAt'])
+          && postCommentLinked(commentId, resource.data.postId, -1) && replyLinked(resource.data, commentId, -1))
+        || replyCounter(commentId));
+      allow delete: if false;
     }
 
-    // ── Phase 2: Travel Journals ──────────────────────────────────────
-    match /travelJournals/{journalId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null
-        && request.resource.data.authorId == request.auth.uid;
-      // Author can update any field. Any other authenticated user may only
-      // step likeCount by ±1 (like/unlike actions on this journal).
-      allow update: if request.auth != null
-        && (
-          resource.data.authorId == request.auth.uid
-          || isCounterStep('likeCount')
-        );
-      allow delete: if request.auth != null
-        && resource.data.authorId == request.auth.uid;
-    }
-
-    // ── Phase 2: Traveler Reputation ──────────────────────────────────
-    // V1: owner write (client-calculated). V2: Cloud Function only.
     match /travelerReputation/{uid} {
       allow read: if request.auth != null;
       allow write: if request.auth != null && request.auth.uid == uid;

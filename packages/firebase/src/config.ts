@@ -3,16 +3,20 @@ import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 // ── Environment variable validation ───────────────────────────────────
 // All values come from EXPO_PUBLIC_ vars in apps/mobile/.env
 // These are bundled at build time — never hardcode here.
-const REQUIRED_ENV_VARS = [
-  'EXPO_PUBLIC_FIREBASE_API_KEY',
-  'EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN',
-  'EXPO_PUBLIC_FIREBASE_PROJECT_ID',
-  'EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET',
-  'EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID',
-  'EXPO_PUBLIC_FIREBASE_APP_ID',
-] as const;
+// Expo substitutes static references only; dynamic process.env[key] reads do
+// not survive a device build. Validate the same values passed to Firebase.
+const firebaseConfig = {
+  apiKey:            process.env.EXPO_PUBLIC_FIREBASE_API_KEY            ?? '',
+  authDomain:        process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN        ?? '',
+  projectId:         process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID         ?? '',
+  storageBucket:     process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET     ?? '',
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ?? '',
+  appId:             process.env.EXPO_PUBLIC_FIREBASE_APP_ID             ?? '',
+};
 
-const missing = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
+const missing = Object.entries(firebaseConfig)
+  .filter(([, value]) => !value.trim())
+  .map(([key]) => key);
 
 if (missing.length > 0) {
   // Print a clear, actionable error in dev so the developer knows exactly what to do.
@@ -29,15 +33,6 @@ if (missing.length > 0) {
     'NOT the Google Places API key.\n'
   );
 }
-
-const firebaseConfig = {
-  apiKey:            process.env.EXPO_PUBLIC_FIREBASE_API_KEY            ?? '',
-  authDomain:        process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN        ?? '',
-  projectId:         process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID         ?? '',
-  storageBucket:     process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET     ?? '',
-  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ?? '',
-  appId:             process.env.EXPO_PUBLIC_FIREBASE_APP_ID             ?? '',
-};
 
 // Guard against double-init on fast refresh.
 function getFirebaseApp(): FirebaseApp {

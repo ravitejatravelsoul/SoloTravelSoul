@@ -21,7 +21,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   initialized: false,
   loading: false,
 
-  setUser: (user) => set({ user }),
+  setUser: (user) => set((s) => ({ user, profile: s.user?.uid === user?.uid ? s.profile : null })),
   setProfile: (profile) => set({ profile }),
   setInitialized: (initialized) => set({ initialized }),
   setLoading: (loading) => set({ loading }),

@@ -1,3 +1,4 @@
+import { getChatQueueSize } from '@/utils/chatQueue';
 import { useState, useCallback, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import {
@@ -33,7 +34,9 @@ const DEFAULT_ITEMS = [
 ];
 
 function pushPendingCount(uid: string) {
-  getQueueSize(uid).then((n) => useTripStore.getState().setPendingOpsCount(n));
+  Promise.all([getQueueSize(uid), getChatQueueSize(uid)]).then(([tripCount, chatCount]) => {
+    if (useAuthStore.getState().user?.uid === uid) useTripStore.getState().setPendingOpsCount(tripCount + chatCount);
+  });
 }
 
 export function useChecklist(tripId: string) {
@@ -65,6 +68,7 @@ export function useChecklist(tripId: string) {
 
     // Show cached data immediately — no spinner if we have it
     const cached = await getCachedChecklist(uid, tripId);
+    if (useAuthStore.getState().user?.uid !== uid) return;
     if (cached) {
       setChecklist(cached, tripId);
       setLoading(false);
@@ -74,6 +78,7 @@ export function useChecklist(tripId: string) {
 
     try {
       let items = await getChecklist(uid, tripId);
+      if (useAuthStore.getState().user?.uid !== uid) return;
 
       // Firestore returned empty + we have a valid local cache → likely offline memory miss
       if (items.length === 0 && cached && cached.length > 0) {
@@ -94,6 +99,7 @@ export function useChecklist(tripId: string) {
         items = defaults;
       }
 
+      if (useAuthStore.getState().user?.uid !== uid) return;
       setChecklist(items, tripId);
       await cacheChecklist(uid, tripId, items);
       await setLastSync(uid, `checklist:${tripId}`);

@@ -1,3 +1,4 @@
+import { getChatQueueSize } from '@/utils/chatQueue';
 import { useCallback } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { upsertItineraryDay } from '@solotravelsoul/firebase';
@@ -10,7 +11,9 @@ import { cacheItinerary } from '@/utils/offlineCache';
 import { enqueueOp, getQueueSize } from '@/utils/syncQueue';
 
 function pushPendingCount(uid: string) {
-  getQueueSize(uid).then((n) => useTripStore.getState().setPendingOpsCount(n));
+  Promise.all([getQueueSize(uid), getChatQueueSize(uid)]).then(([tripCount, chatCount]) => {
+    if (useAuthStore.getState().user?.uid === uid) useTripStore.getState().setPendingOpsCount(tripCount + chatCount);
+  });
 }
 
 export function useJournal(tripId: string) {

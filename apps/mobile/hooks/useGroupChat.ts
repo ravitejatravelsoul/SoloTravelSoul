@@ -7,6 +7,7 @@ import {
 import { enqueueChatOp } from '@/utils/chatQueue';
 import { useAuthStore } from '@/stores/authStore';
 import { useNetworkState } from '@/hooks/useNetworkState';
+import { useSyncEngine } from '@/hooks/useSyncEngine';
 import type { TravelGroupMessage } from '@solotravelsoul/shared';
 
 function generateClientId(): string {
@@ -20,16 +21,20 @@ function generateClientId(): string {
 export function useGroupChat(groupId: string, myName: string) {
   const uid = useAuthStore((s) => s.user?.uid);
   const { isConnected } = useNetworkState();
+  const { notifyEnqueued } = useSyncEngine(uid);
 
   const [confirmed, setConfirmed] = useState<TravelGroupMessage[]>([]);
   const [pending, setPending] = useState<TravelGroupMessage[]>([]);
 
   useEffect(() => {
+    setConfirmed([]);
+    setPending([]);
     if (!groupId || !uid) return;
 
     markGroupRead(groupId, uid).catch(() => {});
 
     const unsub = subscribeToGroupMessages(groupId, (msgs) => {
+      if (useAuthStore.getState().user?.uid !== uid) return;
       setConfirmed(msgs);
       const confirmedIds = new Set(msgs.map((m) => m.clientId));
       setPending((prev) => prev.filter((m) => !confirmedIds.has(m.clientId)));
@@ -72,6 +77,7 @@ export function useGroupChat(groupId: string, myName: string) {
           text: text.trim(),
           clientId,
         });
+        notifyEnqueued();
         return;
       }
 
@@ -86,9 +92,10 @@ export function useGroupChat(groupId: string, myName: string) {
           text: text.trim(),
           clientId,
         });
+        notifyEnqueued();
       }
     },
-    [uid, groupId, myName, isConnected],
+    [uid, groupId, myName, isConnected, notifyEnqueued],
   );
 
   return { messages, sendMessage };

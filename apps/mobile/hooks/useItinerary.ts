@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { getChatQueueSize } from '@/utils/chatQueue';
+import { useState, useCallback, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import {
   getItinerary,
@@ -18,19 +19,23 @@ import {
 import { enqueueOp, getQueueSize } from '@/utils/syncQueue';
 
 function pushPendingCount(uid: string) {
-  getQueueSize(uid).then((n) => useTripStore.getState().setPendingOpsCount(n));
+  Promise.all([getQueueSize(uid), getChatQueueSize(uid)]).then(([tripCount, chatCount]) => {
+    if (useAuthStore.getState().user?.uid === uid) useTripStore.getState().setPendingOpsCount(tripCount + chatCount);
+  });
 }
 
 export function useItinerary(tripId: string) {
   const uid = useAuthStore((s) => s.user?.uid);
-  const { itinerary, setItinerary, patchItineraryDay, setCurrentItineraryTripId } = useTripStore(
+  const { itinerary: rawItinerary, currentItineraryTripId, setItinerary, patchItineraryDay, setCurrentItineraryTripId } = useTripStore(
     useShallow((s) => ({
       itinerary: s.itinerary,
+      currentItineraryTripId: s.currentItineraryTripId,
       setItinerary: s.setItinerary,
       patchItineraryDay: s.patchItineraryDay,
       setCurrentItineraryTripId: s.setCurrentItineraryTripId,
     }))
   );
+  const itinerary = useMemo(() => currentItineraryTripId === tripId ? rawItinerary : [], [currentItineraryTripId, tripId, rawItinerary]);
   const addToast = useUIStore((s) => s.addToast);
   const { isConnected } = useNetworkState();
   const [loading, setLoading] = useState(false);
@@ -41,6 +46,7 @@ export function useItinerary(tripId: string) {
 
       // Show cached itinerary immediately for instant display
       const cached = await getCachedItinerary(uid, tripId);
+      if (useAuthStore.getState().user?.uid !== uid) return;
       if (cached && cached.length > 0) {
         setItinerary(cached);
         setCurrentItineraryTripId(tripId);
@@ -51,6 +57,7 @@ export function useItinerary(tripId: string) {
 
       try {
         const days = await getItinerary(uid, tripId);
+        if (useAuthStore.getState().user?.uid !== uid) return;
 
         if (days.length > 0) {
           setItinerary(days);

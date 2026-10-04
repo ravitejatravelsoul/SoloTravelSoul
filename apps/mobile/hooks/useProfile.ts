@@ -17,7 +17,7 @@ export function useProfile() {
       if (!user) return;
       try {
         await updateUserProfile(user.uid, updates);
-        if (profile) setProfile({ ...profile, ...updates });
+        if (profile && useAuthStore.getState().user?.uid === user.uid) setProfile({ ...profile, ...updates });
         addToast('Profile updated.', 'success');
       } catch {
         addToast('Could not update profile.', 'error');
@@ -32,7 +32,7 @@ export function useProfile() {
       try {
         const url = await uploadProfilePhotoFromUri(user.uid, fileUri);
         await updateUserProfile(user.uid, { photoURL: url });
-        if (profile) setProfile({ ...profile, photoURL: url });
+        if (profile && useAuthStore.getState().user?.uid === user.uid) setProfile({ ...profile, photoURL: url });
         addToast('Photo updated.', 'success');
       } catch {
         addToast('Could not upload photo.', 'error');

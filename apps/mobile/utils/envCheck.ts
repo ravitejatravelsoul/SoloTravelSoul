@@ -1,11 +1,11 @@
-const REQUIRED_VARS = [
-  'EXPO_PUBLIC_FIREBASE_API_KEY',
-  'EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN',
-  'EXPO_PUBLIC_FIREBASE_PROJECT_ID',
-  'EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET',
-  'EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID',
-  'EXPO_PUBLIC_FIREBASE_APP_ID',
-] as const;
+const ENV_VALUES = {
+  EXPO_PUBLIC_FIREBASE_API_KEY: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  EXPO_PUBLIC_FIREBASE_PROJECT_ID: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  EXPO_PUBLIC_FIREBASE_APP_ID: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+};
 
 // Shows first 4 + last 3 chars so you can verify the right value loaded
 // without printing the full secret into Metro logs.
@@ -19,7 +19,7 @@ function maskValue(val: string): string {
 export function validateEnv(): void {
   if (process.env.NODE_ENV !== 'development') return;
 
-  const missing = REQUIRED_VARS.filter((key) => !process.env[key]);
+  const missing = Object.keys(ENV_VALUES).filter((key) => !ENV_VALUES[key as keyof typeof ENV_VALUES]?.trim());
 
   if (missing.length > 0) {
     console.warn(
@@ -38,7 +38,7 @@ export function validateEnv(): void {
     // All present — log masked values so you can confirm the right .env was loaded.
     console.log(
       '[SoloTravelSoul] Firebase env vars detected:\n' +
-      REQUIRED_VARS.map((k) => `  ✓ ${k}: ${maskValue(process.env[k]!)}`).join('\n')
+      Object.entries(ENV_VALUES).map(([k, value]) => `  ✓ ${k}: ${maskValue(value!)}`).join('\n')
     );
   }
 
