@@ -3,18 +3,19 @@
 
 export interface PrefixDeleter {
   name: string;
-  /** Deletes every object under each prefix; returns the number deleted. */
-  deletePrefixes(prefixes: string[]): Promise<number>;
+  /** Deletes every object under each prefix; returns the number deleted. beforePage runs before each page (lease renewal). */
+  deletePrefixes(prefixes: string[], beforePage?: () => Promise<void>): Promise<number>;
 }
 
 export function r2Deleter(bucket: R2Bucket): PrefixDeleter {
   return {
     name: 'r2',
-    async deletePrefixes(prefixes) {
+    async deletePrefixes(prefixes, beforePage) {
       let deleted = 0;
       for (const prefix of prefixes) {
         let cursor: string | undefined;
         do {
+          await beforePage?.();
           const page = await bucket.list({ prefix, cursor, limit: 1000 });
           const keys = page.objects.map((o) => o.key);
           if (keys.length) {
@@ -39,11 +40,12 @@ export function firebaseStorageDeleter(opts: {
   const objectsUrl = `${base}/storage/v1/b/${encodeURIComponent(opts.bucket)}/o`;
   return {
     name: 'firebase-storage',
-    async deletePrefixes(prefixes) {
+    async deletePrefixes(prefixes, beforePage) {
       let deleted = 0;
       for (const prefix of prefixes) {
         let pageToken = '';
         do {
+          await beforePage?.();
           const auth = { Authorization: `Bearer ${await opts.token()}` };
           const qs = `prefix=${encodeURIComponent(prefix)}&fields=items(name),nextPageToken${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
           const resp = await fetch(`${objectsUrl}?${qs}`, { headers: auth });

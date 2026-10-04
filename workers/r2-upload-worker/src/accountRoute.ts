@@ -1,7 +1,7 @@
 // POST /account/delete — authenticated, recent-login-only account deletion.
 
 import { isRecentAuth, type VerifiedToken } from './auth';
-import { deleteAccount, DeletionInProgress, DeletionStepFailed, type DeletionDeps } from './accountDeletion';
+import { deleteAccount, DeletionAttemptLost, DeletionInProgress, DeletionStepFailed, type DeletionDeps } from './accountDeletion';
 
 export interface AccountRouteDeps {
   verify(token: string): Promise<VerifiedToken>;
@@ -43,11 +43,16 @@ export async function handleAccountDeletion(request: Request, deps: AccountRoute
     if (e instanceof DeletionInProgress) {
       return deps.json({ error: 'Account deletion is already in progress.', code: 'deletion/in-progress' }, 409);
     }
-    const step = e instanceof DeletionStepFailed ? e.step : 'unknown';
+    const step = e instanceof DeletionStepFailed ? e.step : e instanceof DeletionAttemptLost ? 'lease' : 'unknown';
     const cause = e instanceof DeletionStepFailed ? e.cause : e;
     console.error(`[Worker] account deletion failed at ${step}:`, (cause as Error)?.message);
     return deps.json(
-      { error: 'Could not finish deleting your account. Nothing was lost — please try again.', code: 'deletion/failed', step, retryable: true },
+      {
+        error: 'Account deletion did not finish. Some of your data may already be deleted, and your account is locked against changes. Please try again to complete it.',
+        code: 'deletion/failed',
+        step,
+        retryable: true,
+      },
       500
     );
   }

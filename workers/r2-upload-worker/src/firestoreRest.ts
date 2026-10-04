@@ -10,8 +10,8 @@ export interface StoredDoc {
 
 export interface QueryFilter {
   field: string;
-  op: 'EQUAL' | 'ARRAY_CONTAINS';
-  value: string | boolean;
+  op: 'EQUAL' | 'ARRAY_CONTAINS' | 'GREATER_THAN';
+  value: string | boolean | number;
 }
 
 export type StoreWrite =
@@ -174,6 +174,12 @@ export class FirestoreRest implements DocStore {
     const fieldFilters = filters.map((f) => ({
       fieldFilter: { field: { fieldPath: fieldPath(f.field) }, op: f.op, value: encodeValue(f.value) },
     }));
+    // Firestore requires an inequality field to lead the sort order.
+    const inequality = filters.find((f) => f.op === 'GREATER_THAN');
+    const orderBy = [
+      ...(inequality ? [{ field: { fieldPath: fieldPath(inequality.field) }, direction: 'ASCENDING' }] : []),
+      { field: { fieldPath: '__name__' }, direction: 'ASCENDING' },
+    ];
     const results: StoredDoc[] = [];
     const pageSize = 300;
     let offset = 0;
@@ -181,7 +187,7 @@ export class FirestoreRest implements DocStore {
     for (;;) {
       const structuredQuery: Record<string, unknown> = {
         from: [{ collectionId, allDescendants: !!opts.allDescendants }],
-        orderBy: [{ field: { fieldPath: '__name__' }, direction: 'ASCENDING' }],
+        orderBy,
         offset,
         limit: pageSize,
       };

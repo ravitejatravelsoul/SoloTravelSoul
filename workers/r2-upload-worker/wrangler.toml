@@ -20,3 +20,8 @@ FIREBASE_STORAGE_BUCKET = "solotravelsoul-57a9e.firebasestorage.app"
 # PUBLIC_R2_BASE_URL is set as a secret so it can differ per environment:
 #   wrangler secret put PUBLIC_R2_BASE_URL
 #   → paste your r2.dev URL: https://pub-<hash>.r2.dev
+
+# Hourly sweep: deletes media of accounts deleted in the last 24 h that was
+# uploaded by requests already in flight when deletion started.
+[triggers]
+crons = ["17 * * * *"]

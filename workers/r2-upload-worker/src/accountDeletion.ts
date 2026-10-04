@@ -7,6 +7,16 @@
 // Auth identity is removed only after every data and media step has succeeded;
 // until then the user can sign in and retry.
 //
+// Barrier: the job document accountDeletions/{uid} is created before any step
+// runs and is never removed. Firestore and Storage rules and the upload
+// endpoint refuse every write by that UID while it exists, so other devices,
+// in-flight requests and still-valid tokens cannot recreate data.
+//
+// Attempts: each request owns the job under a unique attemptId and a lease
+// that is renewed while it works. Job updates are conditional on that
+// ownership; an attempt whose lease expired or was taken over stops at its
+// next operation and can never overwrite a newer attempt's result.
+//
 // Other users' content is preserved: their comments, messages, likes and saves
 // stay; only this user's own records are deleted, and where this user's
 // contributions must remain inside someone else's space (chat messages, reply
@@ -17,7 +27,11 @@ import type { PrefixDeleter } from './objectStores';
 
 export const DELETED_NAME = 'Deleted User';
 const JOBS = 'accountDeletions';
-const LEASE_MS = 5 * 60 * 1000;
+export const LEASE_MS = 5 * 60 * 1000;
+/** Renew once less than this much of the lease is left. */
+const RENEW_WHEN_REMAINING_MS = LEASE_MS / 2;
+/** Media sweeps after completion catch uploads that were already in flight. */
+export const SWEEP_WINDOW_MS = 24 * 60 * 60 * 1000;
 const COMMIT_CHUNK = 400;
 const MAX_CONFLICT_RETRIES = 5;
 
@@ -28,6 +42,7 @@ export interface DeletionDeps {
   /** Must treat an already-deleted user as success. */
   deleteAuthUser(uid: string): Promise<void>;
   now?: () => number;
+  newAttemptId?: () => string;
 }
 
 export interface DeletionIdentity {
@@ -49,11 +64,21 @@ export class DeletionStepFailed extends Error {
   }
 }
 
+/** This attempt's lease expired or another attempt took over; it must stop. */
+export class DeletionAttemptLost extends Error {
+  constructor(readonly reason: 'expired' | 'superseded') {
+    super(`Account deletion attempt ${reason}`);
+    this.name = 'DeletionAttemptLost';
+  }
+}
+
 interface Ctx {
   uid: string;
   email: string | null;
+  /** Lease-guarded: every operation first verifies (and renews) ownership. */
   store: DocStore;
   deps: DeletionDeps;
+  heartbeat: () => Promise<void>;
 }
 
 type Step = { id: string; run: (ctx: Ctx) => Promise<void> };
@@ -134,6 +159,23 @@ function deleteOwned(collectionId: string, ownerField: string): Step['run'] {
 }
 
 // ── Steps ─────────────────────────────────────────────────────────────────────
+
+// Likes and saves by anyone on a deleted post/journal would dangle; they go
+// with the content (no counters to release), before the content itself so a
+// retry can still discover them through the author's remaining documents.
+function deleteOwnedContent(collectionId: 'travelPosts' | 'travelJournals'): Step['run'] {
+  const kind = collectionId === 'travelPosts' ? 'post' : 'journal';
+  return async ({ uid, store }) => {
+    for (const item of await store.query(collectionId, [{ field: 'authorId', op: 'EQUAL', value: uid }])) {
+      const id = lastSegment(item.path);
+      const likes = (await store.query('postLikes', [{ field: 'postId', op: 'EQUAL', value: id }]))
+        .filter((l) => (l.data.targetType ?? kind) === kind); // legacy likes carry no targetType
+      const saves = kind === 'post' ? await store.query('savedPosts', [{ field: 'postId', op: 'EQUAL', value: id }]) : [];
+      await commitChunked(store, [...likes, ...saves].map((d): StoreWrite => ({ kind: 'delete', path: d.path })));
+      await deleteTree(store, item.path);
+    }
+  };
+}
 
 const removeLikes: Step['run'] = async ({ uid, store }) => {
   for (const like of await store.query('postLikes', [{ field: 'userId', op: 'EQUAL', value: uid }])) {
@@ -350,12 +392,15 @@ const deletePrivateData: Step['run'] = async ({ uid, store }) => {
   }
 };
 
-const deleteR2Media: Step['run'] = async ({ uid, deps }) => {
-  await deps.r2.deletePrefixes([`profile_photos/${uid}/`, `post_photos/${uid}/`]);
+const r2Prefixes = (uid: string) => [`profile_photos/${uid}/`, `post_photos/${uid}/`];
+const storagePrefixes = (uid: string) => [`profile_photos/${uid}/`, `trip_covers/${uid}/`, `journals/${uid}/`];
+
+const deleteR2Media: Step['run'] = async ({ uid, deps, heartbeat }) => {
+  await deps.r2.deletePrefixes(r2Prefixes(uid), heartbeat);
 };
 
-const deleteFirebaseMedia: Step['run'] = async ({ uid, deps }) => {
-  await deps.firebaseStorage.deletePrefixes([`profile_photos/${uid}/`, `trip_covers/${uid}/`, `journals/${uid}/`]);
+const deleteFirebaseMedia: Step['run'] = async ({ uid, deps, heartbeat }) => {
+  await deps.firebaseStorage.deletePrefixes(storagePrefixes(uid), heartbeat);
 };
 
 export const DELETION_STEPS: readonly Step[] = [
@@ -365,8 +410,8 @@ export const DELETION_STEPS: readonly Step[] = [
   { id: 'follows', run: removeFollows },
   { id: 'comments', run: removeComments },
   // Owned social content.
-  { id: 'posts', run: deleteOwned('travelPosts', 'authorId') },
-  { id: 'journals', run: deleteOwned('travelJournals', 'authorId') },
+  { id: 'posts', run: deleteOwnedContent('travelPosts') },
+  { id: 'journals', run: deleteOwnedContent('travelJournals') },
   { id: 'stories', run: deleteOwned('travelStories', 'authorId') },
   { id: 'storyViews', run: removeStoryViews },
   // Community.
@@ -391,18 +436,25 @@ export const DELETION_STEPS: readonly Step[] = [
 
 // ── Job bookkeeping ───────────────────────────────────────────────────────────
 
-async function acquireLease(store: DocStore, uid: string, now: number): Promise<'acquired' | 'completed'> {
+interface Attempt {
+  id: string;
+  leaseUntil: number;
+}
+
+async function acquireLease(store: DocStore, uid: string, now: number, attempt: Attempt): Promise<'acquired' | 'completed'> {
   const path = `${JOBS}/${uid}`;
-  for (let attempt = 0; attempt < MAX_CONFLICT_RETRIES; attempt++) {
+  for (let i = 0; i < MAX_CONFLICT_RETRIES; i++) {
     const job = await store.get(path);
     if (job?.data.status === 'completed') return 'completed';
     if (job?.data.status === 'in_progress' && num(job.data.leaseUntil) > now) throw new DeletionInProgress();
-    const set = { uid, status: 'in_progress', leaseUntil: now + LEASE_MS, currentStep: null, lastError: null };
+    const leaseUntil = now + LEASE_MS;
+    const set = { uid, status: 'in_progress', attemptId: attempt.id, leaseUntil, currentStep: null, lastError: null };
     const write: StoreWrite = job
       ? { kind: 'update', path, set, increment: { attempts: 1 }, serverTime: ['updatedAt'], updateTime: job.updateTime }
       : { kind: 'update', path, set: { ...set, attempts: 1 }, serverTime: ['startedAt', 'updatedAt'], mustExist: false };
     try {
       await store.commit([write]);
+      attempt.leaseUntil = leaseUntil;
       return 'acquired';
     } catch (e) {
       if (!(e instanceof StoreConflict)) throw e;
@@ -411,8 +463,46 @@ async function acquireLease(store: DocStore, uid: string, now: number): Promise<
   throw new DeletionInProgress();
 }
 
-async function recordJob(store: DocStore, uid: string, set: Record<string, unknown>): Promise<void> {
-  await store.commit([{ kind: 'update', path: `${JOBS}/${uid}`, set, serverTime: ['updatedAt'] }]);
+/**
+ * Updates the job only while this attempt still owns an unexpired lease, and
+ * renews the lease (unless the update ends the attempt). Conditional on the
+ * document's updateTime, so it can never overwrite a newer attempt's result.
+ */
+async function updateOwnJob(
+  store: DocStore,
+  uid: string,
+  attempt: Attempt,
+  now: () => number,
+  set: Record<string, unknown>
+): Promise<void> {
+  const path = `${JOBS}/${uid}`;
+  for (let i = 0; i < MAX_CONFLICT_RETRIES; i++) {
+    const job = await store.get(path);
+    if (!job || job.data.attemptId !== attempt.id || job.data.status !== 'in_progress') {
+      throw new DeletionAttemptLost('superseded');
+    }
+    if (now() > num(job.data.leaseUntil)) throw new DeletionAttemptLost('expired');
+    const ending = set.status !== undefined && set.status !== 'in_progress';
+    const leaseUntil = ending ? 0 : now() + LEASE_MS;
+    try {
+      await store.commit([{ kind: 'update', path, set: { ...set, leaseUntil }, serverTime: ['updatedAt'], updateTime: job.updateTime }]);
+      attempt.leaseUntil = leaseUntil;
+      return;
+    } catch (e) {
+      if (!(e instanceof StoreConflict)) throw e;
+    }
+  }
+  throw new DeletionAttemptLost('superseded');
+}
+
+function leaseGuarded(store: DocStore, heartbeat: () => Promise<void>): DocStore {
+  return {
+    get: async (p) => { await heartbeat(); return store.get(p); },
+    query: async (c, f, o) => { await heartbeat(); return store.query(c, f, o); },
+    listDocumentIds: async (c) => { await heartbeat(); return store.listDocumentIds(c); },
+    listCollectionIds: async (d) => { await heartbeat(); return store.listCollectionIds(d); },
+    commit: async (w) => { await heartbeat(); return store.commit(w); },
+  };
 }
 
 function safeMessage(e: unknown): string {
@@ -421,45 +511,81 @@ function safeMessage(e: unknown): string {
 
 /**
  * Runs the full deletion plan. Throws DeletionInProgress when another attempt
- * holds the lease, or DeletionStepFailed (Auth untouched, safe to retry).
+ * holds the lease, DeletionAttemptLost when this attempt lost its lease, or
+ * DeletionStepFailed (Auth untouched, barrier in place, safe to retry).
  */
 export async function deleteAccount(identity: DeletionIdentity, deps: DeletionDeps): Promise<{ status: 'deleted' }> {
   const now = deps.now ?? Date.now;
   const { uid } = identity;
   const { store } = deps;
+  const attempt: Attempt = { id: deps.newAttemptId?.() ?? crypto.randomUUID(), leaseUntil: 0 };
 
-  if ((await acquireLease(store, uid, now())) === 'completed') {
+  // Creating/claiming the job document also raises the persistent barrier.
+  if ((await acquireLease(store, uid, now(), attempt)) === 'completed') {
     await deps.deleteAuthUser(uid); // idempotent; covers a lost response after completion
     return { status: 'deleted' };
   }
 
-  const ctx: Ctx = { uid, email: identity.email, store, deps };
+  const heartbeat = async () => {
+    if (now() > attempt.leaseUntil) throw new DeletionAttemptLost('expired');
+    if (attempt.leaseUntil - now() < RENEW_WHEN_REMAINING_MS) await updateOwnJob(store, uid, attempt, now, {});
+  };
+  const ctx: Ctx = { uid, email: identity.email, store: leaseGuarded(store, heartbeat), deps, heartbeat };
   const completed: string[] = [];
+  const fail = async (step: string, e: unknown): Promise<never> => {
+    if (e instanceof DeletionAttemptLost) throw e;
+    // Conditional: a lost attempt cannot mark a newer attempt's job failed.
+    await updateOwnJob(store, uid, attempt, now, {
+      status: 'failed',
+      completedSteps: completed,
+      lastError: { step, message: safeMessage(e) },
+    }).catch(() => {});
+    throw new DeletionStepFailed(step, e);
+  };
+
   for (const step of DELETION_STEPS) {
     try {
-      await recordJob(store, uid, { currentStep: step.id, leaseUntil: now() + LEASE_MS });
+      await updateOwnJob(store, uid, attempt, now, { currentStep: step.id });
       await step.run(ctx);
       completed.push(step.id);
     } catch (e) {
-      await recordJob(store, uid, {
-        status: 'failed',
-        leaseUntil: 0,
-        completedSteps: completed,
-        lastError: { step: step.id, message: safeMessage(e) },
-      }).catch(() => {});
-      throw new DeletionStepFailed(step.id, e);
+      await fail(step.id, e);
     }
   }
 
   try {
-    await recordJob(store, uid, { currentStep: 'auth', completedSteps: completed });
+    // Re-verifies ownership and renews the lease immediately before Auth removal.
+    await updateOwnJob(store, uid, attempt, now, { currentStep: 'auth', completedSteps: completed });
     await deps.deleteAuthUser(uid);
   } catch (e) {
-    await recordJob(store, uid, { status: 'failed', leaseUntil: 0, lastError: { step: 'auth', message: safeMessage(e) } }).catch(() => {});
-    throw new DeletionStepFailed('auth', e);
+    await fail('auth', e);
   }
 
   // The account is gone; a bookkeeping failure here must not report failure.
-  await recordJob(store, uid, { status: 'completed', currentStep: null, leaseUntil: 0, completedSteps: [...completed, 'auth'] }).catch(() => {});
+  await updateOwnJob(store, uid, attempt, now, {
+    status: 'completed',
+    currentStep: null,
+    completedSteps: [...completed, 'auth'],
+    completedAtMs: now(),
+  }).catch(() => {});
   return { status: 'deleted' };
+}
+
+/**
+ * Removes media for accounts deleted within the window. Uploads that passed
+ * the barrier check before deletion began, but landed after the media steps
+ * listed their prefixes, are cleaned up here (scheduled in the Worker).
+ */
+export async function sweepRecentlyDeletedMedia(deps: DeletionDeps, windowMs = SWEEP_WINDOW_MS): Promise<number> {
+  const now = deps.now ?? Date.now;
+  const jobs = await deps.store.query(JOBS, [{ field: 'completedAtMs', op: 'GREATER_THAN', value: now() - windowMs }]);
+  let swept = 0;
+  for (const job of jobs) {
+    if (job.data.status !== 'completed') continue;
+    const uid = lastSegment(job.path);
+    await deps.r2.deletePrefixes(r2Prefixes(uid));
+    await deps.firebaseStorage.deletePrefixes(storagePrefixes(uid));
+    swept++;
+  }
+  return swept;
 }

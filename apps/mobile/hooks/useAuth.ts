@@ -31,9 +31,9 @@ function deletionErrorMessage(code: string): string {
       return 'Account deletion is temporarily unavailable. Contact privacy@solotravelsoul.app.';
     case 'deletion/network':
     case 'auth/network-request-failed':
-      return 'Network error. Please check your connection and try again.';
+      return 'Network error. Deletion may already have started — please reconnect and try again to make sure it completes.';
     default:
-      return 'Could not finish deleting your account. Nothing was lost — please try again.';
+      return 'Account deletion did not finish. Some of your data may already be deleted and your account is locked against changes. Please try again to complete it.';
   }
 }
 

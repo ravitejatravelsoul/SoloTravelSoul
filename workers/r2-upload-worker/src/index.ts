@@ -1,9 +1,10 @@
 import { verifyFirebaseToken } from './auth';
 import { handleAccountDeletion } from './accountRoute';
-import type { DeletionDeps } from './accountDeletion';
+import { sweepRecentlyDeletedMedia, type DeletionDeps } from './accountDeletion';
 import { FirestoreRest } from './firestoreRest';
 import { firebaseStorageDeleter, r2Deleter } from './objectStores';
 import { getAccessToken, identityToolkitUserDeleter, parseServiceAccount } from './google';
+import { handlePhotoUpload, POST_PHOTO, PROFILE_PHOTO, type UploadKind } from './uploads';
 
 export interface Env {
   R2_BUCKET: R2Bucket;
@@ -27,9 +28,6 @@ function deletionDeps(env: Env): DeletionDeps | null {
   };
 }
 
-const MAX_PROFILE_BYTES = 5 * 1024 * 1024;  // 5 MB — profile photos
-const MAX_POST_BYTES    = 10 * 1024 * 1024; // 10 MB — post / journal photos
-
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -47,6 +45,18 @@ function err(message: string, status = 400): Response {
   return json({ error: message }, status);
 }
 
+function upload(request: Request, env: Env, kind: UploadKind): Promise<Response> {
+  const deletion = deletionDeps(env);
+  return handlePhotoUpload(request, kind, {
+    verify: (token) => verifyFirebaseToken(token, env.FIREBASE_PROJECT_ID),
+    // Without deletion credentials no deletion (and so no barrier) can exist.
+    isDeleting: async (uid) => (deletion ? !!(await deletion.store.get(`accountDeletions/${uid}`)) : false),
+    bucket: env.R2_BUCKET,
+    publicBaseUrl: env.PUBLIC_R2_BASE_URL,
+    json,
+  });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     // CORS preflight
@@ -57,11 +67,11 @@ export default {
     const { pathname } = new URL(request.url);
 
     if (request.method === 'POST' && pathname === '/upload/profile-photo') {
-      return handleProfilePhoto(request, env);
+      return upload(request, env, PROFILE_PHOTO);
     }
 
     if (request.method === 'POST' && pathname === '/upload/post-photo') {
-      return handlePostPhoto(request, env);
+      return upload(request, env, POST_PHOTO);
     }
 
     if (request.method === 'POST' && pathname === '/account/delete') {
@@ -74,121 +84,11 @@ export default {
 
     return err('Not found', 404);
   },
+
+  // Cron (wrangler.toml): remove media of recently deleted accounts that
+  // arrived through uploads already in flight when deletion started.
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    const deletion = deletionDeps(env);
+    if (deletion) ctx.waitUntil(sweepRecentlyDeletedMedia(deletion).then(() => undefined));
+  },
 };
-
-async function handleProfilePhoto(request: Request, env: Env): Promise<Response> {
-  // ── 1. Auth ──────────────────────────────────────────────────────────
-  const authHeader = request.headers.get('Authorization') ?? '';
-  if (!authHeader.startsWith('Bearer ')) {
-    return err('Missing Authorization: Bearer <token>', 401);
-  }
-  const token = authHeader.slice(7);
-
-  let uid: string;
-  try {
-    ({ uid } = await verifyFirebaseToken(token, env.FIREBASE_PROJECT_ID));
-  } catch (e) {
-    console.error('[Worker] token verification failed:', (e as Error).message);
-    return err(`Authentication failed: ${(e as Error).message}`, 403);
-  }
-
-  // ── 2. Parse multipart/form-data ─────────────────────────────────────
-  let formData: FormData;
-  try {
-    formData = await request.formData();
-  } catch {
-    return err('Expected multipart/form-data body', 400);
-  }
-
-  const file = formData.get('file') as File | null;
-  if (!file) {
-    return err('Missing "file" field in form data', 400);
-  }
-
-  // ── 3. Validate ───────────────────────────────────────────────────────
-  if (file.size > MAX_PROFILE_BYTES) {
-    return err('File too large. Maximum 5 MB.', 413);
-  }
-  if (!file.type.startsWith('image/')) {
-    return err('Only image files are accepted.', 415);
-  }
-
-  // ── 4. Upload to R2 ───────────────────────────────────────────────────
-  const key = `profile_photos/${uid}/avatar.jpg`;
-  const body = await file.arrayBuffer();
-
-  try {
-    await env.R2_BUCKET.put(key, body, {
-      httpMetadata: { contentType: 'image/jpeg' },
-      customMetadata: { ownerUid: uid, usage: 'profile_photo' },
-    });
-    console.log(`[Worker] R2 put OK — key: ${key}, size: ${file.size}`);
-  } catch (e) {
-    console.error('[Worker] R2 put failed:', (e as Error).message);
-    return err('Failed to store image. Please try again.', 500);
-  }
-
-  // ── 5. Return public URL ──────────────────────────────────────────────
-  const base = env.PUBLIC_R2_BASE_URL.replace(/\/$/, '');
-  const photoURL = `${base}/${key}`;
-  return json({ photoURL });
-}
-
-async function handlePostPhoto(request: Request, env: Env): Promise<Response> {
-  // ── 1. Auth ──────────────────────────────────────────────────────────
-  const authHeader = request.headers.get('Authorization') ?? '';
-  if (!authHeader.startsWith('Bearer ')) {
-    return err('Missing Authorization: Bearer <token>', 401);
-  }
-  const token = authHeader.slice(7);
-
-  let uid: string;
-  try {
-    ({ uid } = await verifyFirebaseToken(token, env.FIREBASE_PROJECT_ID));
-  } catch (e) {
-    console.error('[Worker] token verification failed:', (e as Error).message);
-    return err(`Authentication failed: ${(e as Error).message}`, 403);
-  }
-
-  // ── 2. Parse multipart/form-data ─────────────────────────────────────
-  let formData: FormData;
-  try {
-    formData = await request.formData();
-  } catch {
-    return err('Expected multipart/form-data body', 400);
-  }
-
-  const file = formData.get('file') as File | null;
-  if (!file) {
-    return err('Missing "file" field in form data', 400);
-  }
-
-  // ── 3. Validate ───────────────────────────────────────────────────────
-  if (file.size > MAX_POST_BYTES) {
-    return err('File too large. Maximum 10 MB.', 413);
-  }
-  if (!file.type.startsWith('image/')) {
-    return err('Only image files are accepted.', 415);
-  }
-
-  // ── 4. Upload to R2 ───────────────────────────────────────────────────
-  const uuid = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
-  const key = `post_photos/${uid}/${uuid}.jpg`;
-  const body = await file.arrayBuffer();
-
-  try {
-    await env.R2_BUCKET.put(key, body, {
-      httpMetadata: { contentType: 'image/jpeg' },
-      customMetadata: { ownerUid: uid, usage: 'post_photo' },
-    });
-    console.log(`[Worker] R2 put OK — key: ${key}, size: ${file.size}`);
-  } catch (e) {
-    console.error('[Worker] R2 put failed:', (e as Error).message);
-    return err('Failed to store image. Please try again.', 500);
-  }
-
-  // ── 5. Return public URL ──────────────────────────────────────────────
-  const base = env.PUBLIC_R2_BASE_URL.replace(/\/$/, '');
-  const photoURL = `${base}/${key}`;
-  return json({ photoURL });
-}

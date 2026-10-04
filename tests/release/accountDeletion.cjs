@@ -59,6 +59,7 @@ class MemoryStore {
       if (segs[segs.length - 2] !== collectionId) continue;
       if (!opts.allDescendants && parent !== (opts.parent || '')) continue;
       const ok = filters.every((f) => f.op === 'EQUAL' ? d.data[f.field] === f.value
+        : f.op === 'GREATER_THAN' ? typeof d.data[f.field] === 'number' && d.data[f.field] > f.value
         : Array.isArray(d.data[f.field]) && d.data[f.field].includes(f.value));
       if (ok) out.push({ path: p, data: clone(d.data), updateTime: d.updateTime });
     }
@@ -110,7 +111,8 @@ function fakeMedia(name, keys) {
   const objects = new Set(keys);
   return {
     name, objects, failNext: 0,
-    async deletePrefixes(prefixes) {
+    async deletePrefixes(prefixes, beforePage) {
+      await beforePage?.();
       if (this.failNext > 0) { this.failNext--; throw new Error(`${name} unavailable`); }
       let n = 0;
       for (const k of [...objects]) if (prefixes.some((p) => k.startsWith(p))) { objects.delete(k); n++; }
@@ -152,6 +154,10 @@ const FIXTURE = {
   'postComments/carolComment': { authorId: CAROL, authorName: 'Carol', authorPhoto: null, postId: 'bobPost', parentCommentId: null, text: 'q?', isDeleted: false, replyCount: 1 },
   'travelPosts/alicePost': { authorId: ME, likeCount: 1, saveCount: 0, commentCount: 1, images: ['https://r2/post_photos/7alice/x.jpg'] },
   [`postLikes/alicePost___${BOB}`]: { postId: 'alicePost', userId: BOB, targetType: 'post' },
+  [`savedPosts/${BOB}___alicePost`]: { postId: 'alicePost', userId: BOB, collectionName: 'Trips' },
+  [`postLikes/aliceJournal___${CAROL}`]: { postId: 'aliceJournal', userId: CAROL, targetType: 'journal' },
+  [`postLikes/aliceJournalLegacy___${CAROL}`]: { postId: 'aliceJournal2', userId: CAROL }, // legacy edge, no targetType
+  'travelJournals/aliceJournal2': { authorId: ME, likeCount: 1 },
   'postComments/bobOnAlice': { authorId: BOB, authorName: 'Bob', postId: 'alicePost', parentCommentId: null, text: 'nice', isDeleted: false, replyCount: 0 },
   'travelJournals/aliceJournal': { authorId: ME, likeCount: 0 },
   'travelJournals/bobJournal': { authorId: BOB, likeCount: 1 },
@@ -205,8 +211,10 @@ function harness(store) {
     if (auth.fail > 0) { auth.fail--; throw new Error('auth backend down'); }
   } };
   let now = Date.now();
-  const deps = { store, r2, firebaseStorage: storage, deleteAuthUser: (uid) => auth.del(uid), now: () => now };
-  return { deps, r2, storage, authCalls, auth, advance: (ms) => { now += ms; } };
+  let attempts = 0;
+  const deps = { store, r2, firebaseStorage: storage, deleteAuthUser: (uid) => auth.del(uid), now: () => now,
+    newAttemptId: () => `attempt-${++attempts}` };
+  return { deps, r2, storage, authCalls, auth, advance: (ms) => { now += ms; }, now: () => now };
 }
 
 async function expectState(store, h) {
@@ -215,7 +223,9 @@ async function expectState(store, h) {
     `users/${ME}`, `users/${ME}/trips/t1`, `users/${ME}/trips/t1/checklist/c1`, `users/${ME}/trips/t1/itinerary/d1`, `users/${ME}/saved_places/p1`,
     `userLookup/${ME}`, 'userLookupByEmail/alice@example.test', `publicProfiles/${ME}`,
     `follows/${ME}___${BOB}`, `follows/${BOB}___${ME}`, `postLikes/bobPost___${ME}`, `savedPosts/${ME}___bobPost`, `postLikes/bobJournal___${ME}`,
-    'travelPosts/alicePost', 'travelJournals/aliceJournal',
+    'travelPosts/alicePost', 'travelJournals/aliceJournal', 'travelJournals/aliceJournal2',
+    // Other users' likes/saves that pointed at Alice's deleted content.
+    `postLikes/alicePost___${BOB}`, `savedPosts/${BOB}___alicePost`, `postLikes/aliceJournal___${CAROL}`, `postLikes/aliceJournalLegacy___${CAROL}`,
     'publicTrips/aliceTrip', `trips/aliceTrip/members/${ME}`, `trips/aliceTrip/members/${BOB}`,
     `trips/bobTrip/members/${ME}`, `travelGroups/bobGroup/members/${ME}`, 'tripJoinRequests/aliceAsked',
     'groups/soloChat', 'groups/soloChat/messages/s1', 'notifications/mine', 'activityFeed/aliceItem',
@@ -237,7 +247,6 @@ async function expectState(store, h) {
   assert.deepEqual([old.authorName, old.authorPhoto], [DELETED, null]);
   assert.equal((await get('postComments/bobReply')).text, 'hello back');
   assert.equal((await get('postComments/carolComment')).replyCount, 0);
-  assert.ok(await get(`postLikes/alicePost___${BOB}`), "Bob's like on Alice's post is Bob's record");
   assert.ok(await get('postComments/bobOnAlice'), "Bob's comment is Bob's content");
   assert.equal((await get('travelJournals/bobJournal')).likeCount, 0);
   assert.equal((await get('publicTrips/bobTrip')).memberCount, 1);
@@ -282,7 +291,7 @@ function lossyCommit(store, match, times = 1) {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 const tests = [];
-const test = (name, fn) => tests.push({ name, fn });
+const test = (name, fn, only) => tests.push({ name, fn, only });
 
 test('two-user ownership: only the caller\'s data is deleted, others preserved, counters exact', async () => {
   const store = await newStore(); await seed(store); const h = harness(store);
@@ -388,7 +397,7 @@ test('recent-auth window', async () => {
   assert.equal(authMod.isRecentAuth({ authTime: nowSec - 60 }, nowSec), true);
   assert.equal(authMod.isRecentAuth({ authTime: nowSec - 301 }, nowSec), false);
   assert.equal(authMod.isRecentAuth({ authTime: 0 }, nowSec), false);
-});
+}, 'memory');
 
 // ── Client: reauth gate, local cleanup only after success ─────────────────────
 
@@ -437,11 +446,302 @@ test('client: wrong password / server failure keep local data; success clears ca
   } finally {
     global.fetch = realFetch;
   }
+}, 'memory');
+
+// ── Defect 1: persistent deletion barrier ─────────────────────────────────────
+
+const uploads = worker('uploads');
+const { LEASE_MS } = deletion;
+
+test('barrier: job document exists before the first data step and persists after completion', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  const query = store.query.bind(store);
+  let barrierAtFirstStep;
+  store.query = async (...a) => {
+    if (barrierAtFirstStep === undefined) barrierAtFirstStep = !!(await store.get(`accountDeletions/${ME}`));
+    return query(...a);
+  };
+  await deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps);
+  store.query = query;
+  assert.equal(barrierAtFirstStep, true);
+  assert.ok(await store.get(`accountDeletions/${ME}`), 'barrier is never removed');
+  // A failed attempt also leaves the barrier up (account locked, retry allowed).
+  const store2 = await newStore(); await seed(store2); const h2 = harness(store2);
+  h2.r2.failNext = 1;
+  await assert.rejects(deletion.deleteAccount({ uid: ME, email: null }, h2.deps));
+  assert.equal((await store2.get(`accountDeletions/${ME}`)).data.status, 'failed');
 });
+
+function uploadRequest() {
+  const form = new FormData();
+  form.append('file', new File([new Uint8Array([1, 2, 3])], 'p.jpg', { type: 'image/jpeg' }));
+  return new Request('https://worker.test/upload/post-photo', { method: 'POST', headers: { Authorization: 'Bearer t' }, body: form });
+}
+
+test('worker uploads: refused once deletion started; an upload in flight when it starts is removed', async () => {
+  const store = await newStore(); await seed(store);
+  const objects = new Map();
+  let onPut = async () => {};
+  const deps = (isDeleting) => ({
+    verify: async () => ({ uid: ME, email: null, authTime: 0 }),
+    isDeleting,
+    bucket: { put: async (k, v) => { objects.set(k, v); await onPut(); }, delete: async (k) => { objects.delete(k); } },
+    publicBaseUrl: 'https://cdn.test/', json,
+  });
+  // Same barrier read the Worker performs (index.ts).
+  const barrier = async (uid) => !!(await store.get(`accountDeletions/${uid}`));
+
+  let resp = await uploads.handlePhotoUpload(uploadRequest(), uploads.POST_PHOTO, deps(barrier));
+  assert.equal(resp.status, 200);
+  assert.equal(objects.size, 1);
+  objects.clear();
+
+  // Deletion starts while the upload is being stored (after its first check).
+  onPut = async () => {
+    await store.commit([{ kind: 'update', path: `accountDeletions/${ME}`, set: { uid: ME, status: 'in_progress', leaseUntil: Date.now() + LEASE_MS }, mustExist: false }]);
+  };
+  resp = await uploads.handlePhotoUpload(uploadRequest(), uploads.POST_PHOTO, deps(barrier));
+  assert.deepEqual([resp.status, (await resp.json()).code, objects.size], [403, 'account/deletion-in-progress', 0]);
+
+  onPut = async () => {};
+  resp = await uploads.handlePhotoUpload(uploadRequest(), uploads.PROFILE_PHOTO, deps(barrier));
+  assert.deepEqual([resp.status, objects.size], [403, 0], 'refused before storing');
+
+  resp = await uploads.handlePhotoUpload(uploadRequest(), uploads.POST_PHOTO, deps(async () => { throw new Error('firestore down'); }));
+  assert.deepEqual([resp.status, objects.size], [403, 0], 'barrier read failure fails closed');
+});
+
+test('post-deletion sweep removes late media of recently deleted accounts only', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  await deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps);
+  // Uploads that passed the barrier check before deletion began, landing late.
+  h.r2.objects.add(`post_photos/${ME}/late.jpg`);
+  h.storage.objects.add(`journals/${ME}/t1/late.jpg`);
+  assert.equal(await deletion.sweepRecentlyDeletedMedia(h.deps), 1);
+  assert.ok(![...h.r2.objects, ...h.storage.objects].some((k) => k.includes(`/${ME}/`)));
+  assert.ok(h.r2.objects.has(`post_photos/${BOB}/y.jpg`), 'other users untouched');
+  h.advance(deletion.SWEEP_WINDOW_MS + 60_000);
+  h.r2.objects.add(`post_photos/${ME}/much-later.jpg`);
+  assert.equal(await deletion.sweepRecentlyDeletedMedia(h.deps), 0, 'outside the window');
+});
+
+test('barrier: other devices and still-valid tokens cannot write or upload during or after deletion; other users can', async () => {
+  const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
+  const sdk = require('firebase/firestore');
+  const env = await initializeTestEnvironment({
+    projectId: PROJECT,
+    firestore: { host: '127.0.0.1', port: 8188, rules: fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8') },
+    storage: { host: '127.0.0.1', port: 9188, rules: fs.readFileSync(path.join(root, 'storage.rules'), 'utf8') },
+  });
+  try {
+    const store = await newStore(); await seed(store); const h = harness(store);
+    const alice = env.authenticatedContext(ME, { email: 'alice@example.test' });
+    const bob = env.authenticatedContext(BOB, { email: 'bob@example.test' });
+    const bytes = new Uint8Array([1, 2, 3]);
+    const meta = { contentType: 'image/jpeg' };
+    const aliceWrites = (tag) => [
+      sdk.setDoc(sdk.doc(alice.firestore(), `users/${ME}/trips/${tag}`), { destination: 'x' }),
+      sdk.setDoc(sdk.doc(alice.firestore(), `users/${ME}`), { email: 'alice@example.test' }),
+      sdk.setDoc(sdk.doc(alice.firestore(), `travelPosts/${tag}`), { authorId: ME, likeCount: 0, commentCount: 0, saveCount: 0, visibility: 'public', isArchived: false }),
+      sdk.setDoc(sdk.doc(alice.firestore(), `nearbyTravelers/${ME}`), { uid: ME }),
+      sdk.setDoc(sdk.doc(alice.firestore(), `blocks/${ME}/blocked/${tag}`), { blockedUid: tag }),
+      alice.storage().ref(`profile_photos/${ME}/${tag}.jpg`).put(bytes, meta),
+      alice.storage().ref(`trip_covers/${ME}/${tag}.jpg`).put(bytes, meta),
+    ];
+
+    // Before deletion: the same writes are allowed (proves the barrier is what denies them).
+    await assertSucceeds(sdk.setDoc(sdk.doc(alice.firestore(), `users/${ME}/trips/before`), { destination: 'x' }));
+    await assertSucceeds(alice.storage().ref(`profile_photos/${ME}/before.jpg`).put(bytes, meta));
+    await store.commit([{ kind: 'delete', path: `users/${ME}/trips/before` }]);
+
+    // During deletion (mid "posts" step), another device keeps writing.
+    const commit = store.commit.bind(store);
+    let checked = false;
+    store.commit = async (writes) => {
+      if (!checked && writes.some((w) => w.path === 'travelPosts/alicePost')) {
+        checked = true;
+        for (const op of aliceWrites('during')) await assertFails(op);
+        await assertSucceeds(sdk.setDoc(sdk.doc(bob.firestore(), `users/${BOB}/trips/during`), { destination: 'y' }));
+        await assertSucceeds(bob.storage().ref(`profile_photos/${BOB}/during.jpg`).put(bytes, meta));
+      }
+      return commit(writes);
+    };
+    await deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps);
+    store.commit = commit;
+    assert.ok(checked);
+    await expectState(store, h);
+
+    // After completion, a still-valid token for the deleted UID can recreate nothing.
+    for (const op of aliceWrites('after')) await assertFails(op);
+    assert.equal(await store.get(`users/${ME}/trips/after`), null);
+  } finally {
+    await env.cleanup();
+  }
+}, 'emulator');
+
+// ── Defect 2: attempt ownership, conditional updates, lease renewal ──────────
+
+test('deletion lasting well beyond the lease renews it, blocks concurrent attempts, and completes once', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  const start = h.now();
+  const clocked = {};
+  let concurrentChecked = false;
+  for (const m of ['get', 'query', 'listDocumentIds', 'listCollectionIds', 'commit']) {
+    clocked[m] = async (...a) => {
+      h.advance(15_000); // every database round trip takes 15 s
+      if (!concurrentChecked && h.now() - start > LEASE_MS + 60_000) {
+        concurrentChecked = true;
+        // A second request (e.g. another device) after the original lease would have expired.
+        await assert.rejects(deletion.deleteAccount({ uid: ME, email: null }, { ...h.deps, store }), deletion.DeletionInProgress);
+      }
+      return store[m](...a);
+    };
+  }
+  await deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, { ...h.deps, store: clocked });
+  assert.ok(concurrentChecked);
+  assert.ok(h.now() - start > 4 * LEASE_MS, `took ${(h.now() - start) / 60000} min`);
+  const job = (await store.get(`accountDeletions/${ME}`)).data;
+  assert.deepEqual([job.status, job.attempts, job.attemptId], ['completed', 1, 'attempt-1']);
+  assert.equal(h.authCalls.length, 1);
+  await expectState(store, h);
+});
+
+for (const [label, resume] of [
+  ['continues with its next operation', (base, writes) => base(writes)],
+  ['then fails with an error', async () => { throw new Error('late network error'); }],
+]) {
+  test(`an expired attempt that ${label} stops and cannot overwrite a newer successful job`, async () => {
+    const store = await newStore(); await seed(store); const h = harness(store);
+    const base = store.commit.bind(store);
+    let tookOver = false;
+    store.commit = async (writes) => {
+      if (!tookOver && writes.some((w) => w.path === 'travelPosts/alicePost')) {
+        tookOver = true;
+        h.advance(LEASE_MS + 60_000); // attempt-1 stalls past its lease
+        store.commit = base;
+        await deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps); // attempt-2 completes
+        return resume(base, writes);
+      }
+      return base(writes);
+    };
+    await assert.rejects(deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps),
+      (e) => e instanceof deletion.DeletionAttemptLost || e instanceof deletion.DeletionStepFailed);
+    const job = (await store.get(`accountDeletions/${ME}`)).data;
+    assert.deepEqual([job.status, job.attemptId, job.lastError], ['completed', 'attempt-2', null]);
+    assert.equal(h.authCalls.length, 1, 'only the owning attempt removes Auth');
+    await expectState(store, h);
+  });
+}
+
+test('an attempt whose lease lapsed without takeover stops; the retry takes over and finishes', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  const base = store.commit.bind(store);
+  let stalled = false;
+  store.commit = async (writes) => {
+    if (!stalled && writes.some((w) => w.path.startsWith('follows/'))) { stalled = true; h.advance(LEASE_MS + 1); }
+    return base(writes);
+  };
+  await assert.rejects(deletion.deleteAccount({ uid: ME, email: null }, h.deps), (e) => e instanceof deletion.DeletionAttemptLost && e.reason === 'expired');
+  store.commit = base;
+  assert.equal(h.authCalls.length, 0);
+  await deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps);
+  assert.equal((await store.get(`accountDeletions/${ME}`)).data.attemptId, 'attempt-2');
+  await expectState(store, h);
+});
+
+test('an expired attempt cannot mark a newer, still-running attempt failed', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  const base = store.commit.bind(store);
+  let phase = 'A';
+  let releaseB, markPaused, newer;
+  const bPaused = new Promise((r) => { markPaused = r; });
+  const bRelease = new Promise((r) => { releaseB = r; });
+  store.commit = async (writes) => {
+    if (phase === 'A' && writes.some((w) => w.path === 'travelPosts/alicePost')) {
+      phase = 'B';
+      h.advance(LEASE_MS + 60_000); // attempt-1 stalls past its lease
+      newer = deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps); // attempt-2 starts
+      await bPaused; // attempt-2 is mid-way and owns the job
+      throw new Error('late network error'); // attempt-1's step now fails
+    }
+    if (phase === 'B' && writes.some((w) => w.path.startsWith('groups/'))) {
+      phase = 'B-paused';
+      markPaused();
+      await bRelease;
+    }
+    return base(writes);
+  };
+  await assert.rejects(deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps), deletion.DeletionStepFailed);
+  let job = (await store.get(`accountDeletions/${ME}`)).data;
+  assert.deepEqual([job.status, job.attemptId, job.lastError], ['in_progress', 'attempt-2', null]);
+  releaseB();
+  await newer;
+  job = (await store.get(`accountDeletions/${ME}`)).data;
+  assert.deepEqual([job.status, job.attemptId], ['completed', 'attempt-2']);
+  store.commit = base;
+  await expectState(store, h);
+});
+
+// ── Defect 3: likes/saves on deleted owned content ────────────────────────────
+
+test('likes and saves referencing deleted owned posts/journals are removed; unrelated ones kept', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  // Retry safety: fail right after the first content item's edges were removed.
+  const base = store.commit.bind(store);
+  let failed = false;
+  store.commit = async (writes) => {
+    await base(writes);
+    if (!failed && writes.some((w) => w.path === `savedPosts/${BOB}___alicePost`)) { failed = true; throw new Error('network: response lost'); }
+  };
+  await assert.rejects(deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps), (e) => e.step === 'posts');
+  store.commit = base;
+  await deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps);
+  for (const p of [`postLikes/alicePost___${BOB}`, `savedPosts/${BOB}___alicePost`, `postLikes/aliceJournal___${CAROL}`, `postLikes/aliceJournalLegacy___${CAROL}`]) {
+    assert.equal(await store.get(p), null, p);
+  }
+  for (const p of [`postLikes/bobPost___${CAROL}`, `savedPosts/${CAROL}___bobPost`]) assert.ok(await store.get(p), p);
+  await expectState(store, h);
+});
+
+// ── Defect 4: accurate partial-deletion messaging ─────────────────────────────
+
+test('failure messages describe possible partial deletion and retry, never "nothing was lost"', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  h.storage.failNext = 1;
+  const resp = await route.handleAccountDeletion(req('Bearer t'), {
+    verify: async () => ({ uid: ME, email: null, authTime: nowSec }), deletion: () => h.deps, json, nowSec: () => nowSec,
+  });
+  const body = await resp.json();
+  assert.equal(resp.status, 500);
+  assert.match(body.error, /may already be deleted/);
+  assert.match(body.error, /try again/i);
+  assert.doesNotMatch(body.error, /nothing was lost/i);
+});
+
+test('client failure toast describes possible partial deletion', async () => {
+  const toasts = [];
+  const hook = mobile('apps/mobile/hooks/useAuth.ts', {
+    react: { useCallback: (f) => f }, 'zustand/react/shallow': { useShallow: (f) => f },
+    'expo-router': { router: { replace() {} } },
+    '@solotravelsoul/firebase': { signIn() {}, signUp() {}, signOut: async () => {}, resetPassword() {}, reauthenticate: async () => {}, createUserProfile() {}, upsertUserLookup() {} },
+    '@solotravelsoul/shared': { getUserInitials: () => 'A' },
+    '@/stores/authStore': { useAuthStore: (sel) => sel({ user: { uid: ME }, profile: null, loading: false, setLoading() {} }) },
+    '@/stores/uiStore': { useUIStore: (sel) => sel({ addToast: (m) => toasts.push(m) }) },
+    '@/hooks/useSyncEngine': { setSyncPaused() {} },
+    '@/utils/accountDeletion': {
+      requestAccountDeletion: async () => { throw Object.assign(new Error('x'), { code: 'deletion/failed' }); },
+      clearLocalUserData: async () => {},
+    },
+  });
+  assert.equal(await hook.useAuth().deleteAccount('pw'), false);
+  assert.match(toasts[0], /may already be deleted/);
+  assert.doesNotMatch(toasts[0], /nothing was lost/i);
+  assert.doesNotMatch(fs.readFileSync(path.join(root, 'apps/mobile/app/privacy.tsx'), 'utf8'), /nothing was lost/i);
+}, 'memory');
 
 (async () => {
   let passed = 0;
-  const only = EMULATOR ? tests.filter((t) => !t.name.startsWith('client') && t.name !== 'recent-auth window') : tests;
+  const only = tests.filter((t) => !t.only || t.only === (EMULATOR ? 'emulator' : 'memory'));
   for (const t of only) {
     try { await t.fn(); passed++; console.log(`PASS ${t.name}`); }
     catch (e) { console.error(`FAIL ${t.name}\n`, e); process.exitCode = 1; }

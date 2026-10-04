@@ -3,6 +3,15 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Persistent account-deletion barrier. Once deletion of an account starts
+    // (accountDeletions/{uid} exists), no token for that UID can write anything
+    // again — including tokens still valid on other devices. Deletion itself,
+    // and its retries, run server-side with Admin credentials.
+    function notDeleting() {
+      return request.auth == null
+        || !exists(/databases/$(database)/documents/accountDeletions/$(request.auth.uid));
+    }
+
     // Ownership is enforced on relationship documents AND their atomic counter
     // updates. A numeric +/-1 change by itself is not evidence of an action.
     function unblocked(a, b) {
@@ -111,35 +120,41 @@ service cloud.firestore {
 
     // ── Users ──────────────────────────────────────────────────────────
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if notDeleting() && (request.auth != null && request.auth.uid == userId);
 
       // ── Trips ─────────────────────────────────────────────────────
       match /trips/{tripId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if notDeleting() && (request.auth != null && request.auth.uid == userId);
 
         // ── Itinerary days ─────────────────────────────────────────
         match /itinerary/{dayId} {
-          allow read, write: if request.auth != null && request.auth.uid == userId;
+          allow read: if request.auth != null && request.auth.uid == userId;
+          allow write: if notDeleting() && (request.auth != null && request.auth.uid == userId);
         }
 
         // ── Packing checklist ──────────────────────────────────
         match /checklist/{itemId} {
-          allow read, write: if request.auth != null && request.auth.uid == userId;
+          allow read: if request.auth != null && request.auth.uid == userId;
+          allow write: if notDeleting() && (request.auth != null && request.auth.uid == userId);
         }
 
         // ── Trip reminder preferences ───────────────────────────
         match /reminders/{doc} {
-          allow read, write: if request.auth != null && request.auth.uid == userId;
+          allow read: if request.auth != null && request.auth.uid == userId;
+          allow write: if notDeleting() && (request.auth != null && request.auth.uid == userId);
         }
       }
 
       // ── Saved places ───────────────────────────────────────────────
       match /saved_places/{placeId} {
-        allow read, delete: if request.auth != null && request.auth.uid == userId;
-        allow create: if request.auth != null
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow delete: if notDeleting() && (request.auth != null && request.auth.uid == userId);
+        allow create: if notDeleting() && (request.auth != null
           && request.auth.uid == userId
-          && request.resource.data.userId == request.auth.uid;
-        allow update: if request.auth != null && request.auth.uid == userId;
+          && request.resource.data.userId == request.auth.uid);
+        allow update: if notDeleting() && (request.auth != null && request.auth.uid == userId);
       }
     }
 
@@ -148,19 +163,19 @@ service cloud.firestore {
       allow read: if request.auth != null
         && request.auth.uid == resource.data.userId;
 
-      allow update: if request.auth != null
+      allow update: if notDeleting() && (request.auth != null
         && request.auth.uid == resource.data.userId
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead'])
-        && request.resource.data.isRead is bool;
+        && request.resource.data.isRead is bool);
     }
 
     // ── User place reviews ────────────────────────────────────────────
     match /user_place_reviews/{reviewId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null
-        && request.auth.uid == request.resource.data.userId;
-      allow update, delete: if request.auth != null
-        && request.auth.uid == resource.data.userId;
+      allow create: if notDeleting() && (request.auth != null
+        && request.auth.uid == request.resource.data.userId);
+      allow update, delete: if notDeleting() && (request.auth != null
+        && request.auth.uid == resource.data.userId);
     }
 
     // ── User lookup — minimal public data for chat search ────────────
@@ -170,10 +185,10 @@ service cloud.firestore {
       allow read: if request.auth != null && request.auth.uid == uid;
       // Validate that the stored email matches the caller's verified auth token email.
       // Prevents a user from writing another user's email into their own lookup entry.
-      allow create, update: if request.auth != null
+      allow create, update: if notDeleting() && (request.auth != null
         && request.auth.uid == uid
-        && request.resource.data.email.lower() == request.auth.token.email.lower();
-      allow delete: if request.auth != null && request.auth.uid == uid;
+        && request.resource.data.email.lower() == request.auth.token.email.lower());
+      allow delete: if notDeleting() && (request.auth != null && request.auth.uid == uid);
     }
 
     // Exact-address lookup: get is permitted, list is never permitted. IDs
@@ -181,13 +196,13 @@ service cloud.firestore {
     match /userLookupByEmail/{address} {
       allow get: if request.auth != null && (resource == null || unblocked(request.auth.uid, resource.data.uid));
       allow list: if false;
-      allow create, update: if request.auth != null
+      allow create, update: if notDeleting() && (request.auth != null
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.email == request.auth.token.email.lower()
         && address == request.auth.token.email.lower().replace('%', '%25').replace('/', '%2F')
-        && (resource == null || resource.data.uid == request.auth.uid);
-      allow delete: if request.auth != null && (resource != null ? resource.data.uid == request.auth.uid
-        : address == request.auth.token.email.lower().replace('%', '%25').replace('/', '%2F'));
+        && (resource == null || resource.data.uid == request.auth.uid));
+      allow delete: if notDeleting() && (request.auth != null && (resource != null ? resource.data.uid == request.auth.uid
+        : address == request.auth.token.email.lower().replace('%', '%25').replace('/', '%2F')));
     }
 
     // ── Direct chats ─────────────────────────────────────────────────
@@ -197,11 +212,11 @@ service cloud.firestore {
       // the SDK returns exists()=false with no data, so nothing is exposed.
       allow read: if request.auth != null
         && (resource == null || request.auth.uid in resource.data.participants);
-      allow create: if request.auth != null
+      allow create: if notDeleting() && (request.auth != null
         && request.auth.uid in request.resource.data.participants
         && request.resource.data.participants.size() == 2
         && request.resource.data.participants[0] != request.resource.data.participants[1]
-        && unblocked(request.resource.data.participants[0], request.resource.data.participants[1]);
+        && unblocked(request.resource.data.participants[0], request.resource.data.participants[1]));
       // A preview must point to the message created in this same transaction.
       function sentMessage() {
         let id = request.resource.data.lastMessage.messageId;
@@ -223,14 +238,14 @@ service cloud.firestore {
           && request.resource.data.unreadCounts.diff(resource.data.unreadCounts).affectedKeys().hasOnly([request.auth.uid])
           && request.resource.data.unreadCounts.get(request.auth.uid, -1) == 0;
       }
-      allow update: if request.auth != null && request.auth.uid in resource.data.participants
-        && (markRead() || sentMessage());
+      allow update: if notDeleting() && (request.auth != null && request.auth.uid in resource.data.participants
+        && (markRead() || sentMessage()));
 
       match /messages/{messageId} {
         allow read: if request.auth != null
           && request.auth.uid in
              get(/databases/$(database)/documents/direct_chats/$(chatId)).data.participants;
-        allow create: if request.auth != null
+        allow create: if notDeleting() && (request.auth != null
           && request.auth.uid in
              get(/databases/$(database)/documents/direct_chats/$(chatId)).data.participants
           && unblocked(get(/databases/$(database)/documents/direct_chats/$(chatId)).data.participants[0],
@@ -240,7 +255,7 @@ service cloud.firestore {
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 1000
           && request.resource.data.sentAt == request.time
-          && getAfter(/databases/$(database)/documents/direct_chats/$(chatId)).data.lastMessage.messageId == messageId;
+          && getAfter(/databases/$(database)/documents/direct_chats/$(chatId)).data.lastMessage.messageId == messageId);
         // Messages are immutable once sent.
         allow update, delete: if false;
       }
@@ -251,14 +266,14 @@ service cloud.firestore {
       allow read: if request.auth != null
         && request.auth.uid in resource.data.members;
       // Creator must be a member, and must set themselves as createdBy.
-      allow create: if request.auth != null
+      allow create: if notDeleting() && (request.auth != null
         && request.auth.uid in request.resource.data.members
-        && request.auth.uid == request.resource.data.createdBy;
+        && request.auth.uid == request.resource.data.createdBy);
       // Creator can update any field (rename group, add/remove members, etc.)
-      allow update: if request.auth != null
-        && request.auth.uid == resource.data.createdBy;
+      allow update: if notDeleting() && (request.auth != null
+        && request.auth.uid == resource.data.createdBy);
       // Members (non-creator) can only write chat metadata, or remove themselves from the group.
-      allow update: if request.auth != null
+      allow update: if notDeleting() && (request.auth != null
         && request.auth.uid in resource.data.members
         && (
           request.resource.data.diff(resource.data).affectedKeys()
@@ -267,21 +282,21 @@ service cloud.firestore {
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
             && request.resource.data.members == resource.data.members.removeAll([request.auth.uid])
           )
-        );
-      allow delete: if request.auth != null
-        && request.auth.uid == resource.data.createdBy;
+        ));
+      allow delete: if notDeleting() && (request.auth != null
+        && request.auth.uid == resource.data.createdBy);
 
       match /messages/{messageId} {
         allow read: if request.auth != null
           && request.auth.uid in
              get(/databases/$(database)/documents/groups/$(groupId)).data.members;
-        allow create: if request.auth != null
+        allow create: if notDeleting() && (request.auth != null
           && request.auth.uid in
              get(/databases/$(database)/documents/groups/$(groupId)).data.members
           && request.resource.data.senderId == request.auth.uid
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 1000;
+          && request.resource.data.text.size() <= 1000);
         allow update, delete: if false;
       }
     }
@@ -289,9 +304,9 @@ service cloud.firestore {
     // ── Places cache ──────────────────────────────────────────────────
     match /places_cache/{placeId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null
+      allow write: if notDeleting() && (request.auth != null
         && request.resource.data.id == placeId
-        && request.resource.data.source in ['foursquare', 'manual'];
+        && request.resource.data.source in ['foursquare', 'manual']);
     }
 
     // ── Community: Public Profiles ────────────────────────────────────
@@ -299,26 +314,26 @@ service cloud.firestore {
       allow get: if request.auth != null && (request.auth.uid == uid
         || (resource != null && resource.data.get('profileVisibility', 'public') == 'public' && unblocked(request.auth.uid, uid)));
       allow list: if request.auth != null && resource.data.get('profileVisibility', 'public') == 'public';
-      allow create: if request.auth != null && request.auth.uid == uid
-        && request.resource.data.get('followersCount', 0) == 0 && request.resource.data.get('followingCount', 0) == 0;
-      allow delete: if request.auth != null && request.auth.uid == uid;
-      allow update: if request.auth != null && (
+      allow create: if notDeleting() && (request.auth != null && request.auth.uid == uid
+        && request.resource.data.get('followersCount', 0) == 0 && request.resource.data.get('followingCount', 0) == 0);
+      allow delete: if notDeleting() && (request.auth != null && request.auth.uid == uid);
+      allow update: if notDeleting() && (request.auth != null && (
         (request.auth.uid == uid && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['followersCount', 'followingCount']))
-        || followerCounter(uid) || followingCounter(uid));
+        || followerCounter(uid) || followingCounter(uid)));
     }
 
     // ── Community: Public Trips ───────────────────────────────────────
     match /publicTrips/{tripId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null
-        && request.resource.data.ownerUid == request.auth.uid;
-      allow update: if request.auth != null
+      allow create: if notDeleting() && (request.auth != null
+        && request.resource.data.ownerUid == request.auth.uid);
+      allow update: if notDeleting() && (request.auth != null
         && resource != null
-        && resource.data.ownerUid == request.auth.uid;
+        && resource.data.ownerUid == request.auth.uid);
       // Allow delete even when doc doesn't exist (batch delete when trip goes private).
-      allow delete: if request.auth != null
+      allow delete: if notDeleting() && (request.auth != null
         && (resource == null
-            || resource.data.ownerUid == request.auth.uid);
+            || resource.data.ownerUid == request.auth.uid));
     }
 
     // ── Community: Trip Members subcollection ────────────────────────
@@ -326,7 +341,7 @@ service cloud.firestore {
     // batch that creates publicTrips + member doc at the same time.
     match /trips/{tripId}/members/{memberId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null && (
+      allow create: if notDeleting() && (request.auth != null && (
         // Phase 1 — initial trip publication: publicTrip doesn't exist yet
         // (same-batch create), so verify via the user's private trips subcollection.
         (!exists(/databases/$(database)/documents/publicTrips/$(tripId))
@@ -337,35 +352,35 @@ service cloud.firestore {
         // Phase 2 — join-request approval: publicTrip already exists.
         (exists(/databases/$(database)/documents/publicTrips/$(tripId))
           && get(/databases/$(database)/documents/publicTrips/$(tripId)).data.ownerUid == request.auth.uid)
-      );
-      allow delete: if request.auth != null && (
+      ));
+      allow delete: if notDeleting() && (request.auth != null && (
         memberId == request.auth.uid   // member removing themselves
         || (exists(/databases/$(database)/documents/publicTrips/$(tripId))
             && get(/databases/$(database)/documents/publicTrips/$(tripId)).data.ownerUid == request.auth.uid)
-      );
+      ));
       allow update: if false;
     }
 
     // ── Community: Trip Join Requests ─────────────────────────────────
     match /tripJoinRequests/{requestId} {
-      allow create: if request.auth != null
+      allow create: if notDeleting() && (request.auth != null
         && request.resource.data.requestorUid == request.auth.uid
         && request.resource.data.ownerUid != request.auth.uid
-        && request.resource.data.status == 'pending';
+        && request.resource.data.status == 'pending');
       // Allow read when resource == null so getTripJoinRequestStatus returns null
       // instead of throwing permission-denied for trips with no previous request.
       allow read: if request.auth != null
         && (resource == null
             || resource.data.ownerUid == request.auth.uid
             || resource.data.requestorUid == request.auth.uid);
-      allow update: if request.auth != null
+      allow update: if notDeleting() && (request.auth != null
         && resource != null
         && (
           (resource.data.ownerUid == request.auth.uid
             && request.resource.data.status in ['approved', 'rejected'])
           || (resource.data.requestorUid == request.auth.uid
               && request.resource.data.status == 'cancelled')
-        );
+        ));
       allow delete: if false;
     }
 
@@ -376,19 +391,19 @@ service cloud.firestore {
         && (resource == null
             || resource.data.visibility == 'public'
             || resource.data.ownerUid == request.auth.uid);
-      allow create: if request.auth != null
-        && request.resource.data.ownerUid == request.auth.uid;
-      allow update: if request.auth != null
+      allow create: if notDeleting() && (request.auth != null
+        && request.resource.data.ownerUid == request.auth.uid);
+      allow update: if notDeleting() && (request.auth != null
         && resource != null
-        && resource.data.ownerUid == request.auth.uid;
-      allow delete: if request.auth != null
+        && resource.data.ownerUid == request.auth.uid);
+      allow delete: if notDeleting() && (request.auth != null
         && resource != null
-        && resource.data.ownerUid == request.auth.uid;
+        && resource.data.ownerUid == request.auth.uid);
 
       // Group members: restricted to group owner; two-phase check mirrors trip members.
       match /members/{memberId} {
         allow read: if request.auth != null;
-        allow create: if request.auth != null && (
+        allow create: if notDeleting() && (request.auth != null && (
           // Phase 1 — group creation batch: group doc doesn't exist yet in Firestore.
           (!exists(/databases/$(database)/documents/travelGroups/$(groupId))
             && request.resource.data.role == 'owner'
@@ -397,64 +412,64 @@ service cloud.firestore {
           // Phase 2 — join-request approval: group already exists.
           (exists(/databases/$(database)/documents/travelGroups/$(groupId))
             && get(/databases/$(database)/documents/travelGroups/$(groupId)).data.ownerUid == request.auth.uid)
-        );
-        allow delete: if request.auth != null && (
+        ));
+        allow delete: if notDeleting() && (request.auth != null && (
           memberId == request.auth.uid   // member leaving themselves
           || (exists(/databases/$(database)/documents/travelGroups/$(groupId))
               && get(/databases/$(database)/documents/travelGroups/$(groupId)).data.ownerUid == request.auth.uid)
-        );
+        ));
         allow update: if false;
       }
     }
 
     // ── Community: Group Join Requests ────────────────────────────────
     match /groupJoinRequests/{requestId} {
-      allow create: if request.auth != null
+      allow create: if notDeleting() && (request.auth != null
         && request.resource.data.requestorUid == request.auth.uid
         && request.resource.data.ownerUid != request.auth.uid
-        && request.resource.data.status == 'pending';
+        && request.resource.data.status == 'pending');
       // resource == null guard matches tripJoinRequests pattern.
       allow read: if request.auth != null
         && (resource == null
             || resource.data.ownerUid == request.auth.uid
             || resource.data.requestorUid == request.auth.uid);
-      allow update: if request.auth != null
+      allow update: if notDeleting() && (request.auth != null
         && resource != null
         && (
           (resource.data.ownerUid == request.auth.uid
             && request.resource.data.status in ['approved', 'rejected'])
           || (resource.data.requestorUid == request.auth.uid
               && request.resource.data.status == 'cancelled')
-        );
+        ));
       allow delete: if false;
     }
 
     // ── Community: Nearby Travelers ───────────────────────────────────
     match /nearbyTravelers/{uid} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow write: if notDeleting() && (request.auth != null && request.auth.uid == uid);
     }
 
     // ── Community: Activity Feed ──────────────────────────────────────
     match /activityFeed/{feedItemId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null
-        && request.resource.data.actorUid == request.auth.uid;
-      allow delete: if request.auth != null
-        && resource.data.actorUid == request.auth.uid;
+      allow create: if notDeleting() && (request.auth != null
+        && request.resource.data.actorUid == request.auth.uid);
+      allow delete: if notDeleting() && (request.auth != null
+        && resource.data.actorUid == request.auth.uid);
       allow update: if false;
     }
 
     // ── Community: Blocks ─────────────────────────────────────────────
     match /blocks/{uid}/blocked/{blockedUid} {
       allow read: if request.auth != null && request.auth.uid == uid;
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow write: if notDeleting() && (request.auth != null && request.auth.uid == uid);
     }
 
     // ── Community: Reports ────────────────────────────────────────────
     match /reports/{reportId} {
-      allow create: if request.auth != null
-        && request.resource.data.reporterUid == request.auth.uid;
+      allow create: if notDeleting() && (request.auth != null
+        && request.resource.data.reporterUid == request.auth.uid);
       allow read: if false;
       allow update, delete: if false;
     }
@@ -462,78 +477,78 @@ service cloud.firestore {
     // ── Phase 2: Travel Posts and Journals ────────────────────────────
     match /travelPosts/{postId} {
       allow read: if visible(resource.data);
-      allow create: if request.auth != null && request.resource.data.authorId == request.auth.uid
-        && request.resource.data.likeCount == 0 && request.resource.data.commentCount == 0 && request.resource.data.saveCount == 0;
-      allow update: if request.auth != null && (
+      allow create: if notDeleting() && (request.auth != null && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.likeCount == 0 && request.resource.data.commentCount == 0 && request.resource.data.saveCount == 0);
+      allow update: if notDeleting() && (request.auth != null && (
         (resource.data.authorId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['caption', 'body', 'location', 'country', 'hashtags', 'visibility', 'images', 'updatedAt', 'isArchived']))
-        || likeCounter(postId, 'post') || saveCounter(postId) || commentCounter(postId));
-      allow delete: if request.auth != null && resource.data.authorId == request.auth.uid;
+        || likeCounter(postId, 'post') || saveCounter(postId) || commentCounter(postId)));
+      allow delete: if notDeleting() && (request.auth != null && resource.data.authorId == request.auth.uid);
     }
     match /travelJournals/{journalId} {
       allow read: if visible(resource.data);
-      allow create: if request.auth != null && request.resource.data.authorId == request.auth.uid
-        && request.resource.data.likeCount == 0 && request.resource.data.commentCount == 0 && request.resource.data.saveCount == 0;
-      allow update: if request.auth != null && (
+      allow create: if notDeleting() && (request.auth != null && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.likeCount == 0 && request.resource.data.commentCount == 0 && request.resource.data.saveCount == 0);
+      allow update: if notDeleting() && (request.auth != null && (
         (resource.data.authorId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['title', 'subtitle', 'body', 'coverImageURL', 'images', 'location', 'country', 'hashtags', 'visibility', 'readTimeMinutes', 'updatedAt', 'isArchived']))
-        || likeCounter(journalId, 'journal'));
-      allow delete: if request.auth != null && resource.data.authorId == request.auth.uid;
+        || likeCounter(journalId, 'journal')));
+      allow delete: if notDeleting() && (request.auth != null && resource.data.authorId == request.auth.uid);
     }
     match /postLikes/{likeId} {
       allow get: if request.auth != null && (resource == null || resource.data.userId == request.auth.uid || readableLike(resource.data));
       allow list: if request.auth != null && readableLike(resource.data);
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid
+      allow create: if notDeleting() && (request.auth != null && request.resource.data.userId == request.auth.uid
         && likeId == request.resource.data.postId + '___' + request.auth.uid && readableLike(request.resource.data)
         && ((likeKind(request.resource.data) == 'post'
           && unblocked(request.auth.uid, get(/databases/$(database)/documents/travelPosts/$(request.resource.data.postId)).data.authorId)
           && linkedCounter('travelPosts', request.resource.data.postId, 'likeCount', 1))
           || (likeKind(request.resource.data) == 'journal'
             && unblocked(request.auth.uid, get(/databases/$(database)/documents/travelJournals/$(request.resource.data.postId)).data.authorId)
-            && linkedCounter('travelJournals', request.resource.data.postId, 'likeCount', 1)));
+            && linkedCounter('travelJournals', request.resource.data.postId, 'likeCount', 1))));
       allow update: if false;
-      allow delete: if request.auth != null && resource.data.userId == request.auth.uid
+      allow delete: if notDeleting() && (request.auth != null && resource.data.userId == request.auth.uid
         && likeId == resource.data.postId + '___' + request.auth.uid
         && ((likeKind(resource.data) == 'post' && linkedCounter('travelPosts', resource.data.postId, 'likeCount', -1))
-          || (likeKind(resource.data) == 'journal' && linkedCounter('travelJournals', resource.data.postId, 'likeCount', -1)));
+          || (likeKind(resource.data) == 'journal' && linkedCounter('travelJournals', resource.data.postId, 'likeCount', -1))));
     }
     match /savedPosts/{savedId} {
       allow get: if request.auth != null && (resource != null ? resource.data.userId == request.auth.uid : savedId.split('___')[0] == request.auth.uid);
       allow list: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid
+      allow create: if notDeleting() && (request.auth != null && request.resource.data.userId == request.auth.uid
         && savedId == request.auth.uid + '___' + request.resource.data.postId && readablePost(request.resource.data.postId)
-        && linkedCounter('travelPosts', request.resource.data.postId, 'saveCount', 1);
-      allow update: if request.auth != null && resource.data.userId == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['collectionName']);
-      allow delete: if request.auth != null && resource.data.userId == request.auth.uid
-        && linkedCounter('travelPosts', resource.data.postId, 'saveCount', -1);
+        && linkedCounter('travelPosts', request.resource.data.postId, 'saveCount', 1));
+      allow update: if notDeleting() && (request.auth != null && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['collectionName']));
+      allow delete: if notDeleting() && (request.auth != null && resource.data.userId == request.auth.uid
+        && linkedCounter('travelPosts', resource.data.postId, 'saveCount', -1));
     }
     match /follows/{followId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null && request.resource.data.followerId == request.auth.uid
+      allow create: if notDeleting() && (request.auth != null && request.resource.data.followerId == request.auth.uid
         && request.resource.data.followingId != request.auth.uid
         && followId == request.auth.uid + '___' + request.resource.data.followingId
-        && unblocked(request.auth.uid, request.resource.data.followingId) && followLinked(request.resource.data, 1);
+        && unblocked(request.auth.uid, request.resource.data.followingId) && followLinked(request.resource.data, 1));
       allow update: if false;
-      allow delete: if request.auth != null && resource.data.followerId == request.auth.uid
-        && followId == request.auth.uid + '___' + resource.data.followingId && followLinked(resource.data, -1);
+      allow delete: if notDeleting() && (request.auth != null && resource.data.followerId == request.auth.uid
+        && followId == request.auth.uid + '___' + resource.data.followingId && followLinked(resource.data, -1));
     }
     match /postComments/{commentId} {
       allow read: if request.auth != null && (resource.data.authorId == request.auth.uid || readablePost(resource.data.postId));
-      allow create: if request.auth != null && request.resource.data.authorId == request.auth.uid
+      allow create: if notDeleting() && (request.auth != null && request.resource.data.authorId == request.auth.uid
         && readablePost(request.resource.data.postId)
         && unblocked(request.auth.uid, get(/databases/$(database)/documents/travelPosts/$(request.resource.data.postId)).data.authorId)
         && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 500
         && request.resource.data.replyCount == 0 && request.resource.data.isDeleted == false
-        && postCommentLinked(commentId, request.resource.data.postId, 1) && replyLinked(request.resource.data, commentId, 1);
-      allow update: if request.auth != null && (
+        && postCommentLinked(commentId, request.resource.data.postId, 1) && replyLinked(request.resource.data, commentId, 1));
+      allow update: if notDeleting() && (request.auth != null && (
         (resource.data.authorId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'updatedAt'])
           && resource.data.isDeleted == false && request.resource.data.text is string
           && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 500)
         || (resource.data.authorId == request.auth.uid && resource.data.isDeleted == false && request.resource.data.isDeleted == true
           && request.resource.data.text == '' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isDeleted', 'text', 'updatedAt'])
           && postCommentLinked(commentId, resource.data.postId, -1) && replyLinked(resource.data, commentId, -1))
-        || replyCounter(commentId));
+        || replyCounter(commentId)));
       allow delete: if false;
     }
 
@@ -545,7 +560,7 @@ service cloud.firestore {
 
     match /travelerReputation/{uid} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow write: if notDeleting() && (request.auth != null && request.auth.uid == uid);
     }
   }
 }
