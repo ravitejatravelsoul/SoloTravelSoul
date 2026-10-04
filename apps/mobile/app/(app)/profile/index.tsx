@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useMediaSource } from '@/hooks/useMediaSource';
 import {
   View,
   StyleSheet,
@@ -68,6 +69,7 @@ function SettingsRow({
 }
 
 export default function ProfileScreen() {
+  const mediaSrc = useMediaSource();
   const { profile, logout, deleteAccount } = useAuth();
   const { savedPlaces } = useSavedPlaces();
   const { upcoming, past } = useTrips();
@@ -75,6 +77,7 @@ export default function ProfileScreen() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteProgress, setDeleteProgress] = useState<string | null>(null);
 
   const uid = profile?.id ?? '';
   const { posts, loading: postsLoading } = useAuthorPosts(uid, 30);
@@ -118,7 +121,11 @@ export default function ProfileScreen() {
   const handleDeleteConfirm = async () => {
     if (!deletePassword.trim()) return;
     setDeleteLoading(true);
-    const success = await deleteAccount(deletePassword);
+    setDeleteProgress(null);
+    const success = await deleteAccount(deletePassword, (p) =>
+      setDeleteProgress(p.totalSteps ? `Deleting… ${p.completedSteps}/${p.totalSteps} steps` : 'Deleting…')
+    );
+    setDeleteProgress(null);
     setDeleteLoading(false);
     if (success) setShowDeleteModal(false);
   };
@@ -143,7 +150,7 @@ export default function ProfileScreen() {
         {/* ── Cover + Avatar ── */}
         <View style={styles.coverWrap}>
           {profile.coverPhotoURL ? (
-            <Image source={{ uri: profile.coverPhotoURL }} style={styles.cover} resizeMode="cover" />
+            <Image source={mediaSrc(profile.coverPhotoURL)} style={styles.cover} resizeMode="cover" />
           ) : (
             <LinearGradient
               colors={Gradients.hero}
@@ -447,6 +454,9 @@ export default function ProfileScreen() {
                   <Text style={styles.deleteConfirmLabel}>Permanently delete my account</Text>
                 )}
               </TouchableOpacity>
+              {deleteLoading && deleteProgress ? (
+                <Text style={styles.cancelLabel} accessibilityLiveRegion="polite">{deleteProgress}</Text>
+              ) : null}
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowDeleteModal(false)}>
                 <Text style={styles.cancelLabel}>Cancel</Text>
               </TouchableOpacity>

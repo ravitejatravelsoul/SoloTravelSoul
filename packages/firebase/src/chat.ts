@@ -277,17 +277,24 @@ export function subscribeToGroups(
   );
 }
 
-// Rules check each newly added member against the account-deletion barrier
-// and accept at most this many additions per write.
+// Rules check each newly added member or pending member against the
+// account-deletion barrier (one document read each; Firestore allows 10 per
+// write), so a write adds at most this many identities.
 const GROUP_MEMBERS_PER_WRITE = 8;
+/** Pending members listed by the create write itself (creator + these ≤ 8 checks). */
+const GROUP_PENDING_AT_CREATE = 7;
 
 /**
- * Creates a group in resumable chunks. Members beyond the first chunk are held
- * in `pendingMembers`; a group with pending members is hidden from every
- * member's list until creation completes, so an interruption (between chunks
- * or while dropping a refused member) never exposes a half-built group. A
- * member the rules refuse (e.g. their account is being deleted) is dropped,
- * together with their name and unread entry; everyone else is kept.
+ * Creates a group in resumable chunks. The create write holds the creator as
+ * the only member and the first invitees as `pendingMembers`; further invitees
+ * are appended to `pendingMembers` in chunks, then moved into `members`. A
+ * group with pending members is hidden from every member's list until creation
+ * completes, so an interruption never exposes a half-built group (an
+ * interruption while appending completes with the invitees listed so far).
+ * Names and unread entries are written only together with the invitee they
+ * describe. An invitee the rules refuse (e.g. their account is being deleted)
+ * is dropped; everyone else is kept. A refused invitee in the first chunk
+ * refuses the whole creation.
  */
 export async function createGroup(
   createdBy: string,
@@ -297,21 +304,56 @@ export async function createGroup(
   tripId?: string,
 ): Promise<string> {
   const groupRef = doc(collection(db, 'groups'));
-  const ordered = [createdBy, ...members.filter((m) => m !== createdBy)];
-  await setDoc(groupRef, {
-    name: name.trim(),
-    createdBy,
-    members: ordered.slice(0, GROUP_MEMBERS_PER_WRITE),
-    pendingMembers: ordered.slice(GROUP_MEMBERS_PER_WRITE),
-    memberInfo,
-    tripId: tripId ?? null,
-    lastMessage: null,
-    updatedAt: serverTimestamp(),
-    unreadCounts: Object.fromEntries(ordered.map((m) => [m, 0])),
-    createdAt: serverTimestamp(),
-  });
-  await completeGroupCreation(groupRef.id);
+  const invitees = [...new Set(members.filter((m) => m !== createdBy))];
+  const first = invitees.slice(0, GROUP_PENDING_AT_CREATE);
+  const pick = (uids: string[]) => Object.fromEntries(uids.filter((u) => memberInfo[u]).map((u) => [u, memberInfo[u]]));
+  resumingGroups.add(groupRef.id); // this client finishes it; its own listener must not race the appends
+  try {
+    await setDoc(groupRef, {
+      name: name.trim(),
+      createdBy,
+      members: [createdBy],
+      pendingMembers: first,
+      memberInfo: pick([createdBy, ...first]),
+      tripId: tripId ?? null,
+      lastMessage: null,
+      updatedAt: serverTimestamp(),
+      unreadCounts: Object.fromEntries([createdBy, ...first].map((m) => [m, 0])),
+      createdAt: serverTimestamp(),
+    });
+    for (let i = GROUP_PENDING_AT_CREATE; i < invitees.length; i += GROUP_MEMBERS_PER_WRITE) {
+      await appendPending(groupRef.id, invitees.slice(i, i + GROUP_MEMBERS_PER_WRITE), memberInfo);
+    }
+    await completeGroupCreation(groupRef.id);
+  } finally {
+    resumingGroups.delete(groupRef.id);
+  }
   return groupRef.id;
+}
+
+/** Lists invitees as pending, with their name and unread entry; refused invitees are skipped. */
+async function appendPending(groupId: string, uids: string[], memberInfo: Record<string, ChatParticipantInfo>): Promise<void> {
+  const ref = doc(db, 'groups', groupId);
+  const write = (chunk: string[]) => {
+    const fields: unknown[] = [];
+    for (const u of chunk) {
+      if (memberInfo[u]) fields.push(new FieldPath('memberInfo', u), memberInfo[u]);
+      fields.push(new FieldPath('unreadCounts', u), 0);
+    }
+    return updateDoc(ref, new FieldPath('pendingMembers'), arrayUnion(...chunk), ...fields);
+  };
+  try {
+    await write(uids);
+  } catch (err) {
+    if (!isDenied(err)) throw err;
+    for (const u of uids) {
+      try {
+        await write([u]);
+      } catch (memberErr) {
+        if (!isDenied(memberErr)) throw memberErr;
+      }
+    }
+  }
 }
 
 const isDenied = (err: unknown) => (err as { code?: string }).code === 'permission-denied';

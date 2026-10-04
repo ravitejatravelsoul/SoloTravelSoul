@@ -66,7 +66,7 @@ export default function CreateJournalScreen() {
       setUploadingCover(true);
       try {
         const { uri: resized } = await resizeImage(coverUri);
-        coverImageURL = await uploadPostPhotoFromUri(user.uid, resized);
+        coverImageURL = await uploadPostPhotoFromUri(user.uid, resized, 'journal');
       } catch (e) {
         Alert.alert('Cover upload failed', (e as Error).message);
         setUploadingCover(false);

@@ -85,6 +85,19 @@ service cloud.firestore {
         && (uids.size() <= 4 || !deleting(uids[4])) && (uids.size() <= 5 || !deleting(uids[5]))
         && (uids.size() <= 6 || !deleting(uids[6])) && (uids.size() <= 7 || !deleting(uids[7]));
     }
+    // Group identity guard (deletion step skipping depends on it): a write may
+    // not add a deleting UID to pendingMembers, nor add memberInfo/unreadCounts
+    // entries for UIDs that are neither members nor pending members.
+    function addedKeysAllowed(field) {
+      let before = resource == null ? [].toSet() : resource.data.get(field, {}).keys().toSet();
+      let allowed = request.resource.data.members.concat(request.resource.data.get('pendingMembers', []));
+      return request.resource.data.get(field, {}).keys().toSet().difference(before).hasOnly(allowed);
+    }
+    function groupIdentityGuard() {
+      let pendingBefore = resource == null ? [] : resource.data.get('pendingMembers', []);
+      return noDeletingIn(request.resource.data.get('pendingMembers', []).removeAll(pendingBefore))
+        && addedKeysAllowed('memberInfo') && addedKeysAllowed('unreadCounts');
+    }
     function authorOf(collectionName, id) {
       return get(/databases/$(database)/documents/$(collectionName)/$(id)).data.authorId;
     }
@@ -350,17 +363,17 @@ service cloud.firestore {
       allow create: if notDeleting() && (request.auth != null
         && request.auth.uid in request.resource.data.members
         && request.auth.uid == request.resource.data.createdBy
-        && noDeletingIn(request.resource.data.members));
+        && noDeletingIn(request.resource.data.members) && groupIdentityGuard());
       // Creator can update any field (rename group, add/remove members, etc.)
       allow update: if notDeleting() && (request.auth != null
         && request.auth.uid == resource.data.createdBy
-        && noDeletingIn(request.resource.data.members.removeAll(resource.data.members)));
+        && noDeletingIn(request.resource.data.members.removeAll(resource.data.members)) && groupIdentityGuard());
       // Members (non-creator) can only write chat metadata, or remove themselves from the group.
       allow update: if notDeleting() && (request.auth != null
         && request.auth.uid in resource.data.members
         && (
-          request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['lastMessage', 'unreadCounts', 'updatedAt'])
+          (request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['lastMessage', 'unreadCounts', 'updatedAt']) && addedKeysAllowed('unreadCounts'))
           || (
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
             && request.resource.data.members == resource.data.members.removeAll([request.auth.uid])

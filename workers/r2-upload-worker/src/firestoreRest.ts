@@ -33,6 +33,8 @@ export type StoreWrite =
 
 export interface DocStore {
   get(path: string): Promise<StoredDoc | null>;
+  /** Several documents in one round trip (one subrequest); missing documents are null, in input order. */
+  getMany(paths: string[]): Promise<(StoredDoc | null)[]>;
   /** parent '' = database root. allDescendants = collection-group query. */
   query(collectionId: string, filters: QueryFilter[], opts?: { parent?: string; allDescendants?: boolean }): Promise<StoredDoc[]>;
   /** Document IDs in a collection, including "missing" parents that only hold subcollections. */
@@ -123,6 +125,8 @@ export interface FirestoreRestOptions {
   token: () => Promise<string>;
   /** e.g. "127.0.0.1:8080" — emulator only. */
   emulatorHost?: string;
+  /** Injected so every call is charged to the invocation's subrequest budget. */
+  fetch?: typeof fetch;
 }
 
 export class FirestoreRest implements DocStore {
@@ -137,7 +141,7 @@ export class FirestoreRest implements DocStore {
   }
 
   private async call(method: string, url: string, body?: unknown): Promise<Response> {
-    const resp = await fetch(url, {
+    const resp = await (this.opts.fetch ?? fetch)(url, {
       method,
       headers: { Authorization: `Bearer ${await this.opts.token()}`, 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -165,6 +169,20 @@ export class FirestoreRest implements DocStore {
     return { path, data: decodeFields(body.fields ?? {}), updateTime: body.updateTime };
   }
 
+  async getMany(paths: string[]): Promise<(StoredDoc | null)[]> {
+    if (paths.length === 0) return [];
+    const resp = await this.call('POST', `${this.baseUrl}/${this.docsRoot}:batchGet`, {
+      documents: paths.map((p) => `${this.docsRoot}/${p}`),
+    });
+    if (!resp.ok) return this.failure(resp, 'batchGet');
+    const rows = (await resp.json()) as { found?: { name: string; fields?: Record<string, FsValue>; updateTime: string }; missing?: string }[];
+    const byName = new Map<string, StoredDoc>();
+    for (const r of rows) {
+      if (r.found) byName.set(r.found.name, { path: this.relPath(r.found.name), data: decodeFields(r.found.fields ?? {}), updateTime: r.found.updateTime });
+    }
+    return paths.map((p) => byName.get(`${this.docsRoot}/${p}`) ?? null);
+  }
+
   async query(
     collectionId: string,
     filters: QueryFilter[],
@@ -181,7 +199,7 @@ export class FirestoreRest implements DocStore {
       { field: { fieldPath: '__name__' }, direction: 'ASCENDING' },
     ];
     const results: StoredDoc[] = [];
-    const pageSize = 300;
+    const pageSize = 100; // small pages bound per-response CPU (Workers Free: 10 ms/invocation)
     let offset = 0;
     // Paged by offset; the deletion flow only queries one user's documents.
     for (;;) {
@@ -207,7 +225,7 @@ export class FirestoreRest implements DocStore {
     const ids: string[] = [];
     let pageToken = '';
     do {
-      const qs = `pageSize=300&showMissing=true&mask.fieldPaths=__name__${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
+      const qs = `pageSize=100&showMissing=true&mask.fieldPaths=__name__${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
       const resp = await this.call('GET', `${this.baseUrl}/${this.docsRoot}/${encodePath(collectionPath)}?${qs}`);
       if (!resp.ok) return this.failure(resp, 'list');
       const body = (await resp.json()) as { documents?: { name: string }[]; nextPageToken?: string };

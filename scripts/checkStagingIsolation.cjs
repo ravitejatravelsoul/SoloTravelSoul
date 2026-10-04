@@ -78,6 +78,16 @@ check(stagingVars.FIREBASE_PROJECT_ID === stagingProject && !String(stagingVars.
 check(String(stagingVars.FIREBASE_STORAGE_BUCKET ?? '').startsWith(`${stagingProject}.`) && stagingVars.FIREBASE_STORAGE_BUCKET !== env.PRODUCTION_STORAGE_BUCKET,
   'staging Worker FIREBASE_STORAGE_BUCKET belongs to the staging project');
 check(toml['env.staging.triggers']?.crons, 'staging Worker has its own cron trigger');
+// Media storage (Workers Free: KV bytes + D1 index) — staging-only resources.
+const kvId = toml['env.staging.kv_namespaces']?.id ?? '';
+const d1 = toml['env.staging.d1_databases'] ?? {};
+const mediaOrigin = String(stagingVars.MEDIA_PUBLIC_ORIGIN ?? '');
+check(kvId && !kvId.startsWith('REPLACE_') && kvId !== (toml['kv_namespaces']?.id ?? ''), 'staging MEDIA_KV namespace is set and not production');
+check(d1.database_id && !String(d1.database_id).startsWith('REPLACE_') && d1.database_id !== (toml['d1_databases']?.database_id ?? ''),
+  'staging MEDIA_DB database is set and not production');
+check(d1.migrations_dir === 'migrations' && fs.existsSync(path.join(root, 'workers/r2-upload-worker/migrations')), 'staging MEDIA_DB has the media migrations');
+const originHost = (() => { try { return new URL(mediaOrigin).protocol === 'https:' ? new URL(mediaOrigin).hostname : ''; } catch { return ''; } })();
+check(originHost && !originHost.startsWith(`${env.PRODUCTION_WORKER_NAME}.`), 'staging MEDIA_PUBLIC_ORIGIN is an https origin that is not the production Worker');
 
 // ── EAS profile: preview builds are staging builds ────────────────────────
 const easJson = path.join(root, 'apps/mobile/eas.json');
@@ -105,7 +115,6 @@ if (easFile) {
   check(e.EXPO_PUBLIC_FIREBASE_PROJECT_ID === stagingProject, 'EAS preview EXPO_PUBLIC_FIREBASE_PROJECT_ID matches the staging alias');
   const host = (() => { try { return new URL(e.EXPO_PUBLIC_R2_UPLOAD_WORKER_URL ?? '').hostname; } catch { return ''; } })();
   check(host.startsWith(`${staging.name}.`), 'EAS preview EXPO_PUBLIC_R2_UPLOAD_WORKER_URL is the staging Worker');
-  check(e.EXPO_PUBLIC_STORAGE_PROVIDER === 'r2', 'EAS preview uses the R2 upload Worker');
 
   // ── Resource ownership: only trusted Firebase metadata can prove the API
   // key and app belong to the staging project; non-empty values do not.

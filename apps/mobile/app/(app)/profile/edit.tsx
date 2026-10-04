@@ -39,8 +39,7 @@ const COMMON_LANGUAGES = ['English', 'Spanish', 'French', 'German', 'Italian', '
 
 const BIO_MAX = 500;
 
-// EXPO_PUBLIC_STORAGE_PROVIDER=r2  + EXPO_PUBLIC_R2_UPLOAD_WORKER_URL set → uploads active
-// EXPO_PUBLIC_STORAGE_PROVIDER=firebase                                  → Firebase Storage
+// EXPO_PUBLIC_R2_UPLOAD_WORKER_URL set → uploads go to the Worker media endpoint
 // anything else / both missing                                           → disabled
 const UPLOADS_ENABLED = isUploadsEnabled();
 

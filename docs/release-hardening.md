@@ -69,7 +69,7 @@ Verified current requirements: Google Play target API 36 for new apps/updates fr
 
 ### Rollout order
 
-1. **Workers Paid plan.** Free allows 50 subrequests per request; a deletion needs far more. Without Paid, deletion requests fail every time (cron would resume them but each run is also capped).
+1. **Workers Paid plan.** Free allows 50 subrequests per request; a deletion needs far more. Without Paid, deletion requests fail every time (cron would resume them but each run is also capped). *Superseded: deletion now runs in bounded slices within Workers Free; see "Workers Free media and bounded deletion".*
 2. **Staging Firebase project** (separate from `solotravelsoul-57a9e`) with the same rules/indexes; back up production; repair legacy counters (see above); run `scripts/backfillEmailLookup.ts` dry-run then `--apply` on staging.
 3. **Credentials**: dedicated service account (Cloud Datastore User, Storage Object Admin on the Firebase bucket, Firebase Authentication Admin) → `wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON`; `wrangler secret put ADMIN_DELETION_TOKEN` (random, stored in a password manager); confirm `FIREBASE_STORAGE_BUCKET`. Uploads return 503 until the service-account secret is set.
 4. **Storage-to-Firestore access** for cross-service rules (Firebase console prompt on first `storage.rules` deploy / grant the Storage service agent the Firestore reader role). Without it the Storage barrier denies every write.
@@ -223,8 +223,63 @@ No staging defects could be observed, so none were fixed in this phase.
 
 1. **Firebase**: create (or authorize creating) a staging project; Firebase CLI re-login (`firebase login --reauth`; deploy credentials expired); billing plan for that project if Storage/Functions quotas require it.
 2. **Google Cloud IAM**: staging service account + JSON key handed to the operator who runs `wrangler secret put` (never committed); Storage→Firestore cross-service grant in staging.
-3. **Cloudflare**: `wrangler login` for the account owning the Worker; approval for Workers Paid (deletion needs more than 50 subrequests/request); create staging R2 bucket + public URL.
+3. **Cloudflare**: `wrangler login` for the account owning the Worker; create staging R2 bucket + public URL. (Superseded: deletion now runs in bounded slices on Workers Free; see below.)
 4. **EAS**: values for every `EXPO_PUBLIC_*` variable in the `preview` environment (and later `production`); approval to run preview builds (build credits).
 5. **Devices**: one physical iPhone (TestFlight/ad-hoc provisioning, Apple Developer membership and team ID) and one Android 14+ device, or a Mac with Xcode + an Android emulator host.
 6. **People/process**: two test accounts' owners, at least one staging moderator, sign-off on response targets.
 7. **Explicit authorization** to deploy indexes, the staging Worker and rules to the staging project.
+
+## Workers Free media and bounded deletion (from d328573)
+
+Firebase Auth and Firestore stay on Spark. Cloud Storage for Firebase needs Blaze (since 2026-02-03), so new media moves to the Worker on Workers Free + KV + D1. No paid plan, billing change or deployment is part of this change; the production section of `wrangler.toml` and the app configuration are unchanged.
+
+### Media (KV bytes behind a D1 index)
+
+- `POST /media/upload` (multipart `file` + `purpose` = `profile|post|journal`): verified ID token; 2 MB cap (declared length and actual size); images only; deletion barrier / suspension checked **before** (unreadable → 503, nothing stored) and **after** the bytes are written (unreadable counts as blocked → row `removed`, bytes deleted or queued, 403). Order: D1 row `pending` → KV put → barrier re-check → `active`. A failed D1 write stores nothing; a failed KV write leaves a `failed` row queued for cleanup; a failed activation leaves a `pending` row that is never served.
+- `GET /media/<32-hex id>`: requires `Authorization: Bearer <ID token>` (401 without, 403 invalid). Authorization reads primary sources on every request: the D1 row must be `active`, and Firestore (`accountDeletions/{owner}`, `moderators/{viewer}`, the current parent document) decides. Owner always (until deletion starts — then nobody); `owner_only` rows only owner/moderator; post/journal media only while attached to a document whose `authorId` is the owner, with `visibility == 'public'` and not archived; profile media only while it is the owner's current `photoURL`/`coverPhotoURL`; moderators can review hidden items. The D1 `parent_id` is only a hint: it is re-checked, and rebound if the image moved. Any D1/Firestore/KV read error → 503 with no bytes; D1 query cap reached → 503.
+- Caching: no edge or Cache API caching. Shared media: `Cache-Control: private, max-age=300`; owner/moderator/denied: `private, no-store`; always `Vary: Authorization` and `nosniff`. The app sends the token as an image header with `cache: 'default'` (iOS follows these headers; Android's image pipeline keeps its own memory/disk cache). Hiding or removing media stops the Worker from serving it again; **copies already downloaded to a device cannot be recalled**.
+- The app (`apps/mobile/utils/storageUpload.ts`) uploads only to `/media/upload`; image views use `useMediaSource()`. `packages/firebase/src/storage.ts` (Firebase Storage uploads) is removed. The legacy `/upload/*` R2 endpoints remain for earlier app versions only.
+
+**Logical revocation vs physical deletion.** Revocation is the authorization gate above: a Firestore privacy change, report auto-hide (`under_review`), moderator removal or the account-deletion barrier takes effect on the next request, including changes written directly by clients (tested through the emulator with real rules). Physical deletion is separate: rows are marked `removed` with `kv_delete_pending = 1`, and bytes are deleted by bounded, retryable cleanup (account deletion step, `remove-media`, cron). A KV delete that KV accepted clears the flag; because KV is eventually consistent this is not a guarantee that every location stopped holding the value within a fixed time (no 60-second claim). When KV refuses deletes (daily limit or outage) the rows stay queued and the deletion step stays pending — never reported as deleted.
+
+Cron maintenance: uploads not activated after 1 h → removed and queued; active media unreferenced for 24 h (post never created, photo replaced, image detached) → re-checked against Firestore, revoked and queued; queued KV deletes purged in batches.
+
+### Account deletion in bounded slices
+
+- Workers Free allows 50 subrequests per invocation and D1 Free 50 queries per invocation. Every outbound call (JWKS, service-account token, Firestore REST, Cloud Storage, Identity Toolkit) is charged to one hard-capped budget, D1 queries to a second one (`meteredD1`). Steps stop voluntarily while 10 calls are still reserved (cold-start auth, retries, lease renewal and the progress write), save the completed-step cursor on the job, release the lease and return **202** `{status: 'in_progress', completedSteps, totalSteps}`. The next call (app continuation or hourly cron) acquires the fenced lease and skips completed steps. Auth removal runs only after every step is complete and only if the Auth phase fits in the remaining budget.
+- Starting a deletion requires a recent sign-in (5 minutes). A continuation needs only a verified token for a UID whose own job exists; the UID always comes from the verified token (request bodies are ignored). An unreadable job document → 503.
+- Skipping completed steps is safe because the barrier prevents re-creation. The rule gap that let a deleting UID be re-added to `pendingMembers`, or as `memberInfo`/`unreadCounts` keys, is closed (`groupIdentityGuard`, emulator-tested). To stay within Firestore's 10 document reads per rule evaluation, group creation now writes the creator plus at most 7 pending invitees, then appends further invitees in chunks of 8 (refused invitees are skipped) before moving them into `members`; the group stays hidden until complete. An interruption while appending completes the group with the invitees listed so far.
+- App: `requestAccountDeletion` continues on 202 with the same token (up to 30 slices, with progress shown), then tells the user that deletion continues automatically.
+
+Measured in the in-memory model with a metered store (each store call = one REST fetch, plus 2 for cold-start auth): the two-user fixture plus 45 KV media rows completes in 6 slices, max 42 subrequests and 23 D1 queries per invocation; cron recovery of a paused deletion, a failed job and a pending finalization completes in 5 runs, max 42 / 23. Through the real adapters against the Firestore emulator (Google endpoints faked), every `/account/delete`, `/admin/account-deletion` and cron invocation stayed at or below 50 outbound fetches. **Workers CPU time (10 ms on Free) has not been measured**; that needs a deployed staging Worker.
+
+### Legacy media
+
+- `profile_images/{uid}.jpg` (earlier app) is now covered by deletion and the late-media sweep.
+- Legacy Firebase Storage deletion is recorded in `legacyMediaCleanup/{uid}` as `verified_absent` only after a fresh listing and object lookup prove absence; objects still listed fail the step. If Storage is inaccessible (401/403, as on Spark) the record is `unresolved` and the job carries `legacyMediaUnresolved`; `GET /admin/deletion-status` lists them. An `unresolved` record is an open item, not evidence of deletion.
+- `scripts/migrateLegacyMedia.ts` (not run): dry run by default (`--apply` to write); token only from `ADMIN_DELETION_TOKEN` in the environment; owner derived from the path and required to exist in Auth; refuses objects referenced by another account; imports through `POST /admin/media/import`; verifies SHA-256, status and owner through the digest endpoint; swaps references transactionally only if they still hold the old URL; records each stage in a resumable state file; never deletes sources.
+
+### Rollout (only when explicitly authorized; none of this was run)
+
+1. Staging: `wrangler kv namespace create MEDIA_KV --env staging`, `wrangler d1 create solotravelsoul-media-staging`; put the IDs and `MEDIA_PUBLIC_ORIGIN` (staging Worker origin) into `[env.staging]`; `wrangler d1 migrations apply solotravelsoul-media-staging --env staging --remote`; `npm run check:staging` must pass the media checks (it currently fails exactly these three: KV ID, D1 ID, media origin).
+2. Deploy the rules (`groupIdentityGuard`) **before** the Worker that skips completed deletion steps, then the staging Worker.
+3. Staging native checks (below) and CPU measurement (`wrangler tail` / analytics); then production: create production KV/D1, add the bindings and `MEDIA_PUBLIC_ORIGIN` to the production section, apply migrations, deploy rules, then the Worker, then release the app. App builds that upload to `/media/upload` must not ship before the production bindings exist (uploads would answer 503).
+4. Legacy inventory/migration dry run with operator credentials; review; `--apply` only with approval; deleting sources is a separate authorized step.
+
+### Verified results (this phase)
+
+| Check | Result |
+|---|---|
+| `npm run test:release` | PASS — queues 13, account deletion 53/53, media 15/15, app 6/6, staging 6/6 |
+| `npm run test:rules` (Firestore + Storage emulators) | PASS — rules 82, account deletion 48/48 (real REST adapter), media 11/11 (direct client writes through rules) |
+| Type checks | PASS — `turbo type-check`, Worker `tsc`, migration script `tsc` |
+| Lint | PASS — 0 errors (74 pre-existing warnings) |
+| `expo export` iOS + Android | PASS — bundles contain `/media/upload` and no Firebase Storage upload code |
+
+### Remaining live-service / native blockers
+
+1. Cloudflare: no Wrangler login; staging KV namespace, D1 database, migration apply and staging Worker deploy not done; production bindings absent (the new app upload path must not ship before they exist).
+2. Workers CPU time (10 ms Free limit) and real subrequest counts unmeasured on a deployed Worker. Cloudflare does not document D1 behaviour past the free daily limits; it is handled as a fail-closed error but not verified live.
+3. Firebase: staging project resources, staging rules deploy, Firebase CLI re-login. Legacy Firebase Storage is inaccessible on Spark, so the 2 known `profile_images/*.jpg` objects stay **unresolved** unless Storage access is restored; the legacy R2 inventory was not taken (no credentials).
+4. Native: device verification of header-authorized image loading, iOS/Android image-cache behaviour, the deletion progress UI and continuation, group creation with more than 8 invitees, and the two-account checklist (no devices/macOS available).
+5. EAS preview environment variables and build approval; store submission review.

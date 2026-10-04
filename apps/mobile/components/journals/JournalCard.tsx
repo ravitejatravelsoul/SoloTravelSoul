@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { useMediaSource } from '@/hooks/useMediaSource';
 import { View, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export const JournalCard = memo(function JournalCard({ journal }: Props) {
+  const mediaSrc = useMediaSource();
   const initials = getUserInitials(journal.authorName);
   const { liked, toggling, toggle } = useLikeJournal(journal.journalId);
 
@@ -25,7 +27,7 @@ export const JournalCard = memo(function JournalCard({ journal }: Props) {
     >
       {/* ── Cover image ── */}
       {journal.coverImageURL ? (
-        <Image source={{ uri: journal.coverImageURL }} style={styles.cover} resizeMode="cover" />
+        <Image source={mediaSrc(journal.coverImageURL)} style={styles.cover} resizeMode="cover" />
       ) : (
         <View style={[styles.cover, styles.coverPlaceholder]}>
           <Ionicons name="book-outline" size={32} color={Colors.border} />

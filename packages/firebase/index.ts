@@ -1,5 +1,5 @@
 export { app, isFirebaseConfigured } from './src/config';
-export { auth, signIn, signUp, signOut, resetPassword, reauthenticate, getFreshIdToken, subscribeToAuthState, getCurrentUser } from './src/auth';
+export { auth, signIn, signUp, signOut, resetPassword, reauthenticate, getFreshIdToken, subscribeToIdToken, subscribeToAuthState, getCurrentUser } from './src/auth';
 export {
   db,
   getUserProfile,
@@ -74,14 +74,6 @@ export {
   isBlocked,
   reportContent,
 } from './src/firestore';
-export {
-  storage,
-  uploadProfilePhotoBase64,
-  uploadProfilePhoto,
-  uploadJournalPhoto,
-  uploadTripCoverPhoto,
-  deleteTripCoverPhoto,
-} from './src/storage';
 export {
   // Phase 2: Posts
   createPost,

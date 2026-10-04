@@ -40,9 +40,25 @@ name = "solotravelsoul-r2-upload-staging"
 binding     = "R2_BUCKET"
 bucket_name = "solotravelsoul-images-staging"
 
+# Media on Workers Free: bytes in KV, index in D1 (see migrations/).
+#   wrangler kv namespace create MEDIA_KV --env staging
+#   wrangler d1 create solotravelsoul-media-staging
+#   wrangler d1 migrations apply solotravelsoul-media-staging --env staging --remote
+[[env.staging.kv_namespaces]]
+binding = "MEDIA_KV"
+id      = "REPLACE_WITH_STAGING_KV_NAMESPACE_ID"
+
+[[env.staging.d1_databases]]
+binding        = "MEDIA_DB"
+database_name  = "solotravelsoul-media-staging"
+database_id    = "REPLACE_WITH_STAGING_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
 [env.staging.vars]
 FIREBASE_PROJECT_ID = "solotravelsoul-staging"
 FIREBASE_STORAGE_BUCKET = "solotravelsoul-staging.firebasestorage.app"
+# Canonical origin for media URLs (https://<staging worker host>); cron media cleanup needs it.
+MEDIA_PUBLIC_ORIGIN = "REPLACE_WITH_STAGING_WORKER_ORIGIN"
 
 [env.staging.triggers]
 crons = ["17 * * * *"]

@@ -48,12 +48,12 @@ let cachedJWKS: JWKSResponse | null = null;
 let jwksCachedAt = 0;
 const JWKS_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-async function getJWKS(): Promise<JWKSResponse> {
+async function getJWKS(fetchFn: typeof fetch): Promise<JWKSResponse> {
   const now = Date.now();
   if (cachedJWKS && now - jwksCachedAt < JWKS_TTL_MS) {
     return cachedJWKS;
   }
-  const resp = await fetch(JWKS_URL);
+  const resp = await fetchFn(JWKS_URL);
   if (!resp.ok) {
     throw new Error(`Failed to fetch Firebase public keys: ${resp.status}`);
   }
@@ -84,7 +84,8 @@ function decodeSegment<T>(segment: string): T {
  */
 export async function verifyFirebaseToken(
   token: string,
-  projectId: string
+  projectId: string,
+  fetchFn: typeof fetch = fetch
 ): Promise<VerifiedToken> {
   const parts = token.split('.');
   if (parts.length !== 3) {
@@ -99,7 +100,7 @@ export async function verifyFirebaseToken(
   if (header.alg !== 'RS256') throw new Error('Expected RS256 algorithm');
 
   // Fetch the matching public key.
-  const jwks = await getJWKS();
+  const jwks = await getJWKS(fetchFn);
   const jwk = jwks.keys.find((k) => k.kid === header.kid);
   if (!jwk) throw new Error(`Unknown kid: ${header.kid}`);
 

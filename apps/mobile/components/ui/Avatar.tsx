@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useMediaSource } from '@/hooks/useMediaSource';
 import {
   View,
   Image,
@@ -27,6 +28,7 @@ export function Avatar({
   showEditBadge = false,
   loading = false,
 }: AvatarProps) {
+  const mediaSrc = useMediaSource();
   const [imgError, setImgError] = useState(false);
 
   // Reset error state whenever the URI prop changes so a newly-uploaded
@@ -54,7 +56,7 @@ export function Avatar({
         <ActivityIndicator color={Colors.white} />
       ) : showImage ? (
         <Image
-          source={{ uri }}
+          source={mediaSrc(uri)}
           style={[StyleSheet.absoluteFill, { borderRadius: size / 2 }]}
           onLoad={() => {
             if (__DEV__) console.log('[Avatar] image loaded ok');

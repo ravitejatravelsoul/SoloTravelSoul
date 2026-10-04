@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useMediaSource } from '@/hooks/useMediaSource';
 import { View, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator, Image, ScrollView, Modal } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +23,7 @@ import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme
 
 /** One reported photo: loading spinner, error fallback, tap to view full size. */
 function ReviewImage({ uri, onOpen }: { uri: string; onOpen: (uri: string) => void }) {
+  const mediaSrc = useMediaSource();
   const [state, setState] = useState<'loading' | 'loaded' | 'error'>('loading');
   return (
     <TouchableOpacity
@@ -32,7 +34,7 @@ function ReviewImage({ uri, onOpen }: { uri: string; onOpen: (uri: string) => vo
     >
       {state !== 'error' && (
         <Image
-          source={{ uri }}
+          source={mediaSrc(uri)}
           style={StyleSheet.absoluteFill}
           resizeMode="cover"
           onLoad={() => setState('loaded')}
@@ -60,6 +62,7 @@ function age(date: Date): string {
  * all actions are enforced by Firestore rules, not by this screen).
  */
 export default function ModerationScreen() {
+  const mediaSrc = useMediaSource();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const addToast = useUIStore((s) => s.addToast);
   const [allowed, setAllowed] = useState<boolean | null>(null);
@@ -188,7 +191,7 @@ export default function ModerationScreen() {
       )}
       <Modal visible={!!enlarged} transparent animationType="fade" onRequestClose={() => setEnlarged(null)}>
         <TouchableOpacity style={styles.viewer} onPress={() => setEnlarged(null)} accessibilityLabel="Close photo" activeOpacity={1}>
-          {enlarged && <Image source={{ uri: enlarged }} style={styles.viewerImage} resizeMode="contain" />}
+          {enlarged && <Image source={mediaSrc(enlarged)} style={styles.viewerImage} resizeMode="contain" />}
         </TouchableOpacity>
       </Modal>
     </SafeAreaView>

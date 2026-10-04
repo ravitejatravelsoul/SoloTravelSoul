@@ -38,7 +38,7 @@ export function parseServiceAccount(json: string | undefined): ServiceAccount | 
   }
 }
 
-export async function getAccessToken(account: ServiceAccount): Promise<string> {
+export async function getAccessToken(account: ServiceAccount, fetchFn: typeof fetch = fetch): Promise<string> {
   const nowSec = Math.floor(Date.now() / 1000);
   if (cached && cached.email === account.client_email && cached.expiresAt - 60 > nowSec) {
     return cached.token;
@@ -62,7 +62,7 @@ export async function getAccessToken(account: ServiceAccount): Promise<string> {
   const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(`${header}.${claims}`));
   const assertion = `${header}.${claims}.${base64url(signature)}`;
 
-  const resp = await fetch(TOKEN_URL, {
+  const resp = await fetchFn(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `grant_type=${encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer')}&assertion=${assertion}`,
@@ -79,12 +79,13 @@ export function identityToolkitUserDeleter(opts: {
   token: () => Promise<string>;
   /** e.g. "127.0.0.1:9099" — emulator only. */
   emulatorHost?: string;
+  fetch?: typeof fetch;
 }): (uid: string) => Promise<void> {
   const base = opts.emulatorHost
     ? `http://${opts.emulatorHost}/identitytoolkit.googleapis.com`
     : 'https://identitytoolkit.googleapis.com';
   return async (uid) => {
-    const resp = await fetch(`${base}/v1/projects/${opts.projectId}/accounts:delete`, {
+    const resp = await (opts.fetch ?? fetch)(`${base}/v1/projects/${opts.projectId}/accounts:delete`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${await opts.token()}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ localId: uid }),
@@ -101,12 +102,13 @@ export function identityToolkitUserExists(opts: {
   projectId: string;
   token: () => Promise<string>;
   emulatorHost?: string;
+  fetch?: typeof fetch;
 }): (uid: string) => Promise<boolean> {
   const base = opts.emulatorHost
     ? `http://${opts.emulatorHost}/identitytoolkit.googleapis.com`
     : 'https://identitytoolkit.googleapis.com';
   return async (uid) => {
-    const resp = await fetch(`${base}/v1/projects/${opts.projectId}/accounts:lookup`, {
+    const resp = await (opts.fetch ?? fetch)(`${base}/v1/projects/${opts.projectId}/accounts:lookup`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${await opts.token()}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ localId: [uid] }),

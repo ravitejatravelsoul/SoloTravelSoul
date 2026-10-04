@@ -1,10 +1,26 @@
-// Prefix deletion for uploaded media. Both stores are listed and deleted
-// page by page, so a retry after a partial failure resumes where it stopped.
+// Prefix deletion for legacy uploaded media (R2 and Firebase Storage). New
+// media lives in KV behind the D1 index (media.ts); these stores only clean up
+// objects created by earlier app versions.
 
 export interface PrefixDeleter {
   name: string;
-  /** Deletes every object under each prefix; returns the number deleted. beforePage runs before each page (lease renewal). */
-  deletePrefixes(prefixes: string[], beforePage?: () => Promise<void>): Promise<number>;
+  /** Deletes every object under each prefix; returns the number deleted. beforePage runs before each page/object call. */
+  deletePrefixes(prefixes: string[], beforePage?: () => Promise<void> | void): Promise<number>;
+}
+
+/** The store refused access (e.g. Cloud Storage on a Spark project): nothing can be deleted or verified. */
+export class LegacyMediaInaccessible extends Error {
+  constructor(readonly store: string, readonly status: number) {
+    super(`${store} not accessible (${status})`);
+    this.name = 'LegacyMediaInaccessible';
+  }
+}
+
+export interface LegacyStorage extends PrefixDeleter {
+  /** Deletes single objects (e.g. profile_images/{uid}.jpg); 404 counts as already absent. */
+  deleteObjects(names: string[], beforeCall?: () => Promise<void> | void): Promise<number>;
+  /** True only when every prefix lists empty and every object returns 404 — proof of absence. */
+  verifyAbsent(prefixes: string[], names: string[], beforeCall?: () => Promise<void> | void): Promise<boolean>;
 }
 
 export function r2Deleter(bucket: R2Bucket): PrefixDeleter {
@@ -35,9 +51,34 @@ export function firebaseStorageDeleter(opts: {
   token: () => Promise<string>;
   /** e.g. "127.0.0.1:9199" — emulator only. */
   emulatorHost?: string;
-}): PrefixDeleter {
+  fetch?: typeof fetch;
+}): LegacyStorage {
   const base = opts.emulatorHost ? `http://${opts.emulatorHost}` : 'https://storage.googleapis.com';
   const objectsUrl = `${base}/storage/v1/b/${encodeURIComponent(opts.bucket)}/o`;
+  const f = opts.fetch ?? fetch;
+  const auth = async () => ({ Authorization: `Bearer ${await opts.token()}` });
+  const denied = (status: number) => status === 401 || status === 403;
+
+  async function list(prefix: string, pageToken: string, beforeCall?: () => Promise<void> | void) {
+    await beforeCall?.();
+    const qs = `prefix=${encodeURIComponent(prefix)}&maxResults=100&fields=items(name),nextPageToken${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
+    const resp = await f(`${objectsUrl}?${qs}`, { headers: await auth() });
+    if (denied(resp.status)) throw new LegacyMediaInaccessible('firebase-storage', resp.status);
+    if (resp.status === 404) return { items: [], nextPageToken: '' }; // bucket does not exist
+    if (!resp.ok) throw new Error(`Storage list failed: ${resp.status}`);
+    const body = (await resp.json()) as { items?: { name: string }[]; nextPageToken?: string };
+    return { items: body.items ?? [], nextPageToken: body.nextPageToken ?? '' };
+  }
+
+  async function del(name: string, beforeCall?: () => Promise<void> | void): Promise<boolean> {
+    await beforeCall?.();
+    const resp = await f(`${objectsUrl}/${encodeURIComponent(name)}`, { method: 'DELETE', headers: await auth() });
+    if (denied(resp.status)) throw new LegacyMediaInaccessible('firebase-storage', resp.status);
+    if (resp.status === 404) return false;
+    if (!resp.ok) throw new Error(`Storage delete failed: ${resp.status}`);
+    return true;
+  }
+
   return {
     name: 'firebase-storage',
     async deletePrefixes(prefixes, beforePage) {
@@ -45,22 +86,27 @@ export function firebaseStorageDeleter(opts: {
       for (const prefix of prefixes) {
         let pageToken = '';
         do {
-          await beforePage?.();
-          const auth = { Authorization: `Bearer ${await opts.token()}` };
-          const qs = `prefix=${encodeURIComponent(prefix)}&fields=items(name),nextPageToken${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
-          const resp = await fetch(`${objectsUrl}?${qs}`, { headers: auth });
-          if (!resp.ok) throw new Error(`Storage list failed: ${resp.status}`);
-          const body = (await resp.json()) as { items?: { name: string }[]; nextPageToken?: string };
-          for (const item of body.items ?? []) {
-            const del = await fetch(`${objectsUrl}/${encodeURIComponent(item.name)}`, { method: 'DELETE', headers: auth });
-            // 404: already deleted by an earlier, partially failed attempt.
-            if (!del.ok && del.status !== 404) throw new Error(`Storage delete failed: ${del.status}`);
-            deleted++;
-          }
-          pageToken = body.nextPageToken ?? '';
+          const page = await list(prefix, pageToken, beforePage);
+          for (const item of page.items) if (await del(item.name, beforePage)) deleted++;
+          pageToken = page.nextPageToken;
         } while (pageToken);
       }
       return deleted;
+    },
+    async deleteObjects(names, beforeCall) {
+      let deleted = 0;
+      for (const name of names) if (await del(name, beforeCall)) deleted++;
+      return deleted;
+    },
+    async verifyAbsent(prefixes, names, beforeCall) {
+      for (const prefix of prefixes) if ((await list(prefix, '', beforeCall)).items.length) return false;
+      for (const name of names) {
+        await beforeCall?.();
+        const resp = await f(`${objectsUrl}/${encodeURIComponent(name)}?fields=name`, { headers: await auth() });
+        if (denied(resp.status)) throw new LegacyMediaInaccessible('firebase-storage', resp.status);
+        if (resp.status !== 404) return false;
+      }
+      return true;
     },
   };
 }

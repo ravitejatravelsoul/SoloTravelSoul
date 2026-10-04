@@ -16,6 +16,7 @@
 
 import type { VerifiedToken } from './auth';
 import { StoreConflict, type DocStore, type StoredDoc } from './firestoreRest';
+import { mediaIdFromUrl, revokeIds, type D1Like, type KvLike } from './media';
 
 export const MEDIA_REMOVAL_LEASE_MS = 2 * 60 * 1000;
 const MAX_CONFLICT_RETRIES = 5;
@@ -23,8 +24,11 @@ const MAX_CONFLICT_RETRIES = 5;
 export interface ModerationRouteDeps {
   verify(token: string): Promise<VerifiedToken>;
   store: DocStore | null;
-  bucket: Pick<R2Bucket, 'delete'>;
+  /** Legacy R2 bucket (absent when not bound). */
+  bucket?: Pick<R2Bucket, 'delete'>;
   publicBaseUrl: string;
+  /** KV media behind the D1 index; URLs are `${baseUrl}/media/<id>`. */
+  media?: { db: D1Like; kv: KvLike; baseUrl: string };
   json(data: unknown, status?: number): Response;
   now?: () => number;
 }
@@ -86,12 +90,16 @@ export async function handleRemoveMedia(request: Request, deps: ModerationRouteD
     const prefix = `post_photos/${String(doc.data.authorId)}/`;
     const urls = [...((doc.data.images as unknown[] | undefined) ?? []), doc.data.coverImageURL];
     return urls.filter(
-      (u): u is string => typeof u === 'string' && u.startsWith(base) && u.slice(base.length).startsWith(prefix) && !u.includes('..')
+      (u): u is string => typeof u === 'string' && (
+        (!!deps.bucket && u.startsWith(base) && u.slice(base.length).startsWith(prefix) && !u.includes('..')) ||
+        (!!deps.media && mediaIdFromUrl(deps.media.baseUrl, u) !== null)
+      )
     );
   };
 
   // ── 1. Claim on fresh state ──────────────────────────────────────────
   let claim: MediaRemoval | null = null;
+  let claimAuthor = '';
   for (let attempt = 0; attempt < MAX_CONFLICT_RETRIES && !claim; attempt++) {
     const target = await store.get(path);
     if (!target) return deps.json({ error: 'Not found' }, 404);
@@ -104,6 +112,7 @@ export async function handleRemoveMedia(request: Request, deps: ModerationRouteD
     }
     const urls = deletable(target);
     if (urls.length === 0) return deps.json({ removed: 0 });
+    claimAuthor = String(target.data.authorId);
     const candidate: MediaRemoval = {
       state: 'in_progress',
       token: crypto.randomUUID(),
@@ -121,8 +130,27 @@ export async function handleRemoveMedia(request: Request, deps: ModerationRouteD
   if (!claim) return deps.json({ error: 'The item kept changing; try again.', code: 'moderation/conflict' }, 409);
 
   // ── 2. Delete exactly the claimed objects ────────────────────────────
+  // Logical revocation already holds: the item is 'removed' in Firestore, which
+  // the media gate checks on every request. This phase is physical cleanup.
   try {
-    await deps.bucket.delete(claim.urls.map((u) => u.slice(base.length)));
+    const r2Keys = claim.urls.filter((u) => mediaIdFromUrl(deps.media?.baseUrl ?? '', u) === null).map((u) => u.slice(base.length));
+    if (r2Keys.length && deps.bucket) await deps.bucket.delete(r2Keys);
+    if (deps.media) {
+      const media = deps.media;
+      const ids = claim.urls.map((u) => mediaIdFromUrl(media.baseUrl, u)).filter((id): id is string => !!id);
+      const owned: { id: string; kv_key: string }[] = [];
+      for (const id of ids) {
+        const row = await media.db.prepare(`SELECT id, kv_key, owner_uid FROM media WHERE id = ?`).bind(id).first<{ id: string; kv_key: string; owner_uid: string }>();
+        if (row && row.owner_uid === claimAuthor) owned.push(row); // never another user's media
+      }
+      await revokeIds(media.db, owned.map((r) => r.id), now());
+      for (const r of owned) {
+        try {
+          await media.kv.delete(r.kv_key);
+          await media.db.prepare(`UPDATE media SET kv_delete_pending = 0 WHERE id = ?`).bind(r.id).run();
+        } catch { /* stays kv_delete_pending; the cron retries */ }
+      }
+    }
   } catch {
     return deps.json({ error: 'Could not delete the media; it can be retried shortly.', code: 'moderation/retry' }, 500);
   }

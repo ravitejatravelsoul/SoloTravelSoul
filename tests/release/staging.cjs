@@ -102,16 +102,20 @@ test('checker: --eas-env with missing API key, Auth domain, app ID and sender ID
   assert.notEqual(r.code, 0, r.out);
 });
 
-function fixture({ project = 'sts-staging', workerVarsProject = project, stagingBucket = 'solotravelsoul-images-staging', previewEnv = 'staging' } = {}) {
+function fixture({ project = 'sts-staging', workerVarsProject = project, stagingBucket = 'solotravelsoul-images-staging', previewEnv = 'staging',
+  kvId = 'staging-kv-namespace-id', d1Id = 'staging-d1-database-id', mediaOrigin = 'https://solotravelsoul-r2-upload-staging.x.workers.dev', migrations = true } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-staging-'));
   fs.mkdirSync(path.join(dir, 'workers/r2-upload-worker'), { recursive: true });
+  if (migrations) fs.mkdirSync(path.join(dir, 'workers/r2-upload-worker/migrations'));
   fs.mkdirSync(path.join(dir, 'apps/mobile'), { recursive: true });
   fs.writeFileSync(path.join(dir, '.firebaserc'), JSON.stringify({ projects: { default: env.PRODUCTION_FIREBASE_PROJECT_ID, staging: project } }));
   fs.writeFileSync(path.join(dir, 'workers/r2-upload-worker/wrangler.toml'), [
     'name = "solotravelsoul-r2-upload"', '[[r2_buckets]]', 'binding = "R2_BUCKET"', 'bucket_name = "solotravelsoul-images"',
     '[env.staging]', 'name = "solotravelsoul-r2-upload-staging"',
     '[[env.staging.r2_buckets]]', 'binding = "R2_BUCKET"', `bucket_name = "${stagingBucket}"`,
-    '[env.staging.vars]', `FIREBASE_PROJECT_ID = "${workerVarsProject}"`, `FIREBASE_STORAGE_BUCKET = "${workerVarsProject}.firebasestorage.app"`,
+    '[[env.staging.kv_namespaces]]', 'binding = "MEDIA_KV"', `id = "${kvId}"`,
+    '[[env.staging.d1_databases]]', 'binding = "MEDIA_DB"', 'database_name = "solotravelsoul-media-staging"', `database_id = "${d1Id}"`, 'migrations_dir = "migrations"',
+    '[env.staging.vars]', `FIREBASE_PROJECT_ID = "${workerVarsProject}"`, `FIREBASE_STORAGE_BUCKET = "${workerVarsProject}.firebasestorage.app"`, `MEDIA_PUBLIC_ORIGIN = "${mediaOrigin}"`,
     '[env.staging.triggers]', 'crons = ["17 * * * *"]',
   ].join('\n'));
   fs.writeFileSync(path.join(dir, 'apps/mobile/eas.json'), JSON.stringify({ build: { preview: { environment: 'preview', env: { EXPO_PUBLIC_APP_ENV: previewEnv } } } }));
@@ -131,6 +135,12 @@ test('checker: isolated staging config passes; any production target fails; valu
     ['production R2 bucket', { stagingBucket: env.PRODUCTION_R2_BUCKET }],
     ['placeholder project', { project: 'REPLACE_WITH_STAGING_PROJECT_ID', workerVarsProject: 'REPLACE_WITH_STAGING_PROJECT_ID' }],
     ['preview not marked staging', { previewEnv: 'production' }],
+    ['media KV placeholder', { kvId: 'REPLACE_WITH_STAGING_KV_NAMESPACE_ID' }],
+    ['media D1 placeholder', { d1Id: 'REPLACE_WITH_STAGING_D1_DATABASE_ID' }],
+    ['media migrations missing', { migrations: false }],
+    ['media origin is the production Worker', { mediaOrigin: `https://${env.PRODUCTION_WORKER_NAME}.x.workers.dev` }],
+    ['media origin not https', { mediaOrigin: 'http://solotravelsoul-r2-upload-staging.x.workers.dev' }],
+    ['media origin placeholder', { mediaOrigin: 'REPLACE_WITH_STAGING_WORKER_ORIGIN' }],
   ]) {
     const r = runChecker(fixture(opts));
     assert.equal(r.code, 1, label);
@@ -166,9 +176,19 @@ test('checker: isolated staging config passes; any production target fails; valu
 test('repo staging config names only staging resources (project ID still to be filled in)', () => {
   const r = runChecker(root);
   for (const line of ['PASS staging Worker name differs from production', 'PASS staging R2 bucket differs from production',
-    'PASS staging Worker has its own cron trigger', 'PASS EAS preview profile sets EXPO_PUBLIC_APP_ENV=staging']) {
+    'PASS staging Worker has its own cron trigger', 'PASS EAS preview profile sets EXPO_PUBLIC_APP_ENV=staging',
+    'PASS staging MEDIA_DB has the media migrations']) {
     assert.ok(r.out.includes(line), line);
   }
+  // Staging media resources are not created yet (no deployments in this change): reported, not hidden.
+  for (const line of ['FAIL staging MEDIA_KV namespace is set and not production', 'FAIL staging MEDIA_DB database is set and not production',
+    'FAIL staging MEDIA_PUBLIC_ORIGIN is an https origin that is not the production Worker']) {
+    assert.ok(r.out.includes(line), line);
+  }
+  // Production Worker config gains no media bindings in this change.
+  const toml = fs.readFileSync(path.join(root, 'workers/r2-upload-worker/wrangler.toml'), 'utf8');
+  const prodPart = toml.split('[env.staging]')[0];
+  assert.ok(!/MEDIA_KV|MEDIA_DB|MEDIA_PUBLIC_ORIGIN/.test(prodPart), 'production section unchanged');
 });
 
 let passed = 0;

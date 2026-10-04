@@ -6,29 +6,44 @@ function deletionError(code: string, message = 'Account deletion failed'): Error
   return Object.assign(new Error(message), { code });
 }
 
+export type DeletionProgress = { completedSteps: number; totalSteps: number };
+/** Continuation requests per tap; the server's cron continues any remainder. */
+export const MAX_DELETION_SLICES = 30;
+
 /**
- * Asks the server (R2 worker, which holds the Admin credentials) to delete the
- * signed-in account. Call immediately after reauthenticate(): the server only
- * accepts a recent sign-in. Resolves once data, media and the Auth identity are
- * gone; rejects with a `code` and leaves the account intact otherwise.
+ * Asks the server (Worker, which holds the Admin credentials) to delete the
+ * signed-in account. Call immediately after reauthenticate(): starting needs a
+ * recent sign-in. On Workers Free the server works in bounded slices and
+ * answers 202 while work remains; this keeps continuing with the same verified
+ * token (continuation is bound to that token's UID) and reports progress.
+ * Resolves 'deleted' when data, media and the Auth identity are gone, or
+ * 'in_progress' after MAX_DELETION_SLICES (the server finishes it).
  */
-export async function requestAccountDeletion(): Promise<void> {
+export async function requestAccountDeletion(onProgress?: (p: DeletionProgress) => void): Promise<'deleted' | 'in_progress'> {
   const workerUrl = (process.env.EXPO_PUBLIC_R2_UPLOAD_WORKER_URL ?? '').replace(/\/$/, '');
   if (!workerUrl) throw deletionError('deletion/unavailable');
 
   const token = await getFreshIdToken();
-  let resp: Response;
-  try {
-    resp = await fetch(`${workerUrl}/account/delete`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-  } catch {
-    throw deletionError('deletion/network');
+  for (let slice = 0; slice < MAX_DELETION_SLICES; slice++) {
+    let resp: Response;
+    try {
+      resp = await fetch(`${workerUrl}/account/delete`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {
+      throw deletionError('deletion/network');
+    }
+    if (resp.status === 202) {
+      const body = (await resp.json().catch(() => ({}))) as Partial<DeletionProgress>;
+      onProgress?.({ completedSteps: Number(body.completedSteps ?? 0), totalSteps: Number(body.totalSteps ?? 0) });
+      continue;
+    }
+    if (resp.ok) return 'deleted';
+    const body = (await resp.json().catch(() => ({}))) as { code?: string; error?: string };
+    throw deletionError(body.code ?? 'deletion/failed', body.error);
   }
-  if (resp.ok) return;
-  const body = (await resp.json().catch(() => ({}))) as { code?: string; error?: string };
-  throw deletionError(body.code ?? 'deletion/failed', body.error);
+  return 'in_progress';
 }
 
 /** Removes every on-device trace of `uid`: offline caches, sync/chat queues and scheduled reminders. */

@@ -6,6 +6,7 @@ import {
   signOut as _signOut,
   sendPasswordResetEmail,
   onAuthStateChanged,
+  onIdTokenChanged,
   EmailAuthProvider,
   reauthenticateWithCredential,
   type User,
@@ -65,6 +66,14 @@ export async function getFreshIdToken(): Promise<string> {
   const user = auth.currentUser;
   if (!user) throw Object.assign(new Error('No signed-in user'), { code: 'auth/no-current-user' });
   return user.getIdToken(true);
+}
+
+// Current ID token (refreshed hourly by the SDK) for authorized media requests.
+export function subscribeToIdToken(callback: (token: string | null) => void): () => void {
+  return onIdTokenChanged(auth, (user) => {
+    if (!user) { callback(null); return; }
+    user.getIdToken().then(callback, () => callback(null));
+  });
 }
 
 // Returns unsubscribe function — call it in useEffect cleanup.

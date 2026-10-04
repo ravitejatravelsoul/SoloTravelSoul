@@ -1,4 +1,5 @@
 import { memo, useState } from 'react';
+import { useMediaSource } from '@/hooks/useMediaSource';
 import {
   ScrollView,
   Image,
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export const PostImageCarousel = memo(function PostImageCarousel({ images, height = 300 }: Props) {
+  const mediaSrc = useMediaSource();
   const [activeIndex, setActiveIndex] = useState(0);
   const isSingle = images.length === 1;
 
@@ -36,7 +38,7 @@ export const PostImageCarousel = memo(function PostImageCarousel({ images, heigh
         {images.map((uri, i) => (
           <Image
             key={i}
-            source={{ uri }}
+            source={mediaSrc(uri)}
             style={[styles.image, { width: SCREEN_W, height }]}
             resizeMode="cover"
           />

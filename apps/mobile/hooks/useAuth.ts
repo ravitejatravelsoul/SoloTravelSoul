@@ -14,7 +14,7 @@ import { getUserInitials } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { setSyncPaused } from '@/hooks/useSyncEngine';
-import { requestAccountDeletion, clearLocalUserData } from '@/utils/accountDeletion';
+import { requestAccountDeletion, clearLocalUserData, type DeletionProgress } from '@/utils/accountDeletion';
 
 function deletionErrorMessage(code: string): string {
   switch (code) {
@@ -137,14 +137,15 @@ export function useAuth() {
   //   3. on success, wipe on-device caches/queues/reminders and sign out locally.
   // Offline sync is paused meanwhile so queued edits cannot recreate data.
   const deleteAccount = useCallback(
-    async (password: string): Promise<boolean> => {
+    async (password: string, onProgress?: (p: DeletionProgress) => void): Promise<boolean> => {
       const uid = user?.uid;
       if (!uid) return false;
       setLoading(true);
       setSyncPaused(uid, true);
+      let outcome: 'deleted' | 'in_progress' = 'deleted';
       try {
         await reauthenticate(password);
-        await requestAccountDeletion();
+        outcome = await requestAccountDeletion(onProgress);
       } catch (err: unknown) {
         const code = (err as { code?: string }).code ?? '';
         // A previous attempt finished but its response was lost.
@@ -159,7 +160,12 @@ export function useAuth() {
       await signOut().catch(() => {});
       setSyncPaused(uid, false);
       setLoading(false);
-      addToast('Your account has been deleted.', 'success');
+      addToast(
+        outcome === 'deleted'
+          ? 'Your account has been deleted.'
+          : 'Account deletion has started and continues automatically. Your account is locked meanwhile; contact privacy@solotravelsoul.app if it is not removed.',
+        'success'
+      );
       router.replace('/(auth)/login');
       return true;
     },

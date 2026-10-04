@@ -1,4 +1,5 @@
 import { useState, memo, useCallback } from 'react';
+import { useMediaSource } from '@/hooks/useMediaSource';
 import { View, FlatList, StyleSheet, TouchableOpacity, Alert, Image } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -201,6 +202,7 @@ const MemoryCard = memo(function MemoryCard({
   onEdit: (entry: JournalEntry) => void;
   onDelete: (entryId: string) => void;
 }) {
+  const mediaSrc = useMediaSource();
   const [expanded, setExpanded] = useState(false);
   const isLong = entry.text.length > 280;
   const toggle = useCallback(() => setExpanded((v) => !v), []);
@@ -212,7 +214,7 @@ const MemoryCard = memo(function MemoryCard({
       {/* Photo frame */}
       {entry.photoURL ? (
         <View style={styles.photoFrame}>
-          <Image source={{ uri: entry.photoURL }} style={styles.photo} resizeMode="cover" />
+          <Image source={mediaSrc(entry.photoURL)} style={styles.photo} resizeMode="cover" />
           <LinearGradient
             colors={['transparent', 'rgba(0,0,0,0.35)']}
             style={styles.photoOverlay}

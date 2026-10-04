@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useMediaSource } from '@/hooks/useMediaSource';
 import { useModerationActions } from '@/hooks/useModerationActions';
 import {
   View,
@@ -22,6 +23,7 @@ import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme
 import type { TravelJournal } from '@solotravelsoul/shared';
 
 export default function JournalDetailScreen() {
+  const mediaSrc = useMediaSource();
   const moderation = useModerationActions();
   const { journalId } = useLocalSearchParams<{ journalId: string }>();
   const [journal, setJournal] = useState<TravelJournal | null>(null);
@@ -91,7 +93,7 @@ export default function JournalDetailScreen() {
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* ── Cover ── */}
         {journal.coverImageURL ? (
-          <Image source={{ uri: journal.coverImageURL }} style={styles.cover} resizeMode="cover" />
+          <Image source={mediaSrc(journal.coverImageURL)} style={styles.cover} resizeMode="cover" />
         ) : null}
 
         <View style={styles.article}>

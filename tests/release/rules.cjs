@@ -215,28 +215,33 @@ function client(file, db) {
     const firstGroups = (mod, uid) => groupsWhen(mod, uid, has('marker'));
     // withSecurityRulesDisabled resolves to undefined, so capture the read explicitly.
     const adminGet = async (p) => { let data; await env.withSecurityRulesDisabled(async (ctx) => { data = (await sdk.getDoc(sdk.doc(ctx.firestore(), p))).data(); }); return data; };
+    const adminSet = (p, data) => env.withSecurityRulesDisabled((ctx) => sdk.setDoc(sdk.doc(ctx.firestore(), p), data));
     const friendChat = client('packages/firebase/src/chat.ts', env.authenticatedContext('friend').firestore());
     const waitFor = async (fn) => { for (let i = 0; i < 50; i++) { if (await fn()) return true; await new Promise((r) => setTimeout(r, 100)); } return false; };
     const groupData = (pending) => ({ name: 'Paused', createdBy: 'actor', members: ['actor', 'friend', ...Array.from({ length: 6 }, (_, i) => `p${i}`)],
       pendingMembers: pending, memberInfo: {}, unreadCounts: {}, lastMessage: null, updatedAt: sdk.Timestamp.now() });
     await check('interrupted group creation is hidden, then resumed by the creator', async () => {
-      // State left by an app killed after the first chunk.
-      await sdk.setDoc(sdk.doc(db, 'groups/interrupted'), groupData(['q1', 'q2', 'q3']));
+      // State left by an app killed after the first chunk (seeded directly: a single
+      // client write may add at most 8 checked identities).
+      await adminSet('groups/interrupted', groupData(['q1', 'q2', 'q3']));
       assert.ok(!(await firstGroups(friendChat, 'friend')).some((g) => g.id === 'interrupted'), 'hidden from members while pending');
-      await firstGroups(chat, 'actor'); // creator's client sees it and resumes
+      // The creator's client sees it (from the server: it was seeded there) and resumes;
+      // its own list shows the group only once creation is complete.
+      await groupsWhen(chat, 'actor', has('interrupted'));
       assert.ok(await waitFor(async () => !((await adminGet('groups/interrupted'))?.pendingMembers?.length)));
       assert.equal((await adminGet('groups/interrupted')).members.length, 11);
       await groupsWhen(friendChat, 'friend', has('interrupted')); // visible once complete
     });
     await check('interrupted creation with a refused pending member: member dropped on resume, group completes', async () => {
-      await sdk.setDoc(sdk.doc(db, 'groups/refused'), { ...groupData(['q1', 'gone']), memberInfo: { gone: { name: 'Gone' }, q1: { name: 'Q' } }, unreadCounts: { gone: 0, q1: 0 } });
+      // Pending entries listed before the account deletion started (rules refuse adding them now).
+      await adminSet('groups/refused', { ...groupData(['q1', 'gone']), memberInfo: { gone: { name: 'Gone' }, q1: { name: 'Q' } }, unreadCounts: { gone: 0, q1: 0 } });
       assert.ok(!(await firstGroups(friendChat, 'friend')).some((g) => g.id === 'refused'), 'hidden while pending');
       await chat.completeGroupCreation('refused');
       const g = await adminGet('groups/refused');
       assert.ok(g.members.includes('q1') && !g.members.includes('gone'));
       assert.deepEqual([g.pendingMembers, g.memberInfo.gone, g.unreadCounts.gone, g.memberInfo.q1.name], [[], undefined, undefined, 'Q']);
       // Concurrent resumes (two app instances of the creator) converge to the same result.
-      await sdk.setDoc(sdk.doc(db, 'groups/refused2'), { ...groupData(['gone', 'q2']), memberInfo: { gone: { name: 'Gone' } }, unreadCounts: { gone: 0 } });
+      await adminSet('groups/refused2', { ...groupData(['gone', 'q2']), memberInfo: { gone: { name: 'Gone' } }, unreadCounts: { gone: 0 } });
       await Promise.all([chat.completeGroupCreation('refused2'), chat.completeGroupCreation('refused2')]);
       const g2 = await adminGet('groups/refused2');
       assert.deepEqual([g2.pendingMembers, g2.members.includes('q2'), g2.members.includes('gone'), g2.memberInfo.gone], [[], true, false, undefined]);
@@ -372,6 +377,38 @@ function client(file, db) {
     });
     await env.withSecurityRulesDisabled(ctx => sdk.setDoc(sdk.doc(ctx.firestore(), 'blocks/owner/blocked/actor'), {}));
     await check('blocked sender cannot send', () => assertFails(chat.sendDirectMessage('chat', 'actor', 'Blocked', 'blocked', ['owner'])));
+
+    // ── Deletion barrier vs. group identity (enables skipping completed deletion steps) ──
+    // Once accountDeletions/{uid} exists, nobody may re-add that UID to a group's
+    // members, pendingMembers, memberInfo or unreadCounts; normal group work continues.
+    await env.withSecurityRulesDisabled(async ctx => {
+      const adb = ctx.firestore();
+      for (const [p, data] of Object.entries({
+        'accountDeletions/gone': { uid: 'gone', status: 'in_progress' },
+        'groups/bobGroup': { name: 'G', createdBy: 'bob', members: ['bob', 'carol'], pendingMembers: [], memberInfo: { bob: { name: 'Bob' }, carol: { name: 'Carol' } }, unreadCounts: { bob: 0, carol: 0 }, lastMessage: null },
+        'groups/bobGroupLeft': { name: 'L', createdBy: 'bob', members: ['bob'], pendingMembers: [], memberInfo: { bob: { name: 'Bob' }, carol: { name: 'Carol (left)' } }, unreadCounts: { bob: 0 }, lastMessage: null },
+      })) await sdk.setDoc(sdk.doc(adb, p), data);
+    });
+    const bobDb = env.authenticatedContext('bob').firestore();
+    const carolDb = env.authenticatedContext('carol').firestore();
+    const gdoc = (d, p) => sdk.doc(d, p);
+    await check('group identity: a deleting UID cannot be added as member or pending member (create or update)', async () => {
+      await assertFails(sdk.setDoc(gdoc(bobDb, 'groups/n1'), { name: 'n', createdBy: 'bob', members: ['bob', 'gone'], memberInfo: {}, unreadCounts: {} }));
+      await assertFails(sdk.updateDoc(gdoc(bobDb, 'groups/bobGroup'), { members: sdk.arrayUnion('gone') }));
+      await assertFails(sdk.setDoc(gdoc(bobDb, 'groups/n2'), { name: 'n', createdBy: 'bob', members: ['bob'], pendingMembers: ['gone'], memberInfo: { gone: { name: 'Gone' } }, unreadCounts: { gone: 0 } }));
+      await assertFails(sdk.updateDoc(gdoc(bobDb, 'groups/bobGroup'), { pendingMembers: sdk.arrayUnion('gone') }));
+    });
+    await check('group identity: memberInfo / unreadCounts keys cannot be added for non-members (creator or member)', async () => {
+      await assertFails(sdk.updateDoc(gdoc(bobDb, 'groups/bobGroup'), { 'memberInfo.gone': { name: 'Gone' } }));
+      await assertFails(sdk.updateDoc(gdoc(carolDb, 'groups/bobGroup'), { 'unreadCounts.gone': 1, updatedAt: sdk.serverTimestamp() }));
+      await assertFails(sdk.updateDoc(gdoc(carolDb, 'groups/bobGroup'), { 'unreadCounts.stranger': 1, updatedAt: sdk.serverTimestamp() }));
+    });
+    await check('group identity: normal group operations keep working', async () => {
+      await sdk.updateDoc(gdoc(bobDb, 'groups/bobGroupLeft'), { name: 'renamed' }); // stale memberInfo of a former member is tolerated
+      await sdk.updateDoc(gdoc(bobDb, 'groups/bobGroup'), { members: sdk.arrayUnion('dave'), 'memberInfo.dave': { name: 'Dave' }, 'unreadCounts.dave': 0 });
+      await sdk.updateDoc(gdoc(carolDb, 'groups/bobGroup'), { 'unreadCounts.bob': 2, lastMessage: { senderId: 'carol', text: 'hi' }, updatedAt: sdk.serverTimestamp() });
+      await sdk.setDoc(gdoc(bobDb, 'groups/n3'), { name: 'n', createdBy: 'bob', members: ['bob'], pendingMembers: ['erin'], memberInfo: { bob: { name: 'Bob' }, erin: { name: 'Erin' } }, unreadCounts: { bob: 0, erin: 0 } });
+    });
     console.log(`${checks} release rule checks passed`);
   } finally { await env.cleanup(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

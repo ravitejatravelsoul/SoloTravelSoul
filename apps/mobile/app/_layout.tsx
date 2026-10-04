@@ -4,7 +4,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useShallow } from 'zustand/react/shallow';
-import { subscribeToAuthState, getUserProfile, isFirebaseConfigured, upsertUserLookup } from '@solotravelsoul/firebase';
+import { subscribeToAuthState, subscribeToIdToken, getUserProfile, isFirebaseConfigured, upsertUserLookup } from '@solotravelsoul/firebase';
 import { getUserInitials } from '@solotravelsoul/shared';
 import { useTripStore } from '@/stores/tripStore';
 import { useChatStore } from '@/stores/chatStore';
@@ -38,6 +38,8 @@ export default function RootLayout() {
 
     let active = true;
     let version = 0;
+    // Keeps the token used for authorized media requests current (hourly refresh).
+    const unsubToken = subscribeToIdToken((token) => { if (active) useAuthStore.getState().setIdToken(token); });
     const unsub = subscribeToAuthState(async (user) => {
       if (!active) return;
       const currentVersion = ++version;
@@ -75,7 +77,7 @@ export default function RootLayout() {
       setInitialized(true);
       SplashScreen.hideAsync();
     });
-    return () => { active = false; version++; unsub(); };
+    return () => { active = false; version++; unsub(); unsubToken(); };
   }, []);
 
   return (

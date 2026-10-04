@@ -40,6 +40,7 @@ function mobile(file, deps) {
 }
 
 const { StoreConflict, FirestoreRest } = worker('firestoreRest');
+const { LegacyMediaInaccessible } = worker('objectStores');
 const deletion = worker('accountDeletion');
 const route = worker('accountRoute');
 const authMod = worker('auth');
@@ -51,6 +52,7 @@ const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)
 class MemoryStore {
   constructor() { this.docs = new Map(); this.clock = 0; }
   async get(p) { const d = this.docs.get(p); return d ? { path: p, data: clone(d.data), updateTime: d.updateTime } : null; }
+  async getMany(ps) { return Promise.all(ps.map((p) => this.get(p))); }
   async query(collectionId, filters, opts = {}) {
     const out = [];
     for (const [p, d] of this.docs) {
@@ -111,12 +113,25 @@ function fakeMedia(name, keys) {
   const objects = new Set(keys);
   return {
     name, objects, failNext: 0,
+    inaccessible: false,
+    gate() { if (this.inaccessible) throw new LegacyMediaInaccessible(name, 403); },
     async deletePrefixes(prefixes, beforePage) {
       await beforePage?.();
+      this.gate();
       if (this.failNext > 0) { this.failNext--; throw new Error(`${name} unavailable`); }
       let n = 0;
       for (const k of [...objects]) if (prefixes.some((p) => k.startsWith(p))) { objects.delete(k); n++; }
       return n;
+    },
+    async deleteObjects(names, before) {
+      await before?.(); this.gate();
+      let n = 0;
+      for (const k of names) if (objects.delete(k)) n++;
+      return n;
+    },
+    async verifyAbsent(prefixes, names, before) {
+      await before?.(); this.gate();
+      return ![...objects].some((k) => prefixes.some((p) => k.startsWith(p)) || names.includes(k));
     },
   };
 }
@@ -203,7 +218,8 @@ async function seed(store) {
 
 function harness(store) {
   const r2 = fakeMedia('r2', [`profile_photos/${ME}/avatar.jpg`, `post_photos/${ME}/x.jpg`, `post_photos/${BOB}/y.jpg`, `profile_photos/${BOB}/avatar.jpg`]);
-  const storage = fakeMedia('firebase-storage', [`profile_photos/${ME}/a.jpg`, `trip_covers/${ME}/t1.jpg`, `journals/${ME}/t1/e.jpg`, `trip_covers/${BOB}/t.jpg`]);
+  const storage = fakeMedia('firebase-storage', [`profile_photos/${ME}/a.jpg`, `trip_covers/${ME}/t1.jpg`, `journals/${ME}/t1/e.jpg`, `trip_covers/${BOB}/t.jpg`,
+    `profile_images/${ME}.jpg`, `profile_images/${BOB}.jpg`]); // profile_images/{uid}.jpg: earlier Swift app
   const authCalls = [];
   const authUsers = new Set([ME, BOB, CAROL]);
   const auth = { fail: 0, async del(uid) {
@@ -276,7 +292,7 @@ async function expectState(store, h) {
   assert.ok(await get(`users/${BOB}`));
   // Media: only this user's prefixes.
   assert.deepEqual([...h.r2.objects].sort(), [`post_photos/${BOB}/y.jpg`, `profile_photos/${BOB}/avatar.jpg`]);
-  assert.deepEqual([...h.storage.objects], [`trip_covers/${BOB}/t.jpg`]);
+  assert.deepEqual([...h.storage.objects].sort(), [`profile_images/${BOB}.jpg`, `trip_covers/${BOB}/t.jpg`]);
   assert.equal((await get(`accountDeletions/${ME}`)).status, 'completed');
 }
 
@@ -771,14 +787,14 @@ test('final completed-job write fails: late media is still swept and scheduled f
   // Recovery never acts under a live lease; once the dead attempt's lease lapses it finishes.
   restore();
   h.r2.objects.add(`profile_photos/${ME}/later.jpg`);
-  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, resumed: 0, swept: 1, stalled: 0 });
+  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, resumed: 0, swept: 1, stalled: 0, budgetLimited: false });
   h.advance(LEASE_MS + 1);
-  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 1, resumed: 0, swept: 1, stalled: 0 });
+  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 1, resumed: 0, swept: 1, stalled: 0, budgetLimited: false });
   job = (await store.get(`accountDeletions/${ME}`)).data;
   assert.deepEqual([job.status, job.pendingFinalization, job.recoveredBy], ['completed', false, 'scheduled-finalization']);
   assert.equal(h.authCalls.length, 1, 'no second Auth removal needed');
   await expectState(store, h);
-  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, resumed: 0, swept: 1, stalled: 0 }, 'idempotent');
+  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, resumed: 0, swept: 1, stalled: 0, budgetLimited: false }, 'idempotent');
 });
 
 test('Auth removal failed after media was cleared: finalization removes Auth without the user, but never under an active attempt', async () => {
@@ -952,9 +968,10 @@ async function idToken(keys, uid, authTime = Math.floor(Date.now() / 1000)) {
 }
 function installGoogleFakes(keys, { storageObjects, authUsers }) {
   const real = global.fetch;
-  const state = { failFinalWrite: false, authDeletes: [] };
+  const state = { failFinalWrite: false, authDeletes: [], fetches: 0 };
   global.fetch = async (input, init = {}) => {
     const url = typeof input === 'string' ? input : input.url;
+    state.fetches++; // every outbound call is a Workers subrequest
     if (url.startsWith('https://www.googleapis.com/service_accounts/v1/jwk/')) return Response.json({ keys: [keys.jwk] });
     if (url === 'https://oauth2.googleapis.com/token') return Response.json({ access_token: 'sa-token', expires_in: 3600 });
     if (url.startsWith('https://firestore.googleapis.com/')) {
@@ -965,7 +982,9 @@ function installGoogleFakes(keys, { storageObjects, authUsers }) {
     }
     if (url.startsWith('https://storage.googleapis.com/storage/v1/b/')) {
       const u = new URL(url);
-      if (init.method === 'DELETE') { storageObjects.delete(decodeURIComponent(u.pathname.split('/o/')[1])); return new Response(null, { status: 204 }); }
+      const objectName = u.pathname.includes('/o/') ? decodeURIComponent(u.pathname.split('/o/')[1]) : null;
+      if (init.method === 'DELETE') return new Response(null, { status: storageObjects.delete(objectName) ? 204 : 404 });
+      if (objectName !== null) return storageObjects.has(objectName) ? Response.json({ name: objectName }) : new Response(null, { status: 404 });
       const prefix = u.searchParams.get('prefix');
       return Response.json({ items: [...storageObjects].filter((k) => k.startsWith(prefix)).map((name) => ({ name })) });
     }
@@ -1003,8 +1022,18 @@ test('entry point: barrier read through Firestore REST blocks uploads; final-wri
 
     // Deletion through the entry point; the final job write is lost.
     fakes.state.failFinalWrite = true;
-    resp = await workerIndex().fetch(new Request('https://worker.test/account/delete', { method: 'POST', headers: { Authorization: `Bearer ${await idToken(keys, ME)}` } }), env);
+    const token = await idToken(keys, ME);
+    let slices = 0;
+    for (;;) {
+      const before = fakes.state.fetches;
+      resp = await workerIndex().fetch(new Request('https://worker.test/account/delete', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }), env);
+      assert.ok(fakes.state.fetches - before <= 50, `invocation made ${fakes.state.fetches - before} subrequests`);
+      slices++;
+      if (resp.status !== 202) break;
+      assert.equal(fakes.state.authDeletes.length, 0);
+    }
     assert.deepEqual([resp.status, await resp.json()], [200, { status: 'deleted' }]);
+    assert.ok(slices > 1, 'bounded slices through the real adapters');
     assert.deepEqual(fakes.state.authDeletes, [ME]);
     let job = (await store.get(`accountDeletions/${ME}`)).data;
     assert.deepEqual([job.status, job.pendingFinalization], ['in_progress', true]);
@@ -1016,8 +1045,10 @@ test('entry point: barrier read through Firestore REST blocks uploads; final-wri
     storageObjects.add(`journals/${ME}/t1/late.jpg`);
     fakes.state.failFinalWrite = false;
     const waits = [];
+    const beforeCron = fakes.state.fetches;
     await workerIndex().scheduled({}, env, { waitUntil: (p) => waits.push(p) });
     await Promise.all(waits);
+    assert.ok(fakes.state.fetches - beforeCron <= 50, `cron made ${fakes.state.fetches - beforeCron} subrequests`);
     job = (await store.get(`accountDeletions/${ME}`)).data;
     assert.deepEqual([job.status, job.pendingFinalization, job.recoveredBy], ['completed', false, 'scheduled-finalization']);
     assert.deepEqual(fakes.state.authDeletes, [ME], 'Auth already gone; not deleted twice');
@@ -1034,7 +1065,7 @@ test('a deletion that failed mid-way (e.g. out of Worker subrequests) is finishe
   h.r2.failNext = 1; // stands in for "Too many subrequests" / any mid-plan failure
   await assert.rejects(deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps), (e) => e.step === 'r2Media');
   assert.equal(h.authCalls.length, 0);
-  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, resumed: 1, swept: 1, stalled: 0 });
+  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, resumed: 1, swept: 1, stalled: 0, budgetLimited: false });
   assert.equal(await h.deps.authUserExists(ME), false, 'completed without the user signing in again');
   await expectState(store, h);
 });
@@ -1094,9 +1125,16 @@ test('entry point: operator deletion fulfils a web request with the full plan', 
   const env = { R2_BUCKET: bucket, PUBLIC_R2_BASE_URL: 'https://cdn.test', FIREBASE_PROJECT_ID: PROJECT, FIREBASE_STORAGE_BUCKET: 'bucket',
     GOOGLE_SERVICE_ACCOUNT_JSON: keys.serviceAccount, ADMIN_DELETION_TOKEN: 'operator-secret' };
   try {
-    const resp = await workerIndex().fetch(new Request('https://worker.test/admin/account-deletion', {
-      method: 'POST', headers: { Authorization: 'Bearer operator-secret', 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: ME }),
-    }), env);
+    let resp;
+    for (let i = 0; i < 40; i++) {
+      const before = fakes.state.fetches;
+      resp = await workerIndex().fetch(new Request('https://worker.test/admin/account-deletion', {
+        method: 'POST', headers: { Authorization: 'Bearer operator-secret', 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: ME }),
+      }), env);
+      assert.ok(fakes.state.fetches - before <= 50);
+      if (resp.status !== 202) break;
+      assert.equal((await resp.json()).uid, ME);
+    }
     assert.deepEqual([resp.status, await resp.json()], [200, { status: 'deleted', uid: ME }]);
     assert.deepEqual(fakes.state.authDeletes, [ME]);
     await expectState(store, { r2: { objects: bucket.objects }, storage: { objects: storageObjects } });
@@ -1484,6 +1522,235 @@ for (const [type, docPath, id] of removalTargets) {
     assert.equal((await f.call('mod', { targetType: type, targetId: id })).status, 409);
   });
 }
+
+// ── Workers Free: bounded slices, persisted cursor, continuation auth, budgets ─
+
+const budgetMod = worker('budget');
+const mediaMod = worker('media');
+const { d1Fake, kvFake } = require('./lib/fakes.cjs');
+const COLD_AUTH_CALLS = 2; // JWKS + service-account token on a cold isolate
+const STORE_METHODS = ['get', 'getMany', 'query', 'listDocumentIds', 'listCollectionIds', 'commit'];
+
+/** Charges every store call (one Firestore REST fetch each) to `budget`, as the real adapter does. */
+function metered(store, budget) {
+  return new Proxy(store, {
+    get(t, k) {
+      const v = t[k];
+      if (typeof v !== 'function') return v;
+      return STORE_METHODS.includes(k) ? (...a) => { budget.spend(); return v.apply(t, a); } : v.bind(t);
+    },
+  });
+}
+
+/** One invocation's deps: fetch budget (store, Auth, Storage) and D1 query budget. */
+function invocation(h, store, mediaStore) {
+  const budget = new budgetMod.SubrequestBudget();
+  const queries = new budgetMod.SubrequestBudget(budgetMod.D1_FREE_QUERIES);
+  budget.spend(COLD_AUTH_CALLS);
+  const charge = (fn) => async (...a) => { budget.spend(); return fn(...a); };
+  const fs = h.storage;
+  const storage = { name: fs.name,
+    deletePrefixes: (p, before) => fs.deletePrefixes(p, async () => { await before?.(); budget.spend(); }),
+    deleteObjects: (n, before) => fs.deleteObjects(n, async () => { await before?.(); budget.spend(); }),
+    verifyAbsent: (p, n, before) => fs.verifyAbsent(p, n, async () => { await before?.(); budget.spend(); }) };
+  const deps = { ...h.deps, store: metered(store, budget), firebaseStorage: storage, budget,
+    deleteAuthUser: charge(h.deps.deleteAuthUser), authUserExists: charge(h.deps.authUserExists),
+    media: mediaStore ? { db: mediaMod.meteredD1(mediaStore.db, queries), kv: mediaStore.kv, queries } : undefined };
+  return { deps, budget, queries };
+}
+
+function seedMedia(n, owner) {
+  const m = { db: d1Fake(), kv: kvFake() };
+  const ins = m.db.raw.prepare(`INSERT INTO media VALUES (?, ?, ?, 'post', 'inherit', 'active', NULL, 'image/jpeg', 1, 1, 1, 0)`);
+  for (const [uid, count] of [[owner, n], [BOB, 2]]) {
+    for (let i = 0; i < count; i++) {
+      const id = (uid === owner ? 'a' : 'b') + String(i).padStart(31, '0');
+      ins.run(id, uid, `m/${id}`);
+      m.kv.map.set(`m/${id}`, new ArrayBuffer(1));
+    }
+  }
+  return m;
+}
+
+const tokenFor = (uid, authTime = nowSec) => ({ uid, email: null, authTime });
+const callRoute = async (h, store, m, identity, body) => {
+  const inv = invocation(h, store, m);
+  const resp = await route.handleAccountDeletion(
+    new Request('https://worker.test/account/delete', { method: 'POST', headers: { Authorization: 'Bearer t' }, body: body ? JSON.stringify(body) : undefined }),
+    { verify: async () => identity, deletion: () => inv.deps, json, nowSec: () => nowSec }
+  );
+  return { status: resp.status, body: await resp.json(), used: inv.budget.used, queries: inv.queries.used };
+};
+
+test('bounded slices: every invocation stays within 50 subrequests and 50 D1 queries; 202 until done; cursor persisted', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  const m = seedMedia(45, ME);
+  const slices = [];
+  let r;
+  for (let i = 0; i < 60; i++) {
+    r = await callRoute(h, store, m, tokenFor(ME));
+    slices.push(r);
+    assert.ok(r.used <= budgetMod.WORKERS_FREE_SUBREQUESTS, `slice ${i} used ${r.used} subrequests`);
+    assert.ok(r.queries <= budgetMod.D1_FREE_QUERIES, `slice ${i} used ${r.queries} D1 queries`);
+    if (r.status !== 202) break;
+    assert.equal(r.body.status, 'in_progress');
+    if (i > 0) assert.ok(r.body.completedSteps >= slices[i - 1].body.completedSteps, 'progress never goes back');
+    const job = (await store.get(`accountDeletions/${ME}`)).data;
+    assert.equal(job.completedSteps.length, r.body.completedSteps, 'cursor persisted with the 202');
+    assert.equal(job.leaseUntil, 0, 'paused slice releases its lease');
+    assert.equal(h.authCalls.length, 0, 'Auth untouched until every step is done');
+  }
+  assert.deepEqual([r.status, r.body], [200, { status: 'deleted' }]);
+  assert.ok(slices.length >= 3, `expected several slices, got ${slices.length}`);
+  assert.equal(h.authCalls.length, 1);
+  await expectState(store, h);
+  assert.equal(m.db.raw.prepare(`SELECT COUNT(*) n FROM media WHERE owner_uid = ? AND (status != 'removed' OR kv_delete_pending = 1)`).get(ME).n, 0);
+  assert.equal([...m.kv.map.keys()].filter((k) => k.startsWith('m/a')).length, 0, 'KV bytes deleted (accepted by KV)');
+  assert.equal(m.db.raw.prepare(`SELECT COUNT(*) n FROM media WHERE owner_uid = ? AND status = 'active'`).get(BOB).n, 2, "other users' media untouched");
+  console.log(`      slices=${slices.length} max subrequests=${Math.max(...slices.map((s) => s.used))} max D1 queries=${Math.max(...slices.map((s) => s.queries))}`);
+});
+
+test('KV delete quota: the media step stays pending (202, revoked) and is never reported deleted until KV accepts', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  const m = seedMedia(5, ME);
+  m.kv.state.deleteQuota = 2;
+  let r;
+  for (let i = 0; i < 40; i++) {
+    r = await callRoute(h, store, m, tokenFor(ME));
+    if (r.status !== 202 || m.kv.state.deleteQuota < 0) break;
+  }
+  assert.equal(r.status, 202);
+  r = await callRoute(h, store, m, tokenFor(ME));
+  assert.equal(r.status, 202, 'still pending while KV refuses deletes');
+  assert.equal(h.authCalls.length, 0);
+  assert.equal((await store.get(`accountDeletions/${ME}`)).data.currentStep, 'media');
+  assert.equal(m.db.raw.prepare(`SELECT COUNT(*) n FROM media WHERE owner_uid = ? AND status = 'active'`).get(ME).n, 0, 'logically revoked at once');
+  assert.ok(m.db.raw.prepare(`SELECT COUNT(*) n FROM media WHERE owner_uid = ? AND kv_delete_pending = 1`).get(ME).n > 0);
+  m.kv.state.deleteQuota = Infinity; // next UTC day
+  for (let i = 0; i < 10 && r.status === 202; i++) r = await callRoute(h, store, m, tokenFor(ME));
+  assert.equal(r.status, 200);
+  await expectState(store, h);
+});
+
+test('continuation auth: start needs recent login; continuation is bound to the verified token UID only', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  const stale = nowSec - 60 * 60;
+  let r = await callRoute(h, store, null, tokenFor(ME, stale));
+  assert.deepEqual([r.status, r.body.code], [401, 'auth/requires-recent-login'], 'starting needs a recent login');
+  assert.equal(await store.get(`accountDeletions/${ME}`), null);
+  r = await callRoute(h, store, null, tokenFor(ME));
+  assert.equal(r.status, 202);
+  const before = (await store.get(`accountDeletions/${ME}`)).data.completedSteps.length;
+  // Another signed-in user cannot continue (or start) someone else's deletion; a body UID is ignored.
+  r = await callRoute(h, store, null, tokenFor(BOB, stale), { uid: ME });
+  assert.deepEqual([r.status, r.body.code], [401, 'auth/requires-recent-login']);
+  assert.equal((await store.get(`accountDeletions/${ME}`)).data.completedSteps.length, before, "Bob's request did not advance Alice's job");
+  assert.equal(await store.get(`accountDeletions/${BOB}`), null);
+  // The same user continues with an older (still valid) token.
+  for (let i = 0; i < 40 && r.status !== 200; i++) {
+    r = await callRoute(h, store, null, tokenFor(ME, stale), { uid: BOB });
+    assert.ok([200, 202].includes(r.status), JSON.stringify(r.body));
+  }
+  assert.equal(r.status, 200);
+  await expectState(store, h);
+  assert.ok(await store.get(`users/${BOB}`), 'body uid never selects the account');
+  r = await callRoute(h, store, null, tokenFor(ME, stale));
+  assert.deepEqual([r.status, r.body], [200, { status: 'deleted' }], 'completed: idempotent');
+  // An unreadable job document fails closed.
+  const inv = invocation(harness(store), store, null);
+  inv.deps.store = { get: async () => { throw new Error('unavailable'); } };
+  const resp = await route.handleAccountDeletion(req('Bearer t'), { verify: async () => tokenFor(CAROL, stale), deletion: () => inv.deps, json, nowSec: () => nowSec });
+  assert.equal(resp.status, 503);
+}, 'memory');
+
+test('cron: discovery, finalization, recovery and sweep stay within 50 subrequests per run and finish the work', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  const m = seedMedia(30, ME);
+  // Alice: one user slice, then the app is closed (paused, lease released).
+  assert.equal((await callRoute(h, store, m, tokenFor(ME))).status, 202);
+  // Other jobs: a failed one and one awaiting finalization (Auth already gone).
+  await store.commit([{ kind: 'update', path: 'accountDeletions/zed', set: { uid: 'zed', status: 'failed', attemptId: 'x', leaseUntil: 0, completedSteps: [], startedAtMs: h.now() }, mustExist: false }]);
+  await store.commit([{ kind: 'update', path: 'accountDeletions/yan', set: { uid: 'yan', status: 'in_progress', attemptId: 'y', leaseUntil: 0, pendingFinalization: true, mediaClearedAtMs: h.now(), completedSteps: [], startedAtMs: h.now() }, mustExist: false }]);
+  const runs = [];
+  for (let i = 0; i < 40; i++) {
+    const inv = invocation(h, store, m);
+    const result = await deletion.runScheduledMaintenance(inv.deps);
+    runs.push({ used: inv.budget.used, queries: inv.queries.used, result });
+    assert.ok(inv.budget.used <= budgetMod.WORKERS_FREE_SUBREQUESTS, `cron run ${i}: ${inv.budget.used} subrequests`);
+    assert.ok(inv.queries.used <= budgetMod.D1_FREE_QUERIES, `cron run ${i}: ${inv.queries.used} D1 queries`);
+    const states = await Promise.all([ME, 'zed', 'yan'].map(async (u) => (await store.get(`accountDeletions/${u}`)).data.status));
+    if (states.every((s) => s === 'completed')) break;
+  }
+  for (const u of [ME, 'zed', 'yan']) assert.equal((await store.get(`accountDeletions/${u}`)).data.status, 'completed', u);
+  await expectState(store, h);
+  assert.ok(runs.length >= 2);
+  assert.ok(runs.some((r) => r.result.budgetLimited), 'at least one run stopped at its budget and resumed later');
+  console.log(`      cron runs=${runs.length} max subrequests=${Math.max(...runs.map((r) => r.used))} max D1 queries=${Math.max(...runs.map((r) => r.queries))}`);
+}, 'memory');
+
+test('cron media maintenance limits keep the run within both budgets; the D1 cap is hard', async () => {
+  for (const [f, q] of [[50, 50], [30, 50], [50, 10], [12, 6], [10, 4]]) {
+    const { checkLimit, purgeLimit } = mediaMod.maintenanceLimits(f, q);
+    assert.ok(4 + 2 * checkLimit + purgeLimit <= q, `D1 ${f}/${q}`);
+    assert.ok(10 + 3 * checkLimit <= Math.max(f, 10), `fetch ${f}/${q}`);
+  }
+  const m = { db: d1Fake(), kv: kvFake() };
+  const queries = new budgetMod.SubrequestBudget(3);
+  const db = mediaMod.meteredD1(m.db, queries);
+  for (let i = 0; i < 3; i++) await db.prepare('SELECT 1').first();
+  await assert.rejects(db.prepare('SELECT 1').first(), budgetMod.BudgetExceeded, 'a query beyond the cap is never sent');
+  assert.equal(m.db.state.queries, 3);
+}, 'memory');
+
+test('legacy profile_images/{uid}.jpg: deleted and verified absent when accessible; unresolved (not deleted) when inaccessible', async () => {
+  // Accessible: a fresh check proves absence before the record says so.
+  let store = await newStore(); await seed(store); let h = harness(store);
+  await deletion.deleteAccount({ uid: ME, email: null }, h.deps);
+  assert.ok(!h.storage.objects.has(`profile_images/${ME}.jpg`));
+  assert.ok(h.storage.objects.has(`profile_images/${BOB}.jpg`));
+  let rec = (await store.get(`legacyMediaCleanup/${ME}`)).data;
+  assert.equal(rec.status, 'verified_absent');
+  assert.deepEqual(rec.objects, [`profile_images/${ME}.jpg`]);
+
+  // Still listed after delete: the step fails and is never recorded as done.
+  store = await newStore(); await seed(store); h = harness(store);
+  h.storage.verifyAbsent = async () => false;
+  await assert.rejects(deletion.deleteAccount({ uid: ME, email: null }, h.deps), (e) => e.step === 'firebaseMedia');
+  assert.equal(await store.get(`legacyMediaCleanup/${ME}`), null);
+  assert.equal(h.authCalls.length, 0);
+
+  // Inaccessible (Spark project; Storage needs Blaze): recorded as unresolved and listed for operators.
+  store = await newStore(); await seed(store); h = harness(store);
+  h.storage.inaccessible = true;
+  await deletion.deleteAccount({ uid: ME, email: null }, h.deps);
+  assert.ok(h.storage.objects.has(`profile_images/${ME}.jpg`), 'nothing was deleted');
+  rec = (await store.get(`legacyMediaCleanup/${ME}`)).data;
+  assert.deepEqual([rec.status, rec.reason], ['unresolved', 'inaccessible (403)']);
+  assert.equal((await store.get(`accountDeletions/${ME}`)).data.legacyMediaUnresolved, true, 'the job carries the open item');
+  const resp = await route.handleAdminDeletionStatus(new Request('https://w/admin/deletion-status', { headers: { Authorization: 'Bearer ops' } }), { adminToken: 'ops', deletion: () => h.deps, json });
+  assert.deepEqual((await resp.json()).legacyMediaUnresolved.map((u) => u.uid), [ME]);
+});
+
+test('legacy media migration tooling: dry run by default, ownership gate, resumable state, no source deletion', async () => {
+  const src = fs.readFileSync(path.join(root, 'scripts/migrateLegacyMedia.ts'), 'utf8');
+  const m = { exports: {} };
+  new Function('module', 'exports', 'require', transpile(path.join(root, 'scripts/migrateLegacyMedia.ts')))(m, m.exports, require);
+  const mig = m.exports;
+  assert.deepEqual(mig.parseLegacyPath('firebase', 'profile_images/abcdef12.jpg'), { source: 'firebase', path: 'profile_images/abcdef12.jpg', ownerUid: 'abcdef12', purpose: 'profile' });
+  assert.equal(mig.parseLegacyPath('firebase', 'profile_images/../x.jpg'), null);
+  assert.equal(mig.parseLegacyPath('r2', 'other/abcdef12/x.jpg'), null);
+  const item = mig.parseLegacyPath('r2', 'post_photos/abcdef12/x.jpg');
+  assert.deepEqual(mig.ownershipDecision(item, false, []), { ok: false, reason: 'owner-auth-user-missing' });
+  assert.deepEqual(mig.ownershipDecision(item, true, [{ path: 'travelPosts/p', ownerUid: 'someoneElse' }]), { ok: false, reason: 'referenced-by-another-account' });
+  assert.deepEqual(mig.ownershipDecision(item, true, [{ path: 'travelPosts/p', ownerUid: 'abcdef12' }]), { ok: true });
+  const tmp = path.join(require('os').tmpdir(), `sts-mig-${process.pid}.json`);
+  mig.saveState(tmp, { [mig.stateKey(item)]: { stage: 'imported', mediaId: 'x' } });
+  assert.equal(mig.loadState(tmp)[mig.stateKey(item)].stage, 'imported');
+  fs.unlinkSync(tmp);
+  assert.match(src, /apply: \{ type: 'boolean', default: false \}/, 'dry run is the default');
+  assert.ok(!/\.delete\(\)|deleteFiles|bucket\.delete/.test(src), 'never deletes source objects');
+  assert.ok(/process\.env\.ADMIN_DELETION_TOKEN/.test(src) && !/console\.log\([^)]*token/i.test(src), 'token from env, never printed');
+}, 'memory');
 
 (async () => {
   let passed = 0;

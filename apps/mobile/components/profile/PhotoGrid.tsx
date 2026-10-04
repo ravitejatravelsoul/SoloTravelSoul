@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { useMediaSource } from '@/hooks/useMediaSource';
 import { View, StyleSheet, TouchableOpacity, Image, Dimensions } from 'react-native';
 import { router } from 'expo-router';
 import { Colors } from '@/constants/theme';
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export const PhotoGrid = memo(function PhotoGrid({ posts }: Props) {
+  const mediaSrc = useMediaSource();
   const withImages = posts.filter((p) => p.images.length > 0);
 
   return (
@@ -24,7 +26,7 @@ export const PhotoGrid = memo(function PhotoGrid({ posts }: Props) {
           activeOpacity={0.85}
         >
           <Image
-            source={{ uri: post.images[0] }}
+            source={mediaSrc(post.images[0])}
             style={styles.image}
             resizeMode="cover"
           />

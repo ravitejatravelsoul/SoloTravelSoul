@@ -1,7 +1,12 @@
-// POST /account/delete — authenticated, recent-login-only account deletion.
+// POST /account/delete — authenticated account deletion.
+//
+// Starting a deletion requires a recent sign-in. Continuing one (bounded
+// slices on Workers Free return 202) only requires a verified ID token: the
+// UID always comes from that token, never from the request, and continuation
+// is allowed only while that UID's own job exists and is not completed.
 
 import { isRecentAuth, type VerifiedToken } from './auth';
-import { deleteAccount, DeletionAttemptLost, DeletionInProgress, DeletionStepFailed, listStalledDeletions, type DeletionDeps } from './accountDeletion';
+import { deleteAccount, DeletionAttemptLost, DeletionInProgress, DeletionStepFailed, listStalledDeletions, listUnresolvedLegacyMedia, type DeletionDeps, type DeletionResult } from './accountDeletion';
 
 export interface AccountRouteDeps {
   verify(token: string): Promise<VerifiedToken>;
@@ -25,20 +30,31 @@ export async function handleAccountDeletion(request: Request, deps: AccountRoute
     return deps.json({ error: 'Authentication failed', code: 'auth/invalid-token' }, 403);
   }
 
-  // Destructive: require a sign-in/reauthentication within the last few minutes.
-  if (!isRecentAuth(identity, deps.nowSec?.())) {
-    return deps.json({ error: 'Please confirm your password again.', code: 'auth/requires-recent-login' }, 401);
-  }
-
   const deletion = deps.deletion();
   if (!deletion) {
+    if (!isRecentAuth(identity, deps.nowSec?.())) {
+      return deps.json({ error: 'Please confirm your password again.', code: 'auth/requires-recent-login' }, 401);
+    }
     console.error('[Worker] account deletion is not configured (missing service account)');
     return deps.json({ error: 'Account deletion is temporarily unavailable.', code: 'deletion/unavailable' }, 503);
   }
 
+  // Continuation of this UID's own started deletion needs no fresh login;
+  // starting one does. Fails closed if the job cannot be read.
+  let continuing: boolean;
   try {
-    await deleteAccount({ uid: identity.uid, email: identity.email }, deletion);
-    return deps.json({ status: 'deleted' });
+    const job = await deletion.store.get(`accountDeletions/${identity.uid}`);
+    continuing = !!job;
+  } catch {
+    return deps.json({ error: 'Account deletion is temporarily unavailable.', code: 'deletion/unavailable' }, 503);
+  }
+  if (!continuing && !isRecentAuth(identity, deps.nowSec?.())) {
+    return deps.json({ error: 'Please confirm your password again.', code: 'auth/requires-recent-login' }, 401);
+  }
+
+  try {
+    const result: DeletionResult = await deleteAccount({ uid: identity.uid, email: identity.email }, deletion);
+    return result.status === 'deleted' ? deps.json({ status: 'deleted' }) : deps.json(result, 202);
   } catch (e) {
     if (e instanceof DeletionInProgress) {
       return deps.json({ error: 'Account deletion is already in progress.', code: 'deletion/in-progress' }, 409);
@@ -88,8 +104,8 @@ export async function handleAdminAccountDeletion(
   const deletion = deps.deletion();
   if (!deletion) return deps.json({ error: 'Account deletion is not configured.', code: 'deletion/unavailable' }, 503);
   try {
-    await deleteAccount({ uid, email: null }, deletion);
-    return deps.json({ status: 'deleted', uid });
+    const result = await deleteAccount({ uid, email: null }, deletion);
+    return result.status === 'deleted' ? deps.json({ status: 'deleted', uid }) : deps.json({ ...result, uid }, 202);
   } catch (e) {
     if (e instanceof DeletionInProgress) return deps.json({ code: 'deletion/in-progress' }, 409);
     const step = e instanceof DeletionStepFailed ? e.step : e instanceof DeletionAttemptLost ? 'lease' : 'unknown';
@@ -112,5 +128,7 @@ export async function handleAdminDeletionStatus(
   const deletion = deps.deletion();
   if (!deletion) return deps.json({ error: 'Account deletion is not configured.', code: 'deletion/unavailable' }, 503);
   const stalled = await listStalledDeletions(deletion);
-  return deps.json({ stalled, count: stalled.length, checkedAt: new Date((deletion.now ?? Date.now)()).toISOString() });
+  // Unresolved legacy media is an open item, never a completed deletion.
+  const legacyMediaUnresolved = await listUnresolvedLegacyMedia(deletion);
+  return deps.json({ stalled, count: stalled.length, legacyMediaUnresolved, checkedAt: new Date((deletion.now ?? Date.now)()).toISOString() });
 }
