@@ -1417,6 +1417,74 @@ test("account deletion still removes the user's moderated (under_review / remove
   await expectState(store, h);
 });
 
+// ── Removal lease expiry: restores wait for a terminal state ─────────────────
+
+const removalTargets = [['post', 'travelPosts/rp', 'rp'], ['journal', 'travelJournals/rj', 'rj']];
+
+for (const [type, docPath, id] of removalTargets) {
+  test(`remove-media + real rules (${type}): deletion outlasting its lease still blocks restore until done`, async () => {
+    const { initializeTestEnvironment, assertFails } = require('@firebase/rules-unit-testing');
+    const sdk = require('firebase/firestore');
+    const env = await initializeTestEnvironment({ projectId: PROJECT,
+      firestore: { host: '127.0.0.1', port: 8188, rules: fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8') } });
+    try {
+      const f = await mediaFixture();
+      const modDb = env.authenticatedContext('mod2').firestore();
+      const restore = () => sdk.updateDoc(sdk.doc(modDb, docPath), { visibility: 'public', reportCount: 0, moderatedBy: 'mod2', moderatedAt: sdk.serverTimestamp() });
+      const realDelete = f.bucket.delete.bind(f.bucket);
+      let tried = false;
+      f.bucket.delete = async (keys) => {
+        // The claim's lease has already expired in real time (claimed with a clock 10 min behind).
+        tried = true;
+        await assertFails(restore());
+        return realDelete(keys);
+      };
+      const lagging = () => Date.now() - 10 * 60_000;
+      const r = await f.call('mod', { targetType: type, targetId: id }, { now: lagging });
+      assert.ok(tried);
+      assert.equal(r.status, 200);
+      await restore(); // terminal state reached: restore allowed
+      const doc = (await f.store.get(docPath)).data;
+      assert.deepEqual([doc.visibility, doc.mediaRemoval.state], ['public', 'done']);
+    } finally {
+      await env.cleanup();
+    }
+  }, 'emulator');
+
+  test(`remove-media (${type}): takeover after lease expiry completes; the stale run cannot touch restored content`, async () => {
+    const f = await mediaFixture();
+    const realDelete = f.bucket.delete.bind(f.bucket);
+    let releaseStale, staleEntered;
+    const staleGate = new Promise((r) => { releaseStale = r; });
+    const entered = new Promise((r) => { staleEntered = r; });
+    let first = true;
+    f.bucket.delete = async (keys) => {
+      if (first) { first = false; staleEntered(); await staleGate; } // run A stalls mid-delete
+      return realDelete(keys);
+    };
+    const runA = f.call('mod', { targetType: type, targetId: id });
+    await entered;
+    assert.equal((await f.call('mod2', { targetType: type, targetId: id })).status, 409, 'lease still live');
+    f.advance(10 * 60_000);
+    const runB = await f.call('mod2', { targetType: type, targetId: id }); // takeover
+    assert.equal(runB.status, 200);
+    const afterB = (await f.store.get(docPath)).data;
+    assert.equal(afterB.mediaRemoval.state, 'done');
+    assert.equal(afterB.mediaRemoval.by, 'mod2');
+    // Restore (now allowed: terminal state) and the author attaches a new photo.
+    await f.store.commit([{ kind: 'update', path: docPath, set: { visibility: 'public', images: [`${CDN}/post_photos/${BOB}/new.jpg`] } }]);
+    releaseStale();
+    const a = await runA;
+    assert.equal(a.status, 200);
+    assert.equal(a.body.superseded, true, 'stale run recognised it no longer owns the removal');
+    const final = (await f.store.get(docPath)).data;
+    assert.deepEqual([final.visibility, final.images, final.mediaRemoval.by], ['public', [`${CDN}/post_photos/${BOB}/new.jpg`], 'mod2']);
+    assert.ok(f.bucket.objects.has(`post_photos/${BOB}/new.jpg`), 'restored photo kept');
+    // Repeating removal on restored content is refused (not removed).
+    assert.equal((await f.call('mod', { targetType: type, targetId: id })).status, 409);
+  });
+}
+
 (async () => {
   let passed = 0;
   const only = tests.filter((t) => !t.only || t.only === (EMULATOR ? 'emulator' : 'memory'));

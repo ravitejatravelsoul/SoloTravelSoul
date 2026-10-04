@@ -50,12 +50,13 @@ service cloud.firestore {
         || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isArchived', 'updatedAt']);
     }
     // POST /moderation/remove-media claims the item (mediaRemoval) before
-    // deleting objects; visibility cannot change until it finishes or its
-    // lease lapses, so a restore can never be undone by the cleanup.
+    // deleting objects. Visibility cannot change until the removal reaches its
+    // terminal state ('done'). Lease expiry only lets another removal run take
+    // over (the Worker re-claims and finishes it); it never makes a restore
+    // safe, because the expired run may still be deleting objects.
     function mediaRemovalActive() {
       let removal = resource.data.get('mediaRemoval', null);
-      return removal != null && removal.get('state', '') == 'in_progress'
-        && removal.get('leaseUntilMs', 0) > request.time.toMillis();
+      return removal != null && removal.get('state', '') == 'in_progress';
     }
     function moderatorSetsVisibility() {
       return isModerator() && !mediaRemovalActive()

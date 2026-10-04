@@ -349,6 +349,8 @@ function client(file, db) {
         'travelPosts/normalPost': { ...base, visibility: 'public', reportCount: 0 },
         'travelPosts/clearing': { ...base, visibility: 'removed', reportCount: 3, mediaRemoval: { state: 'in_progress', leaseUntilMs: Date.now() + 120000, token: 't' } },
         'travelPosts/cleared': { ...base, visibility: 'removed', reportCount: 3, mediaRemoval: { state: 'done', leaseUntilMs: 0, token: 't' } },
+        'travelPosts/clearingExpired': { ...base, visibility: 'removed', reportCount: 3, mediaRemoval: { state: 'in_progress', leaseUntilMs: Date.now() - 60000, token: 't' } },
+        'travelJournals/clearingExpiredJ': { ...base, title: 'T', visibility: 'removed', reportCount: 3, mediaRemoval: { state: 'in_progress', leaseUntilMs: Date.now() - 60000, token: 't' } },
       })) await sdk.setDoc(sdk.doc(adb, p), data);
     });
     for (const p of ['travelPosts/heldPost', 'travelPosts/gonePost', 'travelJournals/heldJournal', 'travelJournals/goneJournal']) {
@@ -363,6 +365,9 @@ function client(file, db) {
     await check('moderators cannot restore while media removal holds its lease; can once it is done', async () => {
       const mod = client('packages/firebase/src/moderation.ts', modDb);
       await assertFails(mod.setContentVisibility('post', 'clearing', 'mod', 'public'));
+      // An expired lease allows a worker takeover, never a restore.
+      await assertFails(mod.setContentVisibility('post', 'clearingExpired', 'mod', 'public'));
+      await assertFails(mod.setContentVisibility('journal', 'clearingExpiredJ', 'mod', 'public'));
       await mod.setContentVisibility('post', 'cleared', 'mod', 'public');
     });
     await env.withSecurityRulesDisabled(ctx => sdk.setDoc(sdk.doc(ctx.firestore(), 'blocks/owner/blocked/actor'), {}));
