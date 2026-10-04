@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "solotravelsoul-57a9e"
+    "default": "solotravelsoul-57a9e",
+    "staging": "REPLACE_WITH_STAGING_PROJECT_ID"
   }
 }

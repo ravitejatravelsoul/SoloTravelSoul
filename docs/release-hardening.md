@@ -177,3 +177,49 @@ Reproduced: a claim's lease expired while `bucket.delete` was still running; the
 Fix (`firestore.rules`, `mediaRemovalActive()`): moderator visibility changes are refused while `mediaRemoval.state == 'in_progress'`, regardless of the lease. Lease expiry now only permits another `remove-media` run to take over (re-claim the same URLs, delete idempotently, finalize to `done`); restores become possible only after that terminal state. Expired or superseded runs cannot affect restored content: restore requires `done`, and their finalize is fenced to their claim token (superseded runs return `superseded: true` without writing). A removal stuck `in_progress` (worker crashed) is recovered by calling `remove-media` again after the 2-minute lease; until then the item stays removed. Account deletion (Admin) is unaffected.
 
 Tests: real-rules emulator tests for posts and journals (deletion outlasting its lease: restore refused during deletion, allowed once `done`) fail against the previous rule and pass now; takeover after expiry with a stalled original run, stale completion after restore + new photo (photo and visibility preserved), retry/no-op repeat for posts and journals; rules check that an expired in-progress claim blocks restores. `npm run test:release` 13 + 46/46, `npm run test:rules` 79/79 + 45/45 pass. Native verification: **blocked** (no device/emulator/macOS).
+
+## Staging validation (from 8816dcf)
+
+### Prepared locally (this phase)
+
+- `workers/r2-upload-worker/wrangler.toml` → `[env.staging]`: Worker `solotravelsoul-r2-upload-staging`, R2 bucket `solotravelsoul-images-staging`, own vars and hourly cron; secrets are per environment (`--env staging`). `wrangler deploy --dry-run --env staging` bundles and binds only the staging bucket (verified).
+- `.firebaserc` → `staging` alias (placeholder until the project exists). The `default` alias is still production, so every staging command below passes `--project staging` explicitly.
+- `apps/mobile/eas.json` → preview builds set `EXPO_PUBLIC_APP_ENV=staging` (production builds `production`) and read the `preview` EAS environment.
+- App guard (`packages/firebase/src/config.ts` + `packages/shared/src/environment.ts`): a build with `EXPO_PUBLIC_APP_ENV=staging` whose Firebase project, Storage bucket or Worker URL is production gets a blank Firebase config and the setup screen — it cannot connect to production.
+- `npm run check:staging` (`scripts/checkStagingIsolation.cjs`): must pass before any staging deploy/build; checks the alias, Worker name/bucket/vars/cron and the preview profile, and with `-- --eas-env <file>` the pulled EAS preview variables. Prints pass/fail only, never values. Currently fails on exactly two items: the staging project ID is not set (alias and Worker vars).
+- `scripts/grantModerator.ts`: grants/revokes `moderators/{uid}` with operator credentials; dry-run by default; refuses production unless `--production`.
+- Read-only findings: no staging Firebase project exists in the account; the EAS `preview` and `production` environments contain only `GOOGLE_SERVICES_JSON` / `GOOGLE_SERVICE_INFO_PLIST` — none of the `EXPO_PUBLIC_*` variables, so current preview/production builds would have no Firebase or Worker configuration; Wrangler is not logged in.
+
+### Staging runbook (run only when explicitly authorized)
+
+1. Create the staging Firebase project (Auth email/password, Firestore, Storage); put its ID in `.firebaserc` (`staging`) and `[env.staging.vars]` (`FIREBASE_PROJECT_ID`, `FIREBASE_STORAGE_BUCKET`).
+2. `wrangler r2 bucket create solotravelsoul-images-staging`; enable its public URL.
+3. Staging service account in the staging project only (Cloud Datastore User, Storage Object Admin, Firebase Authentication Admin): `wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON --env staging`, `wrangler secret put ADMIN_DELETION_TOKEN --env staging`, `wrangler secret put PUBLIC_R2_BASE_URL --env staging`.
+4. EAS `preview` environment: all `EXPO_PUBLIC_FIREBASE_*` (staging web app), `EXPO_PUBLIC_STORAGE_PROVIDER=r2`, `EXPO_PUBLIC_R2_UPLOAD_WORKER_URL` (staging Worker), Mapbox/Foursquare keys, `MAPBOX_DOWNLOADS_TOKEN` (secret), staging `GOOGLE_SERVICES_JSON`/`GOOGLE_SERVICE_INFO_PLIST`.
+5. `npm run check:staging`; `eas env:pull --environment preview --path <tmp>` then `npm run check:staging -- --eas-env <tmp>`; delete the file. Both must pass.
+6. `firebase deploy --project staging --only firestore:indexes` (wait until built) → `wrangler deploy --env staging` → `firebase deploy --project staging --only firestore:rules,storage` (approve the Storage→Firestore cross-service prompt).
+7. Isolation proof before testing: production `travelPosts`/`users` unchanged; staging Worker `GET /account-deletion` OK and `GET /admin/deletion-status` returns 0 with the staging token and 403 with any other; staging service account has no role in the production project (IAM page); a staging-built app shows staging data only.
+8. `eas build --profile preview --platform all` (requires build approval), install on the test devices, create accounts A and B in-app, `npx tsx scripts/grantModerator.ts --project <staging> --uid <A> --apply`.
+9. Run the native two-account checklist (consolidated store-release review) plus: moderation queue with photo previews (load, error, enlarge), report threshold auto-hide, suspend/unsuspend (writes and uploads), offline edits on two trips, uploads, deletion during a forced outage (temporarily remove the staging Storage role) and cron recovery, `remove-media` interrupted then taken over after the lease, restore refused while in progress and allowed after `done`. Record each item as PASS/FAIL with evidence (screenshots, document paths, Worker logs).
+
+### Results
+
+| Check | Result |
+|---|---|
+| Staging config isolation (local: names, buckets, guard, checker) | PASS — `npm run test:release` staging checks 4/4; Wrangler staging dry run binds staging bucket only |
+| Staging project ID / real isolation against live services | BLOCKED — no staging project, no Wrangler login |
+| Deploys (indexes, Worker + cron, rules) | BLOCKED — not authorized; no staging project |
+| EAS preview build | BLOCKED — EAS env vars missing; paid/free build approval not given |
+| Native two-account checklist, moderation/photo review, suspension, offline sync, uploads, deletion outage/recovery, removal takeover/restore, real cron | BLOCKED — no staging, no devices (no Android SDK/emulator, iOS needs macOS) |
+
+No staging defects could be observed, so none were fixed in this phase.
+
+### Consolidated access needed
+
+1. **Firebase**: create (or authorize creating) a staging project; Firebase CLI re-login (`firebase login --reauth`; deploy credentials expired); billing plan for that project if Storage/Functions quotas require it.
+2. **Google Cloud IAM**: staging service account + JSON key handed to the operator who runs `wrangler secret put` (never committed); Storage→Firestore cross-service grant in staging.
+3. **Cloudflare**: `wrangler login` for the account owning the Worker; approval for Workers Paid (deletion needs more than 50 subrequests/request); create staging R2 bucket + public URL.
+4. **EAS**: values for every `EXPO_PUBLIC_*` variable in the `preview` environment (and later `production`); approval to run preview builds (build credits).
+5. **Devices**: one physical iPhone (TestFlight/ad-hoc provisioning, Apple Developer membership and team ID) and one Android 14+ device, or a Mac with Xcode + an Android emulator host.
+6. **People/process**: two test accounts' owners, at least one staging moderator, sign-off on response targets.
+7. **Explicit authorization** to deploy indexes, the staging Worker and rules to the staging project.

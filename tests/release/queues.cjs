@@ -3,7 +3,7 @@ const root=require('path').resolve(__dirname,'../..');
 const ts=require(root+'/node_modules/typescript');
 function load(file,deps,source){
 const m={exports:{}};source=source||ts.transpileModule(fs.readFileSync(root+'/'+file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-vm.runInNewContext(source,{module:m,exports:m.exports,require:n=>{if(n in deps)return deps[n];throw Error('Unexpected '+n)},console:{error(){}},process:{env:{}},Date,Math},{filename:file});return m.exports;
+vm.runInNewContext(source,{module:m,exports:m.exports,require:n=>{if(n in deps)return deps[n];throw Error('Unexpected '+n)},console:{error(){}},process:{env:{}},Date,Math,URL},{filename:file});return m.exports;
 }
 (async()=>{
 const out=[];
@@ -88,7 +88,7 @@ const babel=require(root+'/node_modules/@babel/core'),plugin=require(root+'/node
 for(const k of ['API_KEY','AUTH_DOMAIN','PROJECT_ID','STORAGE_BUCKET','MESSAGING_SENDER_ID','APP_ID'])process.env['EXPO_PUBLIC_FIREBASE_'+k]='review-dummy-'+k;
 const compiled=ts.transpileModule(fs.readFileSync(root+'/packages/firebase/src/config.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
 const transformed=babel.transformSync(compiled,{configFile:false,babelrc:false,plugins:[plugin],caller:{name:'metro',isDev:false},filename:root+'/packages/firebase/src/config.ts'}).code;
-let values;const config=load('packages/firebase/src/config.ts',{'firebase/app':{getApps:()=>[],getApp:()=>({}),initializeApp:c=>{values=c;return{}}}},transformed);
+let values;const config=load('packages/firebase/src/config.ts',{'firebase/app':{getApps:()=>[],getApp:()=>({}),initializeApp:c=>{values=c;return{}}},'@solotravelsoul/shared':load('packages/shared/src/environment.ts',{})},transformed);
 out.push({name:'Production Firebase config validation',expected:true,actual:config.isFirebaseConfigured,allSixValuesInlined:Object.values(values).every(v=>v.startsWith('review-dummy-'))});
 console.log(JSON.stringify(out,null,2));if(out.some(x=>x.actual!==x.expected))process.exitCode=1;
 })().catch(e=>{console.error(e);process.exitCode=1});

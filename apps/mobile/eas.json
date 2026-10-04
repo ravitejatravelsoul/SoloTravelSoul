@@ -24,7 +24,10 @@
         "resourceClass": "m-medium",
         "simulator": false
       },
-      "environment": "preview"
+      "environment": "preview",
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "staging"
+      }
     },
     "production": {
       "android": {
@@ -34,7 +37,10 @@
         "resourceClass": "m-medium"
       },
       "environment": "production",
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "production"
+      }
     }
   },
   "submit": {

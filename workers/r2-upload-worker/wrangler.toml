@@ -25,3 +25,24 @@ FIREBASE_STORAGE_BUCKET = "solotravelsoul-57a9e.firebasestorage.app"
 # uploaded by requests already in flight when deletion started.
 [triggers]
 crons = ["17 * * * *"]
+
+# ── Staging: wrangler deploy --env staging ──────────────────────────────────
+# Separate Worker, R2 bucket, Firebase project, secrets and cron. Nothing here
+# may name a production resource — `npm run check:staging` enforces this and
+# must pass before any staging deploy. Secrets are per environment:
+#   wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON --env staging   (staging service account only)
+#   wrangler secret put ADMIN_DELETION_TOKEN --env staging
+#   wrangler secret put PUBLIC_R2_BASE_URL --env staging            (public URL of the staging bucket)
+[env.staging]
+name = "solotravelsoul-r2-upload-staging"
+
+[[env.staging.r2_buckets]]
+binding     = "R2_BUCKET"
+bucket_name = "solotravelsoul-images-staging"
+
+[env.staging.vars]
+FIREBASE_PROJECT_ID = "REPLACE_WITH_STAGING_PROJECT_ID"
+FIREBASE_STORAGE_BUCKET = "REPLACE_WITH_STAGING_PROJECT_ID.firebasestorage.app"
+
+[env.staging.triggers]
+crons = ["17 * * * *"]

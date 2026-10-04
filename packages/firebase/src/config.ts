@@ -1,4 +1,5 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
+import { stagingIsolationProblems } from '@solotravelsoul/shared';
 
 // ── Environment variable validation ───────────────────────────────────
 // All values come from EXPO_PUBLIC_ vars in apps/mobile/.env
@@ -17,6 +18,21 @@ const firebaseConfig = {
 const missing = Object.entries(firebaseConfig)
   .filter(([, value]) => !value.trim())
   .map(([key]) => key);
+
+// A staging build (EXPO_PUBLIC_APP_ENV=staging) that points at production
+// Firebase, Storage or the production Worker is refused outright: the config
+// is blanked so nothing can connect, and the app shows the setup screen.
+const isolationProblems = stagingIsolationProblems({
+  appEnv: process.env.EXPO_PUBLIC_APP_ENV,
+  firebaseProjectId: firebaseConfig.projectId,
+  storageBucket: firebaseConfig.storageBucket,
+  workerUrl: process.env.EXPO_PUBLIC_R2_UPLOAD_WORKER_URL,
+});
+if (isolationProblems.length > 0) {
+  console.error('🔴 [SoloTravelSoul] Staging isolation check failed: ' + isolationProblems.join('; '));
+  for (const key of Object.keys(firebaseConfig) as (keyof typeof firebaseConfig)[]) firebaseConfig[key] = '';
+  missing.push(...isolationProblems);
+}
 
 if (missing.length > 0) {
   // Print a clear, actionable error in dev so the developer knows exactly what to do.
