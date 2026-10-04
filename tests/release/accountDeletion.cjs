@@ -205,14 +205,17 @@ function harness(store) {
   const r2 = fakeMedia('r2', [`profile_photos/${ME}/avatar.jpg`, `post_photos/${ME}/x.jpg`, `post_photos/${BOB}/y.jpg`, `profile_photos/${BOB}/avatar.jpg`]);
   const storage = fakeMedia('firebase-storage', [`profile_photos/${ME}/a.jpg`, `trip_covers/${ME}/t1.jpg`, `journals/${ME}/t1/e.jpg`, `trip_covers/${BOB}/t.jpg`]);
   const authCalls = [];
+  const authUsers = new Set([ME, BOB, CAROL]);
   const auth = { fail: 0, async del(uid) {
     // Auth removal must be the very last thing: no owned data may remain.
     authCalls.push({ uid, privateDataGone: !(await store.get(`users/${uid}`)), mediaGone: ![...r2.objects, ...storage.objects].some((k) => k.includes(`/${uid}/`)) });
     if (auth.fail > 0) { auth.fail--; throw new Error('auth backend down'); }
+    authUsers.delete(uid);
   } };
   let now = Date.now();
   let attempts = 0;
   const deps = { store, r2, firebaseStorage: storage, deleteAuthUser: (uid) => auth.del(uid), now: () => now,
+    authUserExists: async (uid) => authUsers.has(uid),
     newAttemptId: () => `attempt-${++attempts}` };
   return { deps, r2, storage, authCalls, auth, advance: (ms) => { now += ms; }, now: () => now };
 }
@@ -738,6 +741,185 @@ test('client failure toast describes possible partial deletion', async () => {
   assert.doesNotMatch(toasts[0], /nothing was lost/i);
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'apps/mobile/app/privacy.tsx'), 'utf8'), /nothing was lost/i);
 }, 'memory');
+
+// ── Final bookkeeping failure: durable recovery ───────────────────────────────
+
+// Fails every job write that would mark the job completed (the final write).
+function failFinalWrite(store) {
+  const base = store.commit.bind(store);
+  store.commit = async (writes) => {
+    if (writes.some((w) => w.path.startsWith('accountDeletions/') && w.set?.status === 'completed')) throw new Error('network: final write lost');
+    return base(writes);
+  };
+  return () => { store.commit = base; };
+}
+
+test('final completed-job write fails: late media is still swept and scheduled finalization completes the job', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  const restore = failFinalWrite(store);
+  assert.deepEqual(await deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps), { status: 'deleted' });
+  let job = (await store.get(`accountDeletions/${ME}`)).data;
+  assert.deepEqual([job.status, job.pendingFinalization, typeof job.mediaClearedAtMs], ['in_progress', true, 'number']);
+  assert.equal(await h.deps.authUserExists(ME), false);
+
+  // Late media from an upload in flight; the sweep must not depend on completion.
+  h.r2.objects.add(`post_photos/${ME}/late.jpg`);
+  h.storage.objects.add(`journals/${ME}/t1/late.jpg`);
+  assert.equal(await deletion.sweepRecentlyDeletedMedia(h.deps), 1);
+  assert.ok(![...h.r2.objects, ...h.storage.objects].some((k) => k.includes(`/${ME}/`)));
+
+  // Recovery runs while the dead attempt's lease is still active: Auth is gone, so it is safe.
+  restore();
+  h.r2.objects.add(`profile_photos/${ME}/later.jpg`);
+  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 1, swept: 1 });
+  job = (await store.get(`accountDeletions/${ME}`)).data;
+  assert.deepEqual([job.status, job.pendingFinalization, job.recoveredBy], ['completed', false, 'scheduled-finalization']);
+  assert.equal(h.authCalls.length, 1, 'no second Auth removal needed');
+  await expectState(store, h);
+  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, swept: 1 }, 'idempotent');
+});
+
+test('Auth removal failed after media was cleared: finalization removes Auth without the user, but never under an active attempt', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  h.auth.fail = 1;
+  await assert.rejects(deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps), (e) => e.step === 'auth');
+  assert.equal(await h.deps.authUserExists(ME), true);
+
+  // Another account mid-deletion (active lease, Auth present) must be left alone.
+  await store.commit([{ kind: 'update', path: `accountDeletions/${BOB}`, mustExist: false,
+    set: { uid: BOB, status: 'in_progress', attemptId: 'other', leaseUntil: h.now() + LEASE_MS, pendingFinalization: true, mediaClearedAtMs: h.now() } }]);
+
+  const result = await deletion.finalizePendingDeletions(h.deps);
+  assert.equal(result, 1);
+  assert.equal(await h.deps.authUserExists(ME), false, 'Auth removed by the scheduled job');
+  assert.equal(await h.deps.authUserExists(BOB), true, 'active attempt untouched');
+  assert.equal((await store.get(`accountDeletions/${ME}`)).data.status, 'completed');
+  assert.equal((await store.get(`accountDeletions/${BOB}`)).data.status, 'in_progress');
+  await expectState(store, h);
+});
+
+// ── Worker entry point ────────────────────────────────────────────────────────
+
+const workerIndex = () => worker('index').default;
+
+function fakeR2(keys = []) {
+  const objects = new Set(keys);
+  return {
+    objects, puts: 0,
+    async put(k) { this.puts++; objects.add(k); },
+    async delete(k) { for (const key of [].concat(k)) objects.delete(key); },
+    async list({ prefix }) { return { objects: [...objects].filter((k) => k.startsWith(prefix)).map((key) => ({ key })), truncated: false }; },
+  };
+}
+
+function multipart(token) {
+  const form = new FormData();
+  form.append('file', new File([new Uint8Array([1, 2, 3])], 'p.jpg', { type: 'image/jpeg' }));
+  return new Request('https://worker.test/upload/post-photo', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form });
+}
+
+test('entry point: uploads fail closed with 503 before storing when barrier credentials are missing or unusable', async () => {
+  for (const secret of [undefined, '', '{"client_email":"x"}', 'not json']) {
+    const bucket = fakeR2();
+    const env = { R2_BUCKET: bucket, PUBLIC_R2_BASE_URL: 'https://cdn.test', FIREBASE_PROJECT_ID: PROJECT, FIREBASE_STORAGE_BUCKET: 'b', GOOGLE_SERVICE_ACCOUNT_JSON: secret };
+    for (const path of ['/upload/post-photo', '/upload/profile-photo']) {
+      const resp = await workerIndex().fetch(new Request(`https://worker.test${path}`, { method: 'POST', headers: { Authorization: 'Bearer any' }, body: new FormData() }), env);
+      assert.deepEqual([resp.status, (await resp.json()).code, bucket.puts], [503, 'uploads/unavailable', 0], `${path} secret=${secret}`);
+    }
+  }
+});
+
+// Real ID-token signatures and service-account JWTs; Google endpoints are
+// faked, Firestore REST goes to the emulator.
+async function rsaKeys() {
+  const algo = { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' };
+  const id = await crypto.subtle.generateKey(algo, true, ['sign', 'verify']);
+  const sa = await crypto.subtle.generateKey(algo, true, ['sign', 'verify']);
+  const jwk = { ...(await crypto.subtle.exportKey('jwk', id.publicKey)), kid: 'test-kid', alg: 'RS256', use: 'sig' };
+  const der = Buffer.from(await crypto.subtle.exportKey('pkcs8', sa.privateKey)).toString('base64');
+  const pem = `-----BEGIN PRIVATE KEY-----\n${der.match(/.{1,64}/g).join('\n')}\n-----END PRIVATE KEY-----\n`;
+  return { id, jwk, serviceAccount: JSON.stringify({ client_email: 'deleter@test.iam.gserviceaccount.com', private_key: pem }) };
+}
+async function idToken(keys, uid, authTime = Math.floor(Date.now() / 1000)) {
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const nowS = Math.floor(Date.now() / 1000);
+  const data = `${enc({ alg: 'RS256', kid: 'test-kid', typ: 'JWT' })}.${enc({ iss: `https://securetoken.google.com/${PROJECT}`, aud: PROJECT, sub: uid, iat: nowS, exp: nowS + 3600, auth_time: authTime })}`;
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', keys.id.privateKey, new TextEncoder().encode(data));
+  return `${data}.${Buffer.from(sig).toString('base64url')}`;
+}
+function installGoogleFakes(keys, { storageObjects, authUsers }) {
+  const real = global.fetch;
+  const state = { failFinalWrite: false, authDeletes: [] };
+  global.fetch = async (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input.url;
+    if (url.startsWith('https://www.googleapis.com/service_accounts/v1/jwk/')) return Response.json({ keys: [keys.jwk] });
+    if (url === 'https://oauth2.googleapis.com/token') return Response.json({ access_token: 'sa-token', expires_in: 3600 });
+    if (url.startsWith('https://firestore.googleapis.com/')) {
+      if (state.failFinalWrite && url.endsWith(':commit') && init.body.includes('/accountDeletions/') && init.body.includes('"status":{"stringValue":"completed"}')) {
+        return new Response('{"error":{"status":"UNAVAILABLE"}}', { status: 503 });
+      }
+      return real(url.replace('https://firestore.googleapis.com', `http://${EMULATOR_HOST}`), { ...init, headers: { ...init.headers, Authorization: 'Bearer owner' } });
+    }
+    if (url.startsWith('https://storage.googleapis.com/storage/v1/b/')) {
+      const u = new URL(url);
+      if (init.method === 'DELETE') { storageObjects.delete(decodeURIComponent(u.pathname.split('/o/')[1])); return new Response(null, { status: 204 }); }
+      const prefix = u.searchParams.get('prefix');
+      return Response.json({ items: [...storageObjects].filter((k) => k.startsWith(prefix)).map((name) => ({ name })) });
+    }
+    if (url.startsWith('https://identitytoolkit.googleapis.com/')) {
+      const body = JSON.parse(init.body);
+      if (url.endsWith(':delete')) { state.authDeletes.push(body.localId); authUsers.delete(body.localId); return Response.json({}); }
+      if (url.endsWith(':lookup')) return Response.json(authUsers.has(body.localId[0]) ? { users: [{ localId: body.localId[0] }] } : {});
+    }
+    return real(input, init);
+  };
+  return { state, restore: () => { global.fetch = real; } };
+}
+
+test('entry point: barrier read through Firestore REST blocks uploads; final-write failure is recovered by the cron', async () => {
+  const keys = await rsaKeys();
+  const store = await newStore(); await seed(store);
+  const h = harness(store); // only for the expected media layout
+  const bucket = fakeR2(h.r2.objects);
+  const storageObjects = new Set(h.storage.objects);
+  const authUsers = new Set([ME, BOB]);
+  const fakes = installGoogleFakes(keys, { storageObjects, authUsers });
+  const env = { R2_BUCKET: bucket, PUBLIC_R2_BASE_URL: 'https://cdn.test', FIREBASE_PROJECT_ID: PROJECT,
+    FIREBASE_STORAGE_BUCKET: 'bucket', GOOGLE_SERVICE_ACCOUNT_JSON: keys.serviceAccount };
+  try {
+    // Uploads: allowed without a barrier, refused (nothing stored) with one.
+    let resp = await workerIndex().fetch(multipart(await idToken(keys, BOB)), env);
+    assert.equal(resp.status, 200);
+    const stored = (await resp.json()).photoURL.replace('https://cdn.test/', '');
+    bucket.objects.delete(stored);
+    await store.commit([{ kind: 'update', path: `accountDeletions/${CAROL}`, set: { uid: CAROL, status: 'in_progress' }, mustExist: false }]);
+    const puts = bucket.puts;
+    resp = await workerIndex().fetch(multipart(await idToken(keys, CAROL)), env);
+    assert.deepEqual([resp.status, (await resp.json()).code, bucket.puts], [403, 'account/deletion-in-progress', puts]);
+
+    // Deletion through the entry point; the final job write is lost.
+    fakes.state.failFinalWrite = true;
+    resp = await workerIndex().fetch(new Request('https://worker.test/account/delete', { method: 'POST', headers: { Authorization: `Bearer ${await idToken(keys, ME)}` } }), env);
+    assert.deepEqual([resp.status, await resp.json()], [200, { status: 'deleted' }]);
+    assert.deepEqual(fakes.state.authDeletes, [ME]);
+    let job = (await store.get(`accountDeletions/${ME}`)).data;
+    assert.deepEqual([job.status, job.pendingFinalization], ['in_progress', true]);
+
+    // A late upload lands; the deleted user never signs in again.
+    bucket.objects.add(`post_photos/${ME}/late.jpg`);
+    storageObjects.add(`journals/${ME}/t1/late.jpg`);
+    fakes.state.failFinalWrite = false;
+    const waits = [];
+    await workerIndex().scheduled({}, env, { waitUntil: (p) => waits.push(p) });
+    await Promise.all(waits);
+    job = (await store.get(`accountDeletions/${ME}`)).data;
+    assert.deepEqual([job.status, job.pendingFinalization, job.recoveredBy], ['completed', false, 'scheduled-finalization']);
+    assert.deepEqual(fakes.state.authDeletes, [ME], 'Auth already gone; not deleted twice');
+    await expectState(store, { r2: { objects: bucket.objects }, storage: { objects: storageObjects } });
+  } finally {
+    fakes.restore();
+  }
+}, 'emulator');
 
 (async () => {
   let passed = 0;

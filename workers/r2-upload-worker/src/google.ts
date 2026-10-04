@@ -95,3 +95,24 @@ export function identityToolkitUserDeleter(opts: {
     throw new Error(`Auth user deletion failed: ${resp.status}`);
   };
 }
+
+/** True while the Firebase Auth user still exists (Admin lookup). */
+export function identityToolkitUserExists(opts: {
+  projectId: string;
+  token: () => Promise<string>;
+  emulatorHost?: string;
+}): (uid: string) => Promise<boolean> {
+  const base = opts.emulatorHost
+    ? `http://${opts.emulatorHost}/identitytoolkit.googleapis.com`
+    : 'https://identitytoolkit.googleapis.com';
+  return async (uid) => {
+    const resp = await fetch(`${base}/v1/projects/${opts.projectId}/accounts:lookup`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await opts.token()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ localId: [uid] }),
+    });
+    if (!resp.ok) throw new Error(`Auth user lookup failed: ${resp.status}`);
+    const body = (await resp.json()) as { users?: unknown[] };
+    return (body.users?.length ?? 0) > 0;
+  };
+}

@@ -7,9 +7,16 @@ service cloud.firestore {
     // (accountDeletions/{uid} exists), no token for that UID can write anything
     // again — including tokens still valid on other devices. Deletion itself,
     // and its retries, run server-side with Admin credentials.
+    function deleting(uid) {
+      return exists(/databases/$(database)/documents/accountDeletions/$(uid));
+    }
     function notDeleting() {
-      return request.auth == null
-        || !exists(/databases/$(database)/documents/accountDeletions/$(request.auth.uid));
+      return request.auth == null || !deleting(request.auth.uid);
+    }
+    // No new inbound relationships (likes, saves, follows, comments, replies,
+    // memberships, join requests) may target an account being deleted.
+    function authorOf(collectionName, id) {
+      return get(/databases/$(database)/documents/$(collectionName)/$(id)).data.authorId;
     }
 
     // Ownership is enforced on relationship documents AND their atomic counter
@@ -341,7 +348,7 @@ service cloud.firestore {
     // batch that creates publicTrips + member doc at the same time.
     match /trips/{tripId}/members/{memberId} {
       allow read: if request.auth != null;
-      allow create: if notDeleting() && (request.auth != null && (
+      allow create: if notDeleting() && !deleting(memberId) && (request.auth != null && (
         // Phase 1 — initial trip publication: publicTrip doesn't exist yet
         // (same-batch create), so verify via the user's private trips subcollection.
         (!exists(/databases/$(database)/documents/publicTrips/$(tripId))
@@ -363,7 +370,7 @@ service cloud.firestore {
 
     // ── Community: Trip Join Requests ─────────────────────────────────
     match /tripJoinRequests/{requestId} {
-      allow create: if notDeleting() && (request.auth != null
+      allow create: if notDeleting() && !deleting(request.resource.data.ownerUid) && (request.auth != null
         && request.resource.data.requestorUid == request.auth.uid
         && request.resource.data.ownerUid != request.auth.uid
         && request.resource.data.status == 'pending');
@@ -403,7 +410,7 @@ service cloud.firestore {
       // Group members: restricted to group owner; two-phase check mirrors trip members.
       match /members/{memberId} {
         allow read: if request.auth != null;
-        allow create: if notDeleting() && (request.auth != null && (
+        allow create: if notDeleting() && !deleting(memberId) && (request.auth != null && (
           // Phase 1 — group creation batch: group doc doesn't exist yet in Firestore.
           (!exists(/databases/$(database)/documents/travelGroups/$(groupId))
             && request.resource.data.role == 'owner'
@@ -424,7 +431,7 @@ service cloud.firestore {
 
     // ── Community: Group Join Requests ────────────────────────────────
     match /groupJoinRequests/{requestId} {
-      allow create: if notDeleting() && (request.auth != null
+      allow create: if notDeleting() && !deleting(request.resource.data.ownerUid) && (request.auth != null
         && request.resource.data.requestorUid == request.auth.uid
         && request.resource.data.ownerUid != request.auth.uid
         && request.resource.data.status == 'pending');
@@ -502,9 +509,11 @@ service cloud.firestore {
         && likeId == request.resource.data.postId + '___' + request.auth.uid && readableLike(request.resource.data)
         && ((likeKind(request.resource.data) == 'post'
           && unblocked(request.auth.uid, get(/databases/$(database)/documents/travelPosts/$(request.resource.data.postId)).data.authorId)
+          && !deleting(authorOf('travelPosts', request.resource.data.postId))
           && linkedCounter('travelPosts', request.resource.data.postId, 'likeCount', 1))
           || (likeKind(request.resource.data) == 'journal'
             && unblocked(request.auth.uid, get(/databases/$(database)/documents/travelJournals/$(request.resource.data.postId)).data.authorId)
+            && !deleting(authorOf('travelJournals', request.resource.data.postId))
             && linkedCounter('travelJournals', request.resource.data.postId, 'likeCount', 1))));
       allow update: if false;
       allow delete: if notDeleting() && (request.auth != null && resource.data.userId == request.auth.uid
@@ -517,6 +526,7 @@ service cloud.firestore {
       allow list: if request.auth != null && resource.data.userId == request.auth.uid;
       allow create: if notDeleting() && (request.auth != null && request.resource.data.userId == request.auth.uid
         && savedId == request.auth.uid + '___' + request.resource.data.postId && readablePost(request.resource.data.postId)
+        && !deleting(authorOf('travelPosts', request.resource.data.postId))
         && linkedCounter('travelPosts', request.resource.data.postId, 'saveCount', 1));
       allow update: if notDeleting() && (request.auth != null && resource.data.userId == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['collectionName']));
@@ -528,7 +538,8 @@ service cloud.firestore {
       allow create: if notDeleting() && (request.auth != null && request.resource.data.followerId == request.auth.uid
         && request.resource.data.followingId != request.auth.uid
         && followId == request.auth.uid + '___' + request.resource.data.followingId
-        && unblocked(request.auth.uid, request.resource.data.followingId) && followLinked(request.resource.data, 1));
+        && unblocked(request.auth.uid, request.resource.data.followingId) && !deleting(request.resource.data.followingId)
+        && followLinked(request.resource.data, 1));
       allow update: if false;
       allow delete: if notDeleting() && (request.auth != null && resource.data.followerId == request.auth.uid
         && followId == request.auth.uid + '___' + resource.data.followingId && followLinked(resource.data, -1));
@@ -538,6 +549,9 @@ service cloud.firestore {
       allow create: if notDeleting() && (request.auth != null && request.resource.data.authorId == request.auth.uid
         && readablePost(request.resource.data.postId)
         && unblocked(request.auth.uid, get(/databases/$(database)/documents/travelPosts/$(request.resource.data.postId)).data.authorId)
+        && !deleting(authorOf('travelPosts', request.resource.data.postId))
+        && (request.resource.data.get('parentCommentId', null) == null
+          || !deleting(authorOf('postComments', request.resource.data.parentCommentId)))
         && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 500
         && request.resource.data.replyCount == 0 && request.resource.data.isDeleted == false
         && postCommentLinked(commentId, request.resource.data.postId, 1) && replyLinked(request.resource.data, commentId, 1));

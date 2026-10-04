@@ -41,6 +41,7 @@ export interface DeletionDeps {
   firebaseStorage: PrefixDeleter;
   /** Must treat an already-deleted user as success. */
   deleteAuthUser(uid: string): Promise<void>;
+  authUserExists(uid: string): Promise<boolean>;
   now?: () => number;
   newAttemptId?: () => string;
 }
@@ -555,37 +556,92 @@ export async function deleteAccount(identity: DeletionIdentity, deps: DeletionDe
 
   try {
     // Re-verifies ownership and renews the lease immediately before Auth removal.
-    await updateOwnJob(store, uid, attempt, now, { currentStep: 'auth', completedSteps: completed });
+    // Durable markers, written before Auth is touched: media cleanup finished
+    // (drives the late-media sweep) and finalization is pending (drives
+    // recovery). Neither depends on the final bookkeeping write below.
+    await updateOwnJob(store, uid, attempt, now, {
+      currentStep: 'auth',
+      completedSteps: completed,
+      mediaClearedAtMs: now(),
+      pendingFinalization: true,
+    });
     await deps.deleteAuthUser(uid);
   } catch (e) {
     await fail('auth', e);
   }
 
-  // The account is gone; a bookkeeping failure here must not report failure.
+  // The account is gone; if this bookkeeping write fails the scheduled
+  // finalizePendingDeletions() completes the job, so it is not reported.
   await updateOwnJob(store, uid, attempt, now, {
     status: 'completed',
     currentStep: null,
     completedSteps: [...completed, 'auth'],
     completedAtMs: now(),
+    pendingFinalization: false,
   }).catch(() => {});
   return { status: 'deleted' };
 }
 
 /**
- * Removes media for accounts deleted within the window. Uploads that passed
- * the barrier check before deletion began, but landed after the media steps
- * listed their prefixes, are cleaned up here (scheduled in the Worker).
+ * Removes media for accounts whose deletion cleared media within the window.
+ * Uploads that passed the barrier check before deletion began, but landed
+ * after the media steps listed their prefixes, are cleaned up here. Keyed on
+ * mediaClearedAtMs (written before Auth removal), not on job completion.
  */
 export async function sweepRecentlyDeletedMedia(deps: DeletionDeps, windowMs = SWEEP_WINDOW_MS): Promise<number> {
   const now = deps.now ?? Date.now;
-  const jobs = await deps.store.query(JOBS, [{ field: 'completedAtMs', op: 'GREATER_THAN', value: now() - windowMs }]);
-  let swept = 0;
+  const jobs = await deps.store.query(JOBS, [{ field: 'mediaClearedAtMs', op: 'GREATER_THAN', value: now() - windowMs }]);
   for (const job of jobs) {
-    if (job.data.status !== 'completed') continue;
     const uid = lastSegment(job.path);
     await deps.r2.deletePrefixes(r2Prefixes(uid));
     await deps.firebaseStorage.deletePrefixes(storagePrefixes(uid));
-    swept++;
   }
-  return swept;
+  return jobs.length;
+}
+
+/**
+ * Completes jobs that reached Auth removal but whose final bookkeeping never
+ * landed (or whose Auth removal failed after all data and media were gone),
+ * without needing the deleted user to sign in again. Skips a job only while
+ * its Auth user still exists under an active lease (an attempt is running).
+ */
+export async function finalizePendingDeletions(deps: DeletionDeps): Promise<number> {
+  const now = deps.now ?? Date.now;
+  const pending = await deps.store.query(JOBS, [{ field: 'pendingFinalization', op: 'EQUAL', value: true }]);
+  let finalized = 0;
+  for (const job of pending) {
+    const uid = lastSegment(job.path);
+    const activeLease = job.data.status === 'in_progress' && num(job.data.leaseUntil) > now();
+    if (await deps.authUserExists(uid)) {
+      if (activeLease) continue;
+      await deps.deleteAuthUser(uid);
+    }
+    try {
+      await deps.store.commit([{
+        kind: 'update',
+        path: job.path,
+        set: {
+          status: 'completed',
+          currentStep: null,
+          leaseUntil: 0,
+          pendingFinalization: false,
+          completedAtMs: num(job.data.completedAtMs) || now(),
+          recoveredBy: 'scheduled-finalization',
+        },
+        serverTime: ['updatedAt'],
+        updateTime: job.updateTime, // never overwrite a concurrent change
+      }]);
+      finalized++;
+    } catch (e) {
+      if (!(e instanceof StoreConflict)) throw e;
+    }
+  }
+  return finalized;
+}
+
+/** Cron entry: finish stranded jobs first, then sweep late media. */
+export async function runScheduledMaintenance(deps: DeletionDeps): Promise<{ finalized: number; swept: number }> {
+  const finalized = await finalizePendingDeletions(deps);
+  const swept = await sweepRecentlyDeletedMedia(deps);
+  return { finalized, swept };
 }

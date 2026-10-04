@@ -1,9 +1,9 @@
 import { verifyFirebaseToken } from './auth';
 import { handleAccountDeletion } from './accountRoute';
-import { sweepRecentlyDeletedMedia, type DeletionDeps } from './accountDeletion';
-import { FirestoreRest } from './firestoreRest';
+import { runScheduledMaintenance, type DeletionDeps } from './accountDeletion';
+import { FirestoreRest, type DocStore } from './firestoreRest';
 import { firebaseStorageDeleter, r2Deleter } from './objectStores';
-import { getAccessToken, identityToolkitUserDeleter, parseServiceAccount } from './google';
+import { getAccessToken, identityToolkitUserDeleter, identityToolkitUserExists, parseServiceAccount } from './google';
 import { handlePhotoUpload, POST_PHOTO, PROFILE_PHOTO, type UploadKind } from './uploads';
 
 export interface Env {
@@ -25,7 +25,15 @@ function deletionDeps(env: Env): DeletionDeps | null {
     r2: r2Deleter(env.R2_BUCKET),
     firebaseStorage: firebaseStorageDeleter({ bucket: env.FIREBASE_STORAGE_BUCKET, token }),
     deleteAuthUser: identityToolkitUserDeleter({ projectId: env.FIREBASE_PROJECT_ID, token }),
+    authUserExists: identityToolkitUserExists({ projectId: env.FIREBASE_PROJECT_ID, token }),
   };
+}
+
+/** Firestore access for reading the deletion barrier; null without usable credentials. */
+function barrierStore(env: Env): DocStore | null {
+  const account = parseServiceAccount(env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  if (!account) return null;
+  return new FirestoreRest({ projectId: env.FIREBASE_PROJECT_ID, token: () => getAccessToken(account) });
 }
 
 const CORS_HEADERS = {
@@ -45,12 +53,17 @@ function err(message: string, status = 400): Response {
   return json({ error: message }, status);
 }
 
-function upload(request: Request, env: Env, kind: UploadKind): Promise<Response> {
-  const deletion = deletionDeps(env);
+async function upload(request: Request, env: Env, kind: UploadKind): Promise<Response> {
+  // Fail closed: without credentials to read the deletion barrier, uploads
+  // could recreate media for an account being deleted.
+  const store = barrierStore(env);
+  if (!store) {
+    console.error('[Worker] uploads disabled: missing GOOGLE_SERVICE_ACCOUNT_JSON for the deletion barrier');
+    return json({ error: 'Uploads are temporarily unavailable.', code: 'uploads/unavailable' }, 503);
+  }
   return handlePhotoUpload(request, kind, {
     verify: (token) => verifyFirebaseToken(token, env.FIREBASE_PROJECT_ID),
-    // Without deletion credentials no deletion (and so no barrier) can exist.
-    isDeleting: async (uid) => (deletion ? !!(await deletion.store.get(`accountDeletions/${uid}`)) : false),
+    isDeleting: async (uid) => !!(await store.get(`accountDeletions/${uid}`)),
     bucket: env.R2_BUCKET,
     publicBaseUrl: env.PUBLIC_R2_BASE_URL,
     json,
@@ -85,10 +98,14 @@ export default {
     return err('Not found', 404);
   },
 
-  // Cron (wrangler.toml): remove media of recently deleted accounts that
-  // arrived through uploads already in flight when deletion started.
+  // Cron (wrangler.toml): finish deletions whose final bookkeeping failed,
+  // then remove late media that arrived through uploads already in flight.
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const deletion = deletionDeps(env);
-    if (deletion) ctx.waitUntil(sweepRecentlyDeletedMedia(deletion).then(() => undefined));
+    if (!deletion) {
+      console.error('[Worker] deletion maintenance skipped: deletion is not configured');
+      return;
+    }
+    ctx.waitUntil(runScheduledMaintenance(deletion).then(() => undefined));
   },
 };

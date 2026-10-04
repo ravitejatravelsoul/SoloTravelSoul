@@ -101,6 +101,39 @@ function client(file, db) {
         });
       });
     });
+    // Inbound relationships to an account being deleted are refused; the same
+    // writes against an unaffected twin account succeed (unrelated users' writes).
+    await env.withSecurityRulesDisabled(async ctx => {
+      const adb = ctx.firestore();
+      for (const a of ['leaving', 'staying']) {
+        for (const [p, data] of Object.entries({
+          [`travelPosts/${a}Post`]: { authorId: a, likeCount: 0, commentCount: 0, saveCount: 0, visibility: 'public', isArchived: false, createdAt: sdk.Timestamp.now() },
+          [`travelJournals/${a}Journal`]: { authorId: a, likeCount: 0, visibility: 'public', isArchived: false },
+          [`publicProfiles/${a}`]: { uid: a, profileVisibility: 'public', followersCount: 0, followingCount: 0 },
+          [`postComments/${a}Comment`]: { authorId: a, postId: 'p', parentCommentId: null, text: 'x', isDeleted: false, replyCount: 0 },
+        })) await sdk.setDoc(sdk.doc(adb, p), data);
+      }
+      await sdk.setDoc(sdk.doc(adb, 'publicTrips/actorTrip'), { ownerUid: 'actor', memberCount: 1 });
+      await sdk.setDoc(sdk.doc(adb, 'travelGroups/actorGroup'), { ownerUid: 'actor', memberCount: 1, visibility: 'public' });
+      await sdk.setDoc(sdk.doc(adb, 'accountDeletions/leaving'), { uid: 'leaving', status: 'in_progress' });
+    });
+    const inbound = (a) => [
+      ['like post', () => posts.likePost(`${a}Post`, 'actor')],
+      ['save post', () => posts.savePost(`${a}Post`, 'actor')],
+      ['like journal', () => posts.likeJournal(`${a}Journal`, 'actor')],
+      ['follow', () => posts.followUser('actor', a)],
+      ['comment on post', () => posts.addComment({ authorId: 'actor', postId: `${a}Post`, parentCommentId: null, text: 'hi' })],
+      ['reply to comment', () => posts.addComment({ authorId: 'actor', postId: 'p', parentCommentId: `${a}Comment`, text: 're' })],
+      ['add as trip member', () => sdk.setDoc(sdk.doc(db, `trips/actorTrip/members/${a}`), { uid: a, role: 'member' })],
+      ['add as group member', () => sdk.setDoc(sdk.doc(db, `travelGroups/actorGroup/members/${a}`), { uid: a, role: 'member' })],
+      ['trip join request', () => sdk.setDoc(sdk.doc(db, `tripJoinRequests/req-${a}`), { requestorUid: 'actor', ownerUid: a, tripId: `${a}Trip`, status: 'pending' })],
+      ['group join request', () => sdk.setDoc(sdk.doc(db, `groupJoinRequests/req-${a}`), { requestorUid: 'actor', ownerUid: a, groupId: `${a}Group`, status: 'pending' })],
+    ];
+    for (const [name, action] of inbound('leaving')) await check(`reject inbound ${name} to deleting account`, () => assertFails(action()));
+    for (const [name, action] of inbound('staying')) await check(`allow inbound ${name} to unaffected account`, () => action());
+    assert.equal((await get('travelPosts/leavingPost')).likeCount, 0);
+    assert.equal((await get('publicProfiles/leaving')).followersCount, 0);
+    assert.equal((await get('travelPosts/stayingPost')).likeCount, 1);
     await env.withSecurityRulesDisabled(ctx => sdk.setDoc(sdk.doc(ctx.firestore(), 'blocks/owner/blocked/actor'), {}));
     await check('blocked sender cannot send', () => assertFails(chat.sendDirectMessage('chat', 'actor', 'Blocked', 'blocked', ['owner'])));
     console.log(`${checks} release rule checks passed`);
