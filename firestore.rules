@@ -38,13 +38,27 @@ service cloud.firestore {
           ? keys.hasOnly(['reportCount', 'visibility']) && request.resource.data.visibility == 'under_review'
           : keys.hasOnly(['reportCount']));
     }
-    // Authors cannot undo moderation (under_review / removed).
-    function authorKeepsModeration() {
-      return !(resource.data.get('visibility', 'public') in ['under_review', 'removed'])
-        || request.resource.data.get('visibility', 'public') == resource.data.get('visibility', 'public');
+    function moderated() {
+      return resource.data.get('visibility', 'public') in ['under_review', 'removed'];
+    }
+    // Moderated content (under_review / removed) is frozen for its author: it
+    // can be archived or unarchived, but not edited, restored, replaced or
+    // deleted (deleting would let it be recreated at the same ID with a clean
+    // record). Account deletion runs with Admin credentials and still removes it.
+    function authorMayEdit() {
+      return !moderated()
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isArchived', 'updatedAt']);
+    }
+    // POST /moderation/remove-media claims the item (mediaRemoval) before
+    // deleting objects; visibility cannot change until it finishes or its
+    // lease lapses, so a restore can never be undone by the cleanup.
+    function mediaRemovalActive() {
+      let removal = resource.data.get('mediaRemoval', null);
+      return removal != null && removal.get('state', '') == 'in_progress'
+        && removal.get('leaseUntilMs', 0) > request.time.toMillis();
     }
     function moderatorSetsVisibility() {
-      return isModerator()
+      return isModerator() && !mediaRemovalActive()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visibility', 'reportCount', 'moderatedBy', 'moderatedAt'])
         && request.resource.data.visibility in ['public', 'private', 'under_review', 'removed']
         && request.resource.data.get('reportCount', 0) in [0, resource.data.get('reportCount', 0)]
@@ -589,10 +603,10 @@ service cloud.firestore {
       allow update: if notDeleting() && (request.auth != null && (
         (resource.data.authorId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['caption', 'body', 'location', 'country', 'hashtags', 'visibility', 'images', 'updatedAt', 'isArchived'])
-          && authorKeepsModeration() && cleanFields(request.resource.data, ['caption', 'body', 'location', 'country']))
+          && authorMayEdit() && cleanFields(request.resource.data, ['caption', 'body', 'location', 'country']))
         || likeCounter(postId, 'post') || saveCounter(postId) || commentCounter(postId)
         || reportStep(postId, 'post') || moderatorSetsVisibility()));
-      allow delete: if notDeleting() && (request.auth != null && resource.data.authorId == request.auth.uid);
+      allow delete: if notDeleting() && (request.auth != null && resource.data.authorId == request.auth.uid && !moderated());
     }
     match /travelJournals/{journalId} {
       allow read: if visible(resource.data);
@@ -604,9 +618,9 @@ service cloud.firestore {
       allow update: if notDeleting() && (request.auth != null && (
         (resource.data.authorId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['title', 'subtitle', 'body', 'coverImageURL', 'images', 'location', 'country', 'hashtags', 'visibility', 'readTimeMinutes', 'updatedAt', 'isArchived'])
-          && authorKeepsModeration() && cleanFields(request.resource.data, ['title', 'subtitle', 'body', 'location']))
+          && authorMayEdit() && cleanFields(request.resource.data, ['title', 'subtitle', 'body', 'location']))
         || likeCounter(journalId, 'journal') || reportStep(journalId, 'journal') || moderatorSetsVisibility()));
-      allow delete: if notDeleting() && (request.auth != null && resource.data.authorId == request.auth.uid);
+      allow delete: if notDeleting() && (request.auth != null && resource.data.authorId == request.auth.uid && !moderated());
     }
     match /postLikes/{likeId} {
       allow get: if request.auth != null && (resource == null || resource.data.userId == request.auth.uid || readableLike(resource.data));

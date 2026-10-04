@@ -307,7 +307,7 @@ function client(file, db) {
       await sdk.getDoc(sdk.doc(ownerDb, 'travelPosts/flagged'));
       await sdk.getDoc(sdk.doc(modDb, 'travelPosts/flagged'));
       await assertFails(sdk.updateDoc(sdk.doc(ownerDb, 'travelPosts/flagged'), { visibility: 'public', updatedAt: sdk.serverTimestamp() }));
-      await sdk.updateDoc(sdk.doc(ownerDb, 'travelPosts/flagged'), { caption: 'Sunset (edited)', updatedAt: sdk.serverTimestamp() });
+      await assertFails(sdk.updateDoc(sdk.doc(ownerDb, 'travelPosts/flagged'), { caption: 'Sunset (edited)', updatedAt: sdk.serverTimestamp() })); // frozen while under review
     });
     await check('moderators restore or remove content; nobody else can', async () => {
       const mod = client('packages/firebase/src/moderation.ts', modDb);
@@ -336,6 +336,34 @@ function client(file, db) {
       await sdk.setDoc(sdk.doc(db, 'users/actor/trips/unaffected'), { destination: 'y' }); // others unaffected
       await mod.unsuspendUser('owner');
       await sdk.setDoc(sdk.doc(ownerDb, 'users/owner/trips/after'), { destination: 'x' });
+    });
+    // Moderation survives delete/recreate; moderated content is frozen; restores wait for media removal.
+    await env.withSecurityRulesDisabled(async ctx => {
+      const adb = ctx.firestore();
+      const base = { authorId: 'actor', likeCount: 0, commentCount: 0, saveCount: 0, isArchived: false, createdAt: sdk.Timestamp.now(), images: ['https://cdn.test/post_photos/actor/1.jpg'] };
+      for (const [p, data] of Object.entries({
+        'travelPosts/heldPost': { ...base, visibility: 'under_review', reportCount: 3 },
+        'travelPosts/gonePost': { ...base, visibility: 'removed', reportCount: 3 },
+        'travelJournals/heldJournal': { ...base, title: 'T', visibility: 'under_review', reportCount: 3 },
+        'travelJournals/goneJournal': { ...base, title: 'T', visibility: 'removed', reportCount: 3 },
+        'travelPosts/normalPost': { ...base, visibility: 'public', reportCount: 0 },
+        'travelPosts/clearing': { ...base, visibility: 'removed', reportCount: 3, mediaRemoval: { state: 'in_progress', leaseUntilMs: Date.now() + 120000, token: 't' } },
+        'travelPosts/cleared': { ...base, visibility: 'removed', reportCount: 3, mediaRemoval: { state: 'done', leaseUntilMs: 0, token: 't' } },
+      })) await sdk.setDoc(sdk.doc(adb, p), data);
+    });
+    for (const p of ['travelPosts/heldPost', 'travelPosts/gonePost', 'travelJournals/heldJournal', 'travelJournals/goneJournal']) {
+      await check(`author cannot delete or recreate moderated ${p}`, async () => {
+        await assertFails(sdk.deleteDoc(sdk.doc(db, p)));
+        await assertFails(sdk.setDoc(sdk.doc(db, p), { authorId: 'actor', likeCount: 0, commentCount: 0, saveCount: 0, reportCount: 0, visibility: 'public', isArchived: false, title: 'T', caption: 'fresh' }));
+        await assertFails(sdk.updateDoc(sdk.doc(db, p), { images: ['https://cdn.test/post_photos/actor/swap.jpg'], updatedAt: sdk.serverTimestamp() }));
+        await sdk.updateDoc(sdk.doc(db, p), { isArchived: true, updatedAt: sdk.serverTimestamp() }); // archiving stays allowed
+      });
+    }
+    await check('authors still delete their unmoderated posts', () => sdk.deleteDoc(sdk.doc(db, 'travelPosts/normalPost')));
+    await check('moderators cannot restore while media removal holds its lease; can once it is done', async () => {
+      const mod = client('packages/firebase/src/moderation.ts', modDb);
+      await assertFails(mod.setContentVisibility('post', 'clearing', 'mod', 'public'));
+      await mod.setContentVisibility('post', 'cleared', 'mod', 'public');
     });
     await env.withSecurityRulesDisabled(ctx => sdk.setDoc(sdk.doc(ctx.firestore(), 'blocks/owner/blocked/actor'), {}));
     await check('blocked sender cannot send', () => assertFails(chat.sendDirectMessage('chat', 'actor', 'Blocked', 'blocked', ['owner'])));

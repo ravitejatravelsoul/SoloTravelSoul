@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { View, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator, Image, ScrollView, Modal } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +20,36 @@ import { useUIStore } from '@/stores/uiStore';
 import { requestMediaRemoval } from '@/utils/moderation';
 import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 
+/** One reported photo: loading spinner, error fallback, tap to view full size. */
+function ReviewImage({ uri, onOpen }: { uri: string; onOpen: (uri: string) => void }) {
+  const [state, setState] = useState<'loading' | 'loaded' | 'error'>('loading');
+  return (
+    <TouchableOpacity
+      style={styles.thumb}
+      onPress={() => state !== 'error' && onOpen(uri)}
+      accessibilityLabel="Reported photo, tap to enlarge"
+      activeOpacity={0.8}
+    >
+      {state !== 'error' && (
+        <Image
+          source={{ uri }}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
+          onLoad={() => setState('loaded')}
+          onError={() => setState('error')}
+        />
+      )}
+      {state === 'loading' && <ActivityIndicator style={StyleSheet.absoluteFill} />}
+      {state === 'error' && (
+        <View style={styles.thumbError}>
+          <Ionicons name="image-outline" size={20} color={Colors.textSecondary} />
+          <Text style={styles.meta}>Could not load</Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
 function age(date: Date): string {
   const hours = Math.floor((Date.now() - date.getTime()) / 3_600_000);
   return hours < 1 ? 'under 1 h' : hours < 48 ? `${hours} h` : `${Math.floor(hours / 24)} d`;
@@ -36,6 +66,7 @@ export default function ModerationScreen() {
   const [reports, setReports] = useState<ModerationReport[]>([]);
   const [previews, setPreviews] = useState<Record<string, ReportTargetPreview>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [enlarged, setEnlarged] = useState<string | null>(null);
 
   useEffect(() => {
     if (!uid) return;
@@ -86,7 +117,14 @@ export default function ModerationScreen() {
         {p ? (
           <View style={styles.preview}>
             <Text style={styles.previewText}>{p.exists ? p.text || '(no text)' : 'Item no longer exists'}</Text>
-            {p.images.length ? <Text style={styles.meta}>{p.images.length} photo(s) · visibility {p.visibility ?? '—'}</Text> : null}
+            {p.images.length ? (
+              <>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbRow}>
+                  {p.images.map((uri) => <ReviewImage key={uri} uri={uri} onOpen={setEnlarged} />)}
+                </ScrollView>
+                <Text style={styles.meta}>{p.images.length} photo(s) · visibility {p.visibility ?? '—'}</Text>
+              </>
+            ) : null}
           </View>
         ) : (
           <TouchableOpacity onPress={() => preview(r)}><Text style={styles.link}>Show reported item</Text></TouchableOpacity>
@@ -148,6 +186,11 @@ export default function ModerationScreen() {
           ListEmptyComponent={<Text style={styles.empty}>No open reports.</Text>}
         />
       )}
+      <Modal visible={!!enlarged} transparent animationType="fade" onRequestClose={() => setEnlarged(null)}>
+        <TouchableOpacity style={styles.viewer} onPress={() => setEnlarged(null)} accessibilityLabel="Close photo" activeOpacity={1}>
+          {enlarged && <Image source={{ uri: enlarged }} style={styles.viewerImage} resizeMode="contain" />}
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -168,4 +211,9 @@ const styles = StyleSheet.create({
   danger: { backgroundColor: Colors.error },
   btnText: { color: '#fff', fontSize: FontSize.sm, fontWeight: FontWeight.semibold },
   empty: { textAlign: 'center', marginTop: 40, color: Colors.textSecondary },
+  thumbRow: { gap: Spacing.sm, paddingVertical: 4 },
+  thumb: { width: 120, height: 120, borderRadius: Radius.sm, overflow: 'hidden', backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' },
+  thumbError: { alignItems: 'center', gap: 4 },
+  viewer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
+  viewerImage: { width: '100%', height: '80%' },
 });

@@ -1268,7 +1268,8 @@ test('entry point: moderators delete the media of removed posts; others cannot; 
     const ok = await call('mod', { targetType: 'post', targetId: 'removedPost' });
     assert.deepEqual([ok.status, ok.body.removed], [200, 1]);
     assert.deepEqual([...bucket.objects].sort(), [`post_photos/${BOB}/keep.jpg`, `post_photos/${CAROL}/z.jpg`], "only the author's own prefix");
-    assert.deepEqual((await store.get('travelPosts/removedPost')).data.images, []);
+    // Only the claimed (author-owned) URLs are dropped from the document.
+    assert.deepEqual((await store.get('travelPosts/removedPost')).data.images, [`https://cdn.test/post_photos/${CAROL}/z.jpg`, 'https://elsewhere.test/x.jpg']);
 
     // Suspended account: uploads refused before storing.
     await seedDoc(`accountSuspensions/${CAROL}`, { suspendedBy: 'mod', reason: 'test' });
@@ -1279,6 +1280,142 @@ test('entry point: moderators delete the media of removed posts; others cannot; 
     fakes.restore();
   }
 }, 'emulator');
+
+// ── Moderation media removal: caller barriers, removal/restore race, retries ──
+
+const modRoute = worker('moderationRoute');
+const CDN = 'https://cdn.test';
+
+async function mediaFixture() {
+  const store = await newStore();
+  const seedDoc = (p, data) => store.commit([{ kind: 'update', path: p, set: data, mustExist: false }]);
+  await seedDoc('moderators/mod', { grantedBy: 'console' });
+  await seedDoc('moderators/mod2', { grantedBy: 'console' });
+  await seedDoc('travelPosts/rp', { authorId: BOB, visibility: 'removed', images: [`${CDN}/post_photos/${BOB}/a.jpg`, `${CDN}/post_photos/${BOB}/b.jpg`] });
+  await seedDoc('travelJournals/rj', { authorId: BOB, visibility: 'removed', images: [`${CDN}/post_photos/${BOB}/j.jpg`], coverImageURL: `${CDN}/post_photos/${BOB}/cover.jpg` });
+  const bucket = fakeR2([`post_photos/${BOB}/a.jpg`, `post_photos/${BOB}/b.jpg`, `post_photos/${BOB}/j.jpg`, `post_photos/${BOB}/cover.jpg`, `post_photos/${BOB}/new.jpg`]);
+  let now = Date.now();
+  const deps = (uid, extra = {}) => ({
+    verify: async () => ({ uid, email: null, authTime: 0 }), store, bucket, publicBaseUrl: CDN, json, now: () => now, ...extra,
+  });
+  const call = async (uid, body, extra) => {
+    const resp = await modRoute.handleRemoveMedia(new Request('https://w/moderation/remove-media', {
+      method: 'POST', headers: { Authorization: 'Bearer t' }, body: JSON.stringify(body),
+    }), deps(uid, extra));
+    return { status: resp.status, body: await resp.json() };
+  };
+  return { store, seedDoc, bucket, call, advance: (ms) => { now += ms; } };
+}
+
+test('remove-media: suspended or deleting moderators are refused before anything is deleted', async () => {
+  const f = await mediaFixture();
+  await f.seedDoc('accountSuspensions/mod', { suspendedBy: 'owner', reason: 'abuse' });
+  assert.equal((await f.call('mod', { targetType: 'post', targetId: 'rp' })).status, 403);
+  await f.seedDoc('accountDeletions/mod2', { uid: 'mod2', status: 'in_progress' });
+  assert.equal((await f.call('mod2', { targetType: 'post', targetId: 'rp' })).status, 403);
+  assert.equal(f.bucket.objects.size, 5, 'nothing deleted');
+  assert.equal((await f.store.get('travelPosts/rp')).data.images.length, 2);
+});
+
+test('remove-media: an unreadable caller barrier fails closed', async () => {
+  const f = await mediaFixture();
+  const s = f.store;
+  const failingStore = {
+    get: async (p) => { if (p.startsWith('accountSuspensions/') || p.startsWith('accountDeletions/')) throw new Error('firestore down'); return s.get(p); },
+    query: (...a) => s.query(...a), listDocumentIds: (c) => s.listDocumentIds(c), listCollectionIds: (d) => s.listCollectionIds(d), commit: (w) => s.commit(w),
+  };
+  const r = await f.call('mod', { targetType: 'post', targetId: 'rp' }, { store: failingStore });
+  assert.equal(r.status, 503);
+  assert.equal(f.bucket.objects.size, 5, 'nothing deleted');
+});
+
+test('remove-media: a restore with new images during object deletion is never undone', async () => {
+  const f = await mediaFixture();
+  const realDelete = f.bucket.delete.bind(f.bucket);
+  let restored = false;
+  f.bucket.delete = async (keys) => {
+    // Another moderator restores the post and the author attaches a new photo
+    // while the objects are being deleted (Admin write: bypasses rules).
+    restored = true;
+    await f.store.commit([{ kind: 'update', path: 'travelPosts/rp', set: { visibility: 'public', images: [`${CDN}/post_photos/${BOB}/new.jpg`] } }]);
+    return realDelete(keys);
+  };
+  const r = await f.call('mod', { targetType: 'post', targetId: 'rp' });
+  assert.ok(restored);
+  assert.equal(r.status, 200);
+  const post = (await f.store.get('travelPosts/rp')).data;
+  assert.deepEqual([post.visibility, post.images], ['public', [`${CDN}/post_photos/${BOB}/new.jpg`]], 'restored content kept');
+  assert.ok(f.bucket.objects.has(`post_photos/${BOB}/new.jpg`), 'new photo object kept');
+  assert.ok(!f.bucket.objects.has(`post_photos/${BOB}/a.jpg`));
+});
+
+test('remove-media: a restore committed before the claim prevents any deletion', async () => {
+  const f = await mediaFixture();
+  const get = f.store.get.bind(f.store);
+  let raced = false;
+  f.store.get = async (p) => {
+    const d = await get(p);
+    if (!raced && p === 'travelPosts/rp') {
+      raced = true;
+      await f.store.commit([{ kind: 'update', path: 'travelPosts/rp', set: { visibility: 'public' } }]);
+    }
+    return d;
+  };
+  const r = await f.call('mod', { targetType: 'post', targetId: 'rp' });
+  f.store.get = get;
+  assert.equal(r.status, 409);
+  assert.equal(f.bucket.objects.size, 5, 'nothing deleted');
+});
+
+test('remove-media: interrupted removal is retried safely after its lease; journals include the cover', async () => {
+  const f = await mediaFixture();
+  const realDelete = f.bucket.delete.bind(f.bucket);
+  f.bucket.delete = async () => { throw new Error('R2 unavailable'); };
+  assert.equal((await f.call('mod', { targetType: 'journal', targetId: 'rj' })).status, 500);
+  f.bucket.delete = realDelete;
+  assert.equal((await f.call('mod2', { targetType: 'journal', targetId: 'rj' })).status, 409, 'claimed removal still leased');
+  f.advance(10 * 60_000);
+  const r = await f.call('mod2', { targetType: 'journal', targetId: 'rj' });
+  assert.deepEqual([r.status, r.body.removed], [200, 2]);
+  const j = (await f.store.get('travelJournals/rj')).data;
+  assert.deepEqual([j.images, j.coverImageURL, j.mediaRemoval.state], [[], null, 'done']);
+  assert.ok(!f.bucket.objects.has(`post_photos/${BOB}/cover.jpg`));
+  assert.deepEqual((await f.call('mod', { targetType: 'journal', targetId: 'rj' })).body.removed, 0, 'repeat is a no-op');
+});
+
+test('remove-media + real rules: a moderator restore during object deletion is refused, then allowed once finished', async () => {
+  const { initializeTestEnvironment, assertFails } = require('@firebase/rules-unit-testing');
+  const sdk = require('firebase/firestore');
+  const env = await initializeTestEnvironment({ projectId: PROJECT,
+    firestore: { host: '127.0.0.1', port: 8188, rules: fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8') } });
+  try {
+    const f = await mediaFixture();
+    const modDb = env.authenticatedContext('mod2').firestore();
+    const restore = () => sdk.updateDoc(sdk.doc(modDb, 'travelPosts/rp'), { visibility: 'public', reportCount: 0, moderatedBy: 'mod2', moderatedAt: sdk.serverTimestamp() });
+    const realDelete = f.bucket.delete.bind(f.bucket);
+    let tried = false;
+    f.bucket.delete = async (keys) => { tried = true; await assertFails(restore()); return realDelete(keys); };
+    const r = await f.call('mod', { targetType: 'post', targetId: 'rp' }, { now: Date.now });
+    assert.ok(tried);
+    assert.deepEqual([r.status, r.body.removed], [200, 2]);
+    await restore(); // lease released on completion
+    const post = (await f.store.get('travelPosts/rp')).data;
+    assert.deepEqual([post.visibility, post.images, post.mediaRemoval.state], ['public', [], 'done']);
+  } finally {
+    await env.cleanup();
+  }
+}, 'emulator');
+
+test("account deletion still removes the user's moderated (under_review / removed) posts and journals", async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  for (const [p, v] of [['travelPosts/aliceHeld', 'under_review'], ['travelJournals/aliceRemoved', 'removed']]) {
+    await store.commit([{ kind: 'update', path: p, mustExist: false, set: { authorId: ME, visibility: v, reportCount: 3 } }]);
+  }
+  await deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps);
+  assert.equal(await store.get('travelPosts/aliceHeld'), null);
+  assert.equal(await store.get('travelJournals/aliceRemoved'), null);
+  await expectState(store, h);
+});
 
 (async () => {
   let passed = 0;
