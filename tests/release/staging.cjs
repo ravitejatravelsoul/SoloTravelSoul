@@ -20,16 +20,33 @@ function load(file, deps = {}, source) {
 
 const env = load('packages/shared/src/environment.ts');
 const problems = (t) => [...env.stagingIsolationProblems(t)]; // copy out of the VM realm
+const STAGING = { firebaseProjectId: 'sts-staging', storageBucket: 'sts-staging.firebasestorage.app', authDomain: 'sts-staging.firebaseapp.com',
+  apiKey: 'AIza-staging-test-key', messagingSenderId: '123456789', appId: '1:123456789:web:abc123' };
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
 
 test('isolation rules: production targets are rejected only for staging builds', () => {
   const prod = { firebaseProjectId: env.PRODUCTION_FIREBASE_PROJECT_ID, storageBucket: env.PRODUCTION_STORAGE_BUCKET, workerUrl: 'https://solotravelsoul-r2-upload.example.workers.dev' };
   assert.equal(env.stagingIsolationProblems({ appEnv: 'production', ...prod }).length, 0);
-  assert.equal(env.stagingIsolationProblems({ appEnv: 'staging', ...prod }).length, 3);
-  assert.deepEqual(problems({ appEnv: 'staging', firebaseProjectId: 'sts-staging', storageBucket: 'sts-staging.firebasestorage.app',
-    workerUrl: 'https://solotravelsoul-r2-upload-staging.example.workers.dev' }), []);
-  assert.deepEqual(problems({ appEnv: 'staging', firebaseProjectId: 'REPLACE_WITH_STAGING_PROJECT_ID' }), ['staging Firebase project is not set']);
+  const prodProblems = problems({ appEnv: 'staging', ...prod });
+  for (const m of ['staging build points at the production Firebase project', 'staging build points at the production Storage bucket', 'staging build points at the production Worker']) {
+    assert.ok(prodProblems.includes(m), m);
+  }
+  const good = { appEnv: 'staging', ...STAGING, workerUrl: 'https://solotravelsoul-r2-upload-staging.example.workers.dev' };
+  assert.deepEqual(problems(good), []);
+  assert.ok(problems({ appEnv: 'staging', firebaseProjectId: 'REPLACE_WITH_STAGING_PROJECT_ID' }).includes('staging Firebase project is not set'));
+  // Every required value, and one project only.
+  for (const key of ['apiKey', 'authDomain', 'storageBucket', 'messagingSenderId', 'appId']) {
+    assert.ok(problems({ ...good, [key]: '' }).includes(`staging Firebase ${key} is not set`), key);
+  }
+  assert.ok(problems({ ...good, authDomain: `${env.PRODUCTION_FIREBASE_PROJECT_ID}.firebaseapp.com` }).includes('staging build points at the production Auth domain'));
+  assert.ok(problems({ ...good, authDomain: 'other-project.firebaseapp.com' }).includes('staging Auth domain does not belong to the staging project'));
+  assert.ok(problems({ ...good, storageBucket: 'other-project.firebasestorage.app' }).includes('staging Storage bucket does not belong to the staging project'));
+  assert.ok(problems({ ...good, messagingSenderId: env.PRODUCTION_FIREBASE_PROJECT_NUMBER }).includes('staging build uses the production sender ID'));
+  assert.ok(problems({ ...good, appId: `1:${env.PRODUCTION_FIREBASE_PROJECT_NUMBER}:web:abc123` }).includes('staging build uses a production app ID'));
+  assert.ok(problems({ ...good, appId: '1:999:web:abc123' }).includes('staging app ID and sender ID belong to different projects'));
+  assert.ok(problems({ ...good, appId: 'not-an-app-id' }).includes('staging Firebase appId is malformed'));
+  assert.ok(!JSON.stringify(problems({ ...good, apiKey: '', authDomain: 'x.firebaseapp.com' })).includes('x.firebaseapp'), 'messages name fields, not values');
 });
 
 function configWith(vars) {
@@ -51,10 +68,15 @@ function configWith(vars) {
     Object.assign(process.env, saved);
   }
 }
-const firebaseVars = (project) => ({
-  EXPO_PUBLIC_FIREBASE_API_KEY: 'k', EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: `${project}.firebaseapp.com`, EXPO_PUBLIC_FIREBASE_PROJECT_ID: project,
-  EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: `${project}.firebasestorage.app`, EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: '1', EXPO_PUBLIC_FIREBASE_APP_ID: 'a',
+const firebaseVars = (project, number = project === env.PRODUCTION_FIREBASE_PROJECT_ID ? env.PRODUCTION_FIREBASE_PROJECT_NUMBER : '123456789') => ({
+  EXPO_PUBLIC_FIREBASE_API_KEY: 'AIza-test-key', EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: `${project}.firebaseapp.com`, EXPO_PUBLIC_FIREBASE_PROJECT_ID: project,
+  EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: `${project}.firebasestorage.app`, EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: number, EXPO_PUBLIC_FIREBASE_APP_ID: `1:${number}:web:abc123`,
 });
+const easLines = (vars) => Object.entries(vars).map(([k, v]) => `${k}=${v}`).join(String.fromCharCode(10));
+const stagingEas = () => ({ ...firebaseVars('sts-staging'), EXPO_PUBLIC_R2_UPLOAD_WORKER_URL: 'https://solotravelsoul-r2-upload-staging.x.workers.dev', EXPO_PUBLIC_STORAGE_PROVIDER: 'r2' });
+const metadataFor = (vars, projectId = vars.EXPO_PUBLIC_FIREBASE_PROJECT_ID) => ({ result: { sdkConfig: {
+  projectId, apiKey: vars.EXPO_PUBLIC_FIREBASE_API_KEY, authDomain: vars.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN, storageBucket: vars.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: vars.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID, appId: vars.EXPO_PUBLIC_FIREBASE_APP_ID } } });
 
 test('app guard: a staging build pointed at production cannot connect', () => {
   const bad = configWith({ ...firebaseVars(env.PRODUCTION_FIREBASE_PROJECT_ID), EXPO_PUBLIC_APP_ENV: 'staging' });
@@ -64,6 +86,20 @@ test('app guard: a staging build pointed at production cannot connect', () => {
   assert.deepEqual([good.configured, good.initialized.projectId], [true, 'sts-staging']);
   const prod = configWith({ ...firebaseVars(env.PRODUCTION_FIREBASE_PROJECT_ID), EXPO_PUBLIC_APP_ENV: 'production' });
   assert.equal(prod.configured, true, 'production builds unaffected');
+});
+
+test('app guard: staging project with a production Auth domain is rejected (mixed project)', () => {
+  const mixed = configWith({ ...firebaseVars('sts-staging'), EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: `${env.PRODUCTION_FIREBASE_PROJECT_ID}.firebaseapp.com`, EXPO_PUBLIC_APP_ENV: 'staging' });
+  assert.equal(mixed.configured, false);
+});
+
+test('checker: --eas-env with missing API key, Auth domain, app ID and sender ID fails', () => {
+  const dir = fixture();
+  const easFile = path.join(dir, 'partial.env');
+  fs.writeFileSync(easFile, ['EXPO_PUBLIC_FIREBASE_PROJECT_ID=sts-staging', 'EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=sts-staging.firebasestorage.app',
+    'EXPO_PUBLIC_R2_UPLOAD_WORKER_URL=https://solotravelsoul-r2-upload-staging.x.workers.dev', 'EXPO_PUBLIC_STORAGE_PROVIDER=r2'].join(String.fromCharCode(10)));
+  const r = runChecker(dir, ['--eas-env', easFile]);
+  assert.notEqual(r.code, 0, r.out);
 });
 
 function fixture({ project = 'sts-staging', workerVarsProject = project, stagingBucket = 'solotravelsoul-images-staging', previewEnv = 'staging' } = {}) {
@@ -99,16 +135,31 @@ test('checker: isolated staging config passes; any production target fails; valu
     const r = runChecker(fixture(opts));
     assert.equal(r.code, 1, label);
   }
-  // EAS preview env pulled to a file: production Worker / project are rejected.
+  // EAS preview env pulled to a file.
   const dir = fixture();
   const easFile = path.join(dir, 'preview.env');
-  fs.writeFileSync(easFile, ['EXPO_PUBLIC_FIREBASE_PROJECT_ID=sts-staging', 'EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=sts-staging.firebasestorage.app',
-    'EXPO_PUBLIC_R2_UPLOAD_WORKER_URL=https://solotravelsoul-r2-upload-staging.x.workers.dev', 'EXPO_PUBLIC_STORAGE_PROVIDER=r2', 'EXPO_PUBLIC_FIREBASE_API_KEY=SECRET-SHOULD-NOT-PRINT'].join('\n'));
-  const good = runChecker(dir, ['--eas-env', easFile]);
-  assert.equal(good.code, 0, good.out);
-  assert.ok(!good.out.includes('SECRET-SHOULD-NOT-PRINT') && !good.out.includes('sts-staging.firebasestorage'), 'no values printed');
-  fs.writeFileSync(easFile, ['EXPO_PUBLIC_FIREBASE_PROJECT_ID=' + env.PRODUCTION_FIREBASE_PROJECT_ID,
-    'EXPO_PUBLIC_R2_UPLOAD_WORKER_URL=https://solotravelsoul-r2-upload.x.workers.dev', 'EXPO_PUBLIC_STORAGE_PROVIDER=r2'].join('\n'));
+  const metaFile = path.join(dir, 'metadata.json');
+  const vars = stagingEas();
+  fs.writeFileSync(easFile, easLines(vars));
+  // Complete, single-project config but no trusted metadata: BLOCKED, not verified.
+  const blocked = runChecker(dir, ['--eas-env', easFile]);
+  assert.equal(blocked.code, 2, blocked.out);
+  assert.match(blocked.out, /BLOCKED Firebase resource ownership not verified/);
+  assert.match(blocked.out, /NOT verified/);
+  // Verified against the staging project's Firebase metadata.
+  fs.writeFileSync(metaFile, JSON.stringify(metadataFor(vars)));
+  const verified = runChecker(dir, ['--eas-env', easFile, '--firebase-metadata', metaFile]);
+  assert.equal(verified.code, 0, verified.out);
+  for (const secret of [vars.EXPO_PUBLIC_FIREBASE_API_KEY, vars.EXPO_PUBLIC_FIREBASE_APP_ID, 'sts-staging.firebasestorage']) {
+    assert.ok(!verified.out.includes(secret) && !blocked.out.includes(secret), 'no values printed');
+  }
+  // API key from another project (metadata disagrees) or metadata for another project: FAIL.
+  fs.writeFileSync(metaFile, JSON.stringify(metadataFor({ ...vars, EXPO_PUBLIC_FIREBASE_API_KEY: 'AIza-other' })));
+  assert.equal(runChecker(dir, ['--eas-env', easFile, '--firebase-metadata', metaFile]).code, 1);
+  fs.writeFileSync(metaFile, JSON.stringify(metadataFor(vars, 'some-other-project')));
+  assert.equal(runChecker(dir, ['--eas-env', easFile, '--firebase-metadata', metaFile]).code, 1);
+  // Production project / Worker in the preview env: FAIL even before ownership.
+  fs.writeFileSync(easFile, easLines({ ...firebaseVars(env.PRODUCTION_FIREBASE_PROJECT_ID), EXPO_PUBLIC_R2_UPLOAD_WORKER_URL: 'https://solotravelsoul-r2-upload.x.workers.dev', EXPO_PUBLIC_STORAGE_PROVIDER: 'r2' }));
   assert.equal(runChecker(dir, ['--eas-env', easFile]).code, 1);
 });
 

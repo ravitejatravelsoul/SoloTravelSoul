@@ -27,6 +27,10 @@ const isolationProblems = stagingIsolationProblems({
   firebaseProjectId: firebaseConfig.projectId,
   storageBucket: firebaseConfig.storageBucket,
   workerUrl: process.env.EXPO_PUBLIC_R2_UPLOAD_WORKER_URL,
+  apiKey: firebaseConfig.apiKey,
+  authDomain: firebaseConfig.authDomain,
+  messagingSenderId: firebaseConfig.messagingSenderId,
+  appId: firebaseConfig.appId,
 });
 if (isolationProblems.length > 0) {
   console.error('🔴 [SoloTravelSoul] Staging isolation check failed: ' + isolationProblems.join('; '));

@@ -4,6 +4,13 @@
 //
 //   npm run check:staging                         # repo config (.firebaserc + wrangler.toml)
 //   npm run check:staging -- --eas-env <file>     # plus an `eas env:pull --environment preview` file
+//   npm run check:staging -- --eas-env <file> --firebase-metadata <file>
+//        # plus resource ownership: the metadata is the staging web app's SDK
+//        # config fetched from Firebase for the staging project, e.g.
+//        # `firebase apps:sdkconfig WEB <appId> --project staging --json`
+//
+// Exit codes: 0 = verified, 1 = a check failed, 2 = configuration checks passed
+// but resource ownership could not be verified (BLOCKED — not isolated yet).
 //   node scripts/checkStagingIsolation.cjs --root <dir>   # used by tests with fixture configs
 const fs = require('fs');
 const path = require('path');
@@ -49,6 +56,7 @@ function readDotenv(file) {
 
 const results = [];
 const check = (ok, label) => results.push({ ok: !!ok, label });
+const blocked = [];
 
 // ── Firebase project alias ────────────────────────────────────────────────
 const firebaserc = JSON.parse(fs.readFileSync(path.join(root, '.firebaserc'), 'utf8'));
@@ -88,15 +96,43 @@ if (easFile) {
     firebaseProjectId: e.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
     storageBucket: e.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
     workerUrl: e.EXPO_PUBLIC_R2_UPLOAD_WORKER_URL,
+    apiKey: e.EXPO_PUBLIC_FIREBASE_API_KEY,
+    authDomain: e.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    messagingSenderId: e.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    appId: e.EXPO_PUBLIC_FIREBASE_APP_ID,
   });
-  check(problems.length === 0, `EAS preview env isolated${problems.length ? ` (${problems.join('; ')})` : ''}`);
+  check(problems.length === 0, `EAS preview Firebase config complete and single-project${problems.length ? ` (${problems.join('; ')})` : ''}`);
   check(e.EXPO_PUBLIC_FIREBASE_PROJECT_ID === stagingProject, 'EAS preview EXPO_PUBLIC_FIREBASE_PROJECT_ID matches the staging alias');
   const host = (() => { try { return new URL(e.EXPO_PUBLIC_R2_UPLOAD_WORKER_URL ?? '').hostname; } catch { return ''; } })();
   check(host.startsWith(`${staging.name}.`), 'EAS preview EXPO_PUBLIC_R2_UPLOAD_WORKER_URL is the staging Worker');
   check(e.EXPO_PUBLIC_STORAGE_PROVIDER === 'r2', 'EAS preview uses the R2 upload Worker');
+
+  // ── Resource ownership: only trusted Firebase metadata can prove the API
+  // key and app belong to the staging project; non-empty values do not.
+  const metaFile = argValue('--firebase-metadata');
+  if (!metaFile) {
+    blocked.push('Firebase resource ownership not verified (pass --firebase-metadata with the staging web app SDK config)');
+  } else {
+    let meta = {};
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.resolve(metaFile), 'utf8'));
+      meta = raw?.result?.sdkConfig ?? raw?.sdkConfig ?? raw?.result ?? raw ?? {};
+    } catch {
+      check(false, 'Firebase metadata file is readable JSON');
+    }
+    check(meta.projectId && meta.projectId === stagingProject, 'Firebase metadata belongs to the staging project');
+    for (const [key, name] of [['apiKey', 'API_KEY'], ['authDomain', 'AUTH_DOMAIN'], ['projectId', 'PROJECT_ID'],
+      ['storageBucket', 'STORAGE_BUCKET'], ['messagingSenderId', 'MESSAGING_SENDER_ID'], ['appId', 'APP_ID']]) {
+      const value = e[`EXPO_PUBLIC_FIREBASE_${name}`];
+      check(meta[key] && value === meta[key], `EXPO_PUBLIC_FIREBASE_${name} matches the staging project's Firebase metadata`);
+    }
+  }
 }
 
 for (const r of results) console.log(`${r.ok ? 'PASS' : 'FAIL'} ${r.label}`);
+for (const b of blocked) console.log(`BLOCKED ${b}`);
 const failed = results.filter((r) => !r.ok).length;
-console.log(failed ? `${failed} staging isolation check(s) failed` : 'staging isolation checks passed');
-process.exitCode = failed ? 1 : 0;
+if (failed) console.log(`${failed} staging isolation check(s) failed`);
+else if (blocked.length) console.log('configuration checks passed; staging isolation NOT verified (blocked)');
+else console.log(easFile ? 'staging isolation checks passed (configuration and resource ownership)' : 'staging configuration checks passed');
+process.exitCode = failed ? 1 : blocked.length ? 2 : 0;
