@@ -23,6 +23,22 @@ interface TokenPayload {
   sub: string;
   exp: number;
   iat: number;
+  auth_time?: number;
+  email?: string;
+}
+
+export interface VerifiedToken {
+  uid: string;
+  /** Seconds since epoch of the user's last interactive sign-in / reauthentication. */
+  authTime: number;
+  email: string | null;
+}
+
+/** Max age of the last sign-in for destructive operations (account deletion). */
+export const RECENT_AUTH_MAX_AGE_SEC = 5 * 60;
+
+export function isRecentAuth(token: VerifiedToken, nowSec = Math.floor(Date.now() / 1000)): boolean {
+  return token.authTime > 0 && nowSec - token.authTime <= RECENT_AUTH_MAX_AGE_SEC && token.authTime <= nowSec + 300;
 }
 
 // In-memory cache for the Worker process lifetime.
@@ -69,7 +85,7 @@ function decodeSegment<T>(segment: string): T {
 export async function verifyFirebaseToken(
   token: string,
   projectId: string
-): Promise<{ uid: string }> {
+): Promise<VerifiedToken> {
   const parts = token.split('.');
   if (parts.length !== 3) {
     throw new Error('Malformed token: expected 3 segments');
@@ -119,5 +135,5 @@ export async function verifyFirebaseToken(
   if (payload.aud !== projectId) throw new Error('Invalid token audience');
   if (!payload.sub) throw new Error('Token missing subject (uid)');
 
-  return { uid: payload.sub };
+  return { uid: payload.sub, authTime: payload.auth_time ?? 0, email: payload.email ?? null };
 }

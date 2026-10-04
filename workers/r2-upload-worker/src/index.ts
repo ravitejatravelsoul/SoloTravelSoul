@@ -1,9 +1,30 @@
 import { verifyFirebaseToken } from './auth';
+import { handleAccountDeletion } from './accountRoute';
+import type { DeletionDeps } from './accountDeletion';
+import { FirestoreRest } from './firestoreRest';
+import { firebaseStorageDeleter, r2Deleter } from './objectStores';
+import { getAccessToken, identityToolkitUserDeleter, parseServiceAccount } from './google';
 
 export interface Env {
   R2_BUCKET: R2Bucket;
   PUBLIC_R2_BASE_URL: string;
   FIREBASE_PROJECT_ID: string;
+  /** Firebase Storage bucket, e.g. "<project>.firebasestorage.app". */
+  FIREBASE_STORAGE_BUCKET?: string;
+  /** Secret: service-account JSON used only for account deletion (wrangler secret put). */
+  GOOGLE_SERVICE_ACCOUNT_JSON?: string;
+}
+
+function deletionDeps(env: Env): DeletionDeps | null {
+  const account = parseServiceAccount(env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  if (!account || !env.FIREBASE_STORAGE_BUCKET) return null;
+  const token = () => getAccessToken(account);
+  return {
+    store: new FirestoreRest({ projectId: env.FIREBASE_PROJECT_ID, token }),
+    r2: r2Deleter(env.R2_BUCKET),
+    firebaseStorage: firebaseStorageDeleter({ bucket: env.FIREBASE_STORAGE_BUCKET, token }),
+    deleteAuthUser: identityToolkitUserDeleter({ projectId: env.FIREBASE_PROJECT_ID, token }),
+  };
 }
 
 const MAX_PROFILE_BYTES = 5 * 1024 * 1024;  // 5 MB — profile photos
@@ -41,6 +62,14 @@ export default {
 
     if (request.method === 'POST' && pathname === '/upload/post-photo') {
       return handlePostPhoto(request, env);
+    }
+
+    if (request.method === 'POST' && pathname === '/account/delete') {
+      return handleAccountDeletion(request, {
+        verify: (token) => verifyFirebaseToken(token, env.FIREBASE_PROJECT_ID),
+        deletion: () => deletionDeps(env),
+        json,
+      });
     }
 
     return err('Not found', 404);

@@ -79,6 +79,8 @@ function client(file, db) {
       ['private journal read', () => sdk.getDoc(sdk.doc(db, 'travelJournals/private'))],
       ['bulk directory lookup', () => sdk.getDocs(sdk.collection(db, 'userLookup'))],
       ['bulk exact-address directory lookup', () => sdk.getDocs(sdk.collection(db, 'userLookupByEmail'))],
+      ['client read of own deletion job', () => sdk.getDoc(sdk.doc(db, 'accountDeletions/actor'))],
+      ['client write of own deletion job', () => sdk.setDoc(sdk.doc(db, 'accountDeletions/actor'), { status: 'completed' })],
     ]) await check(`reject ${name}`, () => assertFails(action()));
     await check('visitor author query returns only public posts', async () => { const result = await sdk.getDocs(sdk.query(sdk.collection(db, 'travelPosts'), sdk.where('authorId', '==', 'owner'), sdk.where('visibility', '==', 'public'), sdk.where('isArchived', '==', false))); assert.equal(result.size, 1); });
     await check('exact email lookup can register and resolve', async () => { await chat.upsertUserLookup('actor', 'Actor', 'actor@example.test', 'A'); assert.equal((await chat.searchUserByEmail(' ACTOR@example.test ')).uid, 'actor'); });

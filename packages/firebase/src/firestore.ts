@@ -17,7 +17,6 @@
   startAfter,
   serverTimestamp,
   Timestamp,
-  arrayRemove,
   writeBatch,
   increment,
   type DocumentData,
@@ -452,91 +451,8 @@ export async function upsertCachedPlace(place: CachedPlace): Promise<void> {
 }
 
 // â”€â”€ Account Deletion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Deletes all Firestore data owned by a user before their auth account is removed.
-// Subcollections (itinerary, checklist, reminders) must be deleted explicitly â€”
-// deleting a parent doc in Firestore does NOT cascade to subcollections.
-// Propagate cleanup failures so the caller retains the Auth identity for retry.
-export async function deleteAllUserData(uid: string): Promise<void> {
-  // 1. Delete all trips and their subcollections
-  const tripsSnap = await getDocs(collection(db, 'users', uid, 'trips'));
-  for (const tripDoc of tripsSnap.docs) {
-    const tripId = tripDoc.id;
-    const [itinSnap, checkSnap, remSnap] = await Promise.all([
-      getDocs(collection(db, 'users', uid, 'trips', tripId, 'itinerary')),
-      getDocs(collection(db, 'users', uid, 'trips', tripId, 'checklist')),
-      getDocs(collection(db, 'users', uid, 'trips', tripId, 'reminders')),
-    ]);
-    await Promise.all([
-      ...itinSnap.docs.map((d) => deleteDoc(d.ref)),
-      ...checkSnap.docs.map((d) => deleteDoc(d.ref)),
-      ...remSnap.docs.map((d) => deleteDoc(d.ref)),
-    ]);
-    await deleteDoc(tripDoc.ref);
-  }
-
-  // 2. Delete saved places
-  const savedSnap = await getDocs(collection(db, 'users', uid, 'saved_places'));
-  await Promise.all(savedSnap.docs.map((d) => deleteDoc(d.ref)));
-
-  // Remove the current exact-address alias, which otherwise exposes stale identity data.
-  const profile = await getDoc(doc(db, 'users', uid));
-  const email = profile.data()?.email as string | undefined;
-  if (email) {
-    const alias = email.trim().toLowerCase().replace(/%/g, '%25').replace(/\//g, '%2F');
-    await deleteDoc(doc(db, 'userLookupByEmail', alias));
-  }
-
-  // 3. Delete user profile document
-  await deleteDoc(doc(db, 'users', uid));
-
-  // 4. Delete userLookup entry
-  await deleteDoc(doc(db, 'userLookup', uid));
-
-  // 5. Best-effort: remove from any groups (non-fatal â€” group doc not owned by user)
-  const groupsSnap = await getDocs(
-    query(collection(db, 'groups'), where('members', 'array-contains', uid))
-  );
-  if (groupsSnap) {
-    await Promise.all(
-      groupsSnap.docs.map((d) =>
-        updateDoc(d.ref, { members: arrayRemove(uid) })
-      )
-    );
-  }
-
-  // 6. Community data cleanup
-  await deleteDoc(doc(db, 'publicProfiles', uid));
-  await deleteDoc(doc(db, 'nearbyTravelers', uid));
-
-  const pendingTripReqs = await getDocs(
-    query(collection(db, 'tripJoinRequests'), where('requestorUid', '==', uid), where('status', '==', 'pending'))
-  );
-  if (pendingTripReqs) {
-    await Promise.all(
-      pendingTripReqs.docs.map((d) =>
-        updateDoc(d.ref, { status: 'cancelled', updatedAt: serverTimestamp() })
-      )
-    );
-  }
-
-  const pendingGroupReqs = await getDocs(
-    query(collection(db, 'groupJoinRequests'), where('requestorUid', '==', uid), where('status', '==', 'pending'))
-  );
-  if (pendingGroupReqs) {
-    await Promise.all(
-      pendingGroupReqs.docs.map((d) =>
-        updateDoc(d.ref, { status: 'cancelled', updatedAt: serverTimestamp() })
-      )
-    );
-  }
-
-  const feedItems = await getDocs(
-    query(collection(db, 'activityFeed'), where('actorUid', '==', uid))
-  );
-  if (feedItems) {
-    await Promise.all(feedItems.docs.map((d) => deleteDoc(d.ref)));
-  }
-}
+// Account deletion runs server-side (R2 worker POST /account/delete) so the
+// Auth identity is removed only after every cleanup step has succeeded.
 
 // â”€â”€ Community: Public Profiles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

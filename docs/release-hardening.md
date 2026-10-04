@@ -23,11 +23,25 @@ Do not deploy only these rules while old clients remain active. Old clients use 
 
 ## Remaining release blockers
 
-- Account deletion remains incomplete: the client does not purge all Phase 2 posts/journals, relationship documents, uploaded Firebase Storage/R2 objects, or all embedded identities. Cleanup failures now propagate, preventing Auth removal after a reported cleanup failure, but successful legacy cleanup can still leave those other records. Do not claim complete erasure or submit to stores until a trusted, retry-safe deletion flow covers them and has failure/retry tests.
+- Account deletion is implemented server-side (see below) but is not live until the Worker secret, Storage bucket variable and index overrides are deployed and the flow is validated on staging native builds.
 - Photos delivered through public R2 URLs or Firebase download links are bearer-link accessible. Private Firestore records do not revoke those links. Fully authenticated private media requires a separate access-control change if that is the intended promise.
 - Native iOS/Android runtime checks, release signing, live configuration and store privacy declarations still need validation. No device test or signed store build was performed here.
 - Legacy profiles missing counters/parent documents require migration or repair before strict social transactions can succeed. Changing profile visibility now preserves the profile record and counters.
 
-## Next Claude phase
+## Account deletion (server-side)
 
-Inspect the repo and existing docs/code for prior context. Continue only the remaining account-deletion phase on this branch. Reuse Firebase and the existing R2 worker; avoid unrelated redesign. Implement trusted, authenticated, recent-reauth deletion covering owned Firestore subcollections, Phase 2 content/relationships and counter cleanup, Firebase Storage/R2 objects, and embedded participant identity. Preserve other users' content and retire Auth only after durable cleanup succeeds; make failure/retry safe. Keep private credentials server-side. Match the privacy text to verified retention behavior. Test two-user ownership, wrong password/stale auth, partial failures and retries in emulators and a native staging build. Run release tests, rules tests, typecheck, lint and both exports. Commit + push the branch; do not merge or deploy. Report only SHA, changed files, fixes, test results and blockers. Stop after this phase.
+`POST /account/delete` on the R2 worker (`workers/r2-upload-worker/src/accountRoute.ts`, `accountDeletion.ts`) deletes an account with Admin credentials held only as a Worker secret. The app reauthenticates with the password, sends a force-refreshed ID token, and the Worker rejects tokens whose `auth_time` is older than 5 minutes.
+
+- Deleted: `users/{uid}` and every subcollection, saved places, directory entries (exact-email alias only when it still belongs to the user), public profile, nearby/reputation docs, block list, notifications, place reviews, activity feed, posts, journals, stories, owned public trips/groups (with member subcollections), join requests, the user's likes/saves/follows, memberships, R2 `profile_photos/{uid}/` + `post_photos/{uid}/`, Firebase Storage `profile_photos/`, `trip_covers/`, `journals/` for the UID.
+- Counters on other users' documents (likes, saves, comments, replies, followers/following, memberCount) are released in the same atomic commit as the relationship, with optimistic preconditions; never below zero.
+- Preserved, anonymized as "Deleted User": the user's comments on others' posts (tombstoned, replies kept), sent chat messages, group chat previews, DM participant info, notifications delivered to others. Safety reports are retained.
+- Retry safety: steps are idempotent and rediscover work on every attempt. Progress and the failing step are recorded in `accountDeletions/{uid}` (client access denied) under a 5-minute lease. Firebase Auth is deleted only after every data and media step succeeds; on any failure the account stays usable and the user can retry.
+- The client pauses offline sync during deletion and, only after success, clears every AsyncStorage key containing the UID (caches, sync/chat queues, reminder IDs) and cancels scheduled reminders.
+
+### Rollout prerequisites
+
+1. Create a dedicated service account with Cloud Datastore User, Storage Object Admin (Firebase bucket) and Firebase Authentication Admin roles; `wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON`. Confirm `FIREBASE_STORAGE_BUCKET` in `wrangler.toml`. Without the secret the endpoint returns 503 and deletes nothing.
+2. Deploy `firestore.indexes.json` field overrides (collection-group `members.uid`, `messages.senderId`) and wait for them; production rejects those queries until then.
+3. Deploy the Worker to staging, set `EXPO_PUBLIC_R2_UPLOAD_WORKER_URL` for the staging build, and validate with two accounts on native builds: wrong password, stale login, deletion with posts/comments/follows/chats/photos, forced failure + retry, and that the other account's content and counters are intact.
+
+Tests: `npm run test:release` (in-memory store, route gate, client flow) and `npm run test:rules` (same scenario through the real REST adapter on the Firestore emulator). The R2 / Cloud Storage / Identity Toolkit adapters are exercised with fakes only; they need staging verification.

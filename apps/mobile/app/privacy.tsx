@@ -23,7 +23,7 @@ const SECTIONS = [
   },
   {
     title: 'Data deletion',
-    body: 'You can delete your account at any time from the Profile screen. Deleting your account permanently removes your profile, trips, itinerary, journal entries, saved places, public profile, and traveler discovery data. Join requests you submitted are cancelled. Activity feed items you created are removed. Messages you sent in group or direct chats may remain visible to other participants. To request assistance with data removal, email privacy@solotravelsoul.app.',
+    body: 'You can delete your account at any time from the Profile screen after confirming your password. Deletion permanently removes your profile, trips, itinerary, checklists, journal entries, saved places, public profile, traveler discovery data, travel posts, travel journals, likes, saves, follows, notifications, place reviews, activity feed items, join requests, the community trips and groups you created, and the photos you uploaded to our storage. Comments you left on posts by other travelers are replaced with an empty "Deleted User" placeholder so replies by others stay readable. Messages you sent in group or direct chats remain visible to the other participants, labelled "Deleted User". Safety reports you submitted are kept for moderation. If deletion is interrupted, your login is kept so you can try again and finish it. To request assistance with data removal, email privacy@solotravelsoul.app.',
   },
   {
     title: 'Community features',

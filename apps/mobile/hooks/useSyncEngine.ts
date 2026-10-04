@@ -18,6 +18,14 @@ export interface SyncEngineState {
 // Module-level so multiple mounted instances (app layout + trip detail) never
 // process the queue concurrently — that would double-send queued DMs.
 const syncingUsers = new Set<string>();
+// Paused while the account is being deleted server-side, so queued offline
+// edits cannot recreate data the server has just removed.
+const pausedUsers = new Set<string>();
+
+export function setSyncPaused(uid: string, paused: boolean): void {
+  if (paused) pausedUsers.add(uid);
+  else pausedUsers.delete(uid);
+}
 const pendingCount = async (uid: string) => {
   const counts = await Promise.all([getQueueSize(uid), getChatQueueSize(uid)]);
   return counts[0] + counts[1];
@@ -58,7 +66,7 @@ export function useSyncEngine(uid: string | undefined): SyncEngineState & {
   }, [uid, setPendingOpsCount]);
 
   const sync = useCallback(async () => {
-    if (!uid || useAuthStore.getState().user?.uid !== uid || !isConnected || syncingUsers.has(uid)) return;
+    if (!uid || useAuthStore.getState().user?.uid !== uid || !isConnected || syncingUsers.has(uid) || pausedUsers.has(uid)) return;
     syncingUsers.add(uid);
     setSyncStatus({ syncing: true, hasFailed: false });
     try {

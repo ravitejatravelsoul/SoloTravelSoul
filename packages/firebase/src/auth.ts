@@ -6,7 +6,6 @@ import {
   signOut as _signOut,
   sendPasswordResetEmail,
   onAuthStateChanged,
-  deleteUser,
   EmailAuthProvider,
   reauthenticateWithCredential,
   type User,
@@ -50,16 +49,6 @@ export async function resetPassword(email: string): Promise<void> {
   await sendPasswordResetEmail(auth, email);
 }
 
-// Re-authenticates with password then permanently deletes the current user.
-// Throws if password is wrong or no user is signed in.
-export async function deleteCurrentUser(password: string): Promise<void> {
-  const user = auth.currentUser;
-  if (!user || !user.email) throw new Error('auth/no-current-user');
-  const credential = EmailAuthProvider.credential(user.email, password);
-  await reauthenticateWithCredential(user, credential);
-  await deleteUser(user);
-}
-
 // Verify the user's password without deleting anything.
 // Throws auth/wrong-password / auth/invalid-credential if wrong.
 export async function reauthenticate(password: string): Promise<void> {
@@ -69,12 +58,13 @@ export async function reauthenticate(password: string): Promise<void> {
   await reauthenticateWithCredential(user, credential);
 }
 
-// Delete the currently-signed-in auth account.
-// Call reauthenticate() first, then deleteAllUserData(), then this.
-export async function deleteAuthUser(): Promise<void> {
+// Force-refreshed ID token for server calls that require a recent sign-in
+// (call right after reauthenticate()). Account deletion — including the Auth
+// identity itself — is performed server-side so it happens only after cleanup.
+export async function getFreshIdToken(): Promise<string> {
   const user = auth.currentUser;
-  if (!user) throw new Error('auth/no-current-user');
-  await deleteUser(user);
+  if (!user) throw Object.assign(new Error('No signed-in user'), { code: 'auth/no-current-user' });
+  return user.getIdToken(true);
 }
 
 // Returns unsubscribe function — call it in useEffect cleanup.

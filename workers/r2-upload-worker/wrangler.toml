@@ -11,6 +11,12 @@ bucket_name = "solotravelsoul-images"
 # ── Non-secret vars ──────────────────────────────────────────────────────────
 [vars]
 FIREBASE_PROJECT_ID = "solotravelsoul-57a9e"
+# Firebase Storage bucket cleaned up by POST /account/delete.
+FIREBASE_STORAGE_BUCKET = "solotravelsoul-57a9e.firebasestorage.app"
+# Account deletion also needs a service account with Firestore, Storage and
+# Firebase Auth admin access, stored only as a Worker secret:
+#   wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON
+# Without it, /account/delete returns 503 and nothing is deleted.
 # PUBLIC_R2_BASE_URL is set as a secret so it can differ per environment:
 #   wrangler secret put PUBLIC_R2_BASE_URL
 #   → paste your r2.dev URL: https://pub-<hash>.r2.dev

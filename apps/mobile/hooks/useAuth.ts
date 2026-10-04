@@ -6,16 +6,36 @@ import {
   signUp,
   signOut,
   resetPassword,
-  deleteCurrentUser,
   reauthenticate,
-  deleteAuthUser,
-  deleteAllUserData,
   createUserProfile,
   upsertUserLookup,
 } from '@solotravelsoul/firebase';
 import { getUserInitials } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
+import { setSyncPaused } from '@/hooks/useSyncEngine';
+import { requestAccountDeletion, clearLocalUserData } from '@/utils/accountDeletion';
+
+function deletionErrorMessage(code: string): string {
+  switch (code) {
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential':
+      return 'Incorrect password. Account was not deleted.';
+    case 'auth/requires-recent-login':
+      return 'Please enter your password again to confirm.';
+    case 'auth/too-many-requests':
+      return 'Too many attempts. Please try again later.';
+    case 'deletion/in-progress':
+      return 'Deletion is already in progress. Please try again in a few minutes.';
+    case 'deletion/unavailable':
+      return 'Account deletion is temporarily unavailable. Contact privacy@solotravelsoul.app.';
+    case 'deletion/network':
+    case 'auth/network-request-failed':
+      return 'Network error. Please check your connection and try again.';
+    default:
+      return 'Could not finish deleting your account. Nothing was lost — please try again.';
+  }
+}
 
 function friendlyAuthError(code: string): string {
   switch (code) {
@@ -109,33 +129,39 @@ export function useAuth() {
     [addToast]
   );
 
-  // Safe 3-step account deletion:
-  //   1. reauthenticate  — verifies password; throws before any data is touched if wrong
-  //   2. deleteAllUserData — cleanup must succeed before the Auth identity is removed
-  //   3. deleteAuthUser  — removes the Firebase Auth account
-  // onAuthStateChanged fires null after step 3 and root layout redirects to login.
+  // Account deletion:
+  //   1. reauthenticate — wrong password throws before anything is touched
+  //   2. the server (R2 worker, Admin credentials) deletes owned data, social
+  //      relationships/counters, media and — only after all of that succeeds —
+  //      the Auth identity. Any failure leaves the account intact for a retry.
+  //   3. on success, wipe on-device caches/queues/reminders and sign out locally.
+  // Offline sync is paused meanwhile so queued edits cannot recreate data.
   const deleteAccount = useCallback(
     async (password: string): Promise<boolean> => {
-      setLoading(true);
       const uid = user?.uid;
-      if (!uid) { setLoading(false); return false; }
+      if (!uid) return false;
+      setLoading(true);
+      setSyncPaused(uid, true);
       try {
         await reauthenticate(password);
-        await deleteAllUserData(uid);
-        await deleteAuthUser();
-        return true;
+        await requestAccountDeletion();
       } catch (err: unknown) {
         const code = (err as { code?: string }).code ?? '';
-        addToast(
-          code === 'auth/wrong-password' || code === 'auth/invalid-credential'
-            ? 'Incorrect password. Account was not deleted.'
-            : 'Could not delete account. Please try again.',
-          'error'
-        );
-        return false;
-      } finally {
-        setLoading(false);
+        // A previous attempt finished but its response was lost.
+        if (code !== 'auth/user-not-found') {
+          setSyncPaused(uid, false);
+          setLoading(false);
+          addToast(deletionErrorMessage(code), 'error');
+          return false;
+        }
       }
+      await clearLocalUserData(uid).catch(() => {});
+      await signOut().catch(() => {});
+      setSyncPaused(uid, false);
+      setLoading(false);
+      addToast('Your account has been deleted.', 'success');
+      router.replace('/(auth)/login');
+      return true;
     },
     [setLoading, addToast, user?.uid]
   );
