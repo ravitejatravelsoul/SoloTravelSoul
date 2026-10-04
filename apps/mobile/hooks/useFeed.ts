@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getPostsFromUsers, getTrendingPosts } from '@solotravelsoul/firebase';
 import { useFollowingIds } from '@/hooks/useFollows';
+import { useBlockStore } from '@/stores/blockStore';
 import type { TravelPost } from '@solotravelsoul/shared';
 
 export type FeedItem = { type: 'post'; data: TravelPost };
@@ -11,6 +12,7 @@ export function useFeed() {
   const [trendingPosts, setTrendingPosts] = useState<TravelPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const blockedUids = useBlockStore((s) => s.blockedUids);
 
   const fetch = useCallback(async (ids: string[]) => {
     const [followed, trending] = await Promise.all([
@@ -36,7 +38,10 @@ export function useFeed() {
   // Merge: followed posts first, then trending posts not already in followed
   const followedIds = new Set(followedPosts.map((p) => p.postId));
   const extraTrending = trendingPosts.filter((p) => !followedIds.has(p.postId));
-  const items: FeedItem[] = [...followedPosts, ...extraTrending].map((p) => ({ type: 'post', data: p }));
+  // Blocked users' posts never appear (App Store guideline 1.2).
+  const items: FeedItem[] = [...followedPosts, ...extraTrending]
+    .filter((p) => !blockedUids.includes(p.authorId))
+    .map((p) => ({ type: 'post', data: p }));
 
   const isEmpty = !loading && items.length === 0;
   const isNewUser = !followsLoading && followingIds.length === 0;

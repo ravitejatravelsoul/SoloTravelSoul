@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useModerationActions } from '@/hooks/useModerationActions';
 import {
   View,
   StyleSheet,
@@ -21,6 +22,7 @@ import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme
 import type { TravelJournal } from '@solotravelsoul/shared';
 
 export default function JournalDetailScreen() {
+  const moderation = useModerationActions();
   const { journalId } = useLocalSearchParams<{ journalId: string }>();
   const [journal, setJournal] = useState<TravelJournal | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,9 +72,20 @@ export default function JournalDetailScreen() {
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>Journal</Text>
-        <TouchableOpacity onPress={handleShare} hitSlop={12}>
-          <Ionicons name="share-outline" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 16 }}>
+          <TouchableOpacity onPress={handleShare} hitSlop={12} accessibilityLabel="Share">
+            <Ionicons name="share-outline" size={24} color={Colors.textPrimary} />
+          </TouchableOpacity>
+          {journal.authorId !== moderation.myUid && (
+            <TouchableOpacity
+              onPress={() => moderation.openMenu({ targetType: 'journal', targetId: journal.journalId, authorId: journal.authorId, authorName: journal.authorName, label: 'Journal', onBlocked: () => router.back() })}
+              hitSlop={12}
+              accessibilityLabel="Report or block"
+            >
+              <Ionicons name="ellipsis-horizontal" size={24} color={Colors.textPrimary} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>

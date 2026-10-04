@@ -4,14 +4,10 @@ import * as ImageManipulator from 'expo-image-manipulator';
 const MAX_DIMENSION = 1024;
 const JPEG_QUALITY = 0.8;
 
+// Uses the system photo picker (Android Photo Picker / iOS PHPicker), which
+// needs no media-library permission. Google Play's Photo and Video Permissions
+// policy forbids READ_MEDIA_IMAGES for apps that only pick occasional photos.
 export async function pickImageFromLibrary(): Promise<string | null> {
-  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (__DEV__) console.log('[ImagePicker] library permission status:', status);
-  if (status !== 'granted') {
-    if (__DEV__) console.warn('[ImagePicker] library permission denied');
-    return null;
-  }
-
   const result = await ImagePicker.launchImageLibraryAsync({
     // expo-image-picker 17.x (Expo SDK 54): use string array instead of deprecated MediaTypeOptions
     mediaTypes: ['images'],

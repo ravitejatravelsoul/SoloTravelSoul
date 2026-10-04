@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useModerationActions } from '@/hooks/useModerationActions';
 import {
   View,
   StyleSheet,
@@ -21,6 +22,7 @@ import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constan
 import type { TravelPost } from '@solotravelsoul/shared';
 
 export default function PostDetailScreen() {
+  const moderation = useModerationActions();
   const { postId } = useLocalSearchParams<{ postId: string }>();
   const [post, setPost] = useState<TravelPost | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,9 +73,20 @@ export default function PostDetailScreen() {
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Post</Text>
-        <TouchableOpacity onPress={handleShare} hitSlop={12}>
-          <Ionicons name="share-outline" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 16 }}>
+          <TouchableOpacity onPress={handleShare} hitSlop={12} accessibilityLabel="Share">
+            <Ionicons name="share-outline" size={24} color={Colors.textPrimary} />
+          </TouchableOpacity>
+          {post.authorId !== moderation.myUid && (
+            <TouchableOpacity
+              onPress={() => moderation.openMenu({ targetType: 'post', targetId: post.postId, authorId: post.authorId, authorName: post.authorName, label: 'Post', onBlocked: () => router.back() })}
+              hitSlop={12}
+              accessibilityLabel="Report or block"
+            >
+              <Ionicons name="ellipsis-horizontal" size={24} color={Colors.textPrimary} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>

@@ -54,6 +54,7 @@ import type {
   Interest,
   ProfileVisibility,
   RequestStatus,
+  ReportTargetType,
 } from '@solotravelsoul/shared';
 import { DEFAULT_USER_PROFILE } from '@solotravelsoul/shared';
 
@@ -1452,7 +1453,7 @@ export async function isBlocked(blockerUid: string, blockedUid: string): Promise
 
 export async function reportContent(
   reporterUid: string,
-  targetType: 'user' | 'trip' | 'group' | 'message',
+  targetType: ReportTargetType,
   targetId: string,
   reason: 'spam' | 'inappropriate' | 'harassment' | 'fake' | 'safety' | 'other',
   details: string

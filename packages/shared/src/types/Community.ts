@@ -162,9 +162,11 @@ export interface FeedItem {
   createdAt: Date;
 }
 
+export type ReportTargetType = 'user' | 'trip' | 'group' | 'message' | 'post' | 'journal' | 'comment';
+
 export interface Report {
   reporterUid: string;
-  targetType: 'user' | 'trip' | 'group' | 'message';
+  targetType: ReportTargetType;
   targetId: string;
   reason: 'spam' | 'inappropriate' | 'harassment' | 'fake' | 'safety' | 'other';
   details: string;

@@ -14,10 +14,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui';
 import { reportContent } from '@solotravelsoul/firebase';
+import type { ReportTargetType } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 
-type TargetType = 'user' | 'trip' | 'group' | 'message';
+type TargetType = ReportTargetType;
 type ReportReason = 'spam' | 'inappropriate' | 'harassment' | 'fake' | 'safety' | 'other';
 
 const REASONS: { value: ReportReason; label: string }[] = [

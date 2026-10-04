@@ -12,7 +12,8 @@
       },
       "android": {
         "buildType": "apk"
-      }
+      },
+      "environment": "development"
     },
     "preview": {
       "distribution": "internal",
@@ -22,7 +23,8 @@
       "ios": {
         "resourceClass": "m-medium",
         "simulator": false
-      }
+      },
+      "environment": "preview"
     },
     "production": {
       "android": {
@@ -30,7 +32,9 @@
       },
       "ios": {
         "resourceClass": "m-medium"
-      }
+      },
+      "environment": "production",
+      "autoIncrement": true
     }
   },
   "submit": {

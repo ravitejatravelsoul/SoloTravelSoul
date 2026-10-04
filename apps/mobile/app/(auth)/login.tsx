@@ -12,6 +12,9 @@ import { isValidEmail, isValidPassword } from '@/utils/validations';
 export default function LoginScreen() {
   const { login, loading } = useAuth();
   const { enrolled, authenticate } = useBiometric();
+  // Biometric unlock only resumes an existing session; it cannot sign anyone in,
+  // so the button is offered only while a session is present.
+  const hasSession = useAuthStore((s) => !!s.user);
   const addToast = useUIStore((s) => s.addToast);
 
   const [email, setEmail] = useState('');
@@ -86,7 +89,7 @@ export default function LoginScreen() {
           size="lg"
         />
 
-        {enrolled && (
+        {enrolled && hasSession && (
           <>
             <Divider />
             <Button

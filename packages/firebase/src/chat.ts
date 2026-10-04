@@ -8,6 +8,7 @@ import {
   updateDoc,
   deleteDoc,
   arrayUnion,
+  arrayRemove,
   onSnapshot,
   query,
   where,
@@ -263,7 +264,13 @@ export function subscribeToGroups(
     ),
     (snap) => {
       if (process.env.NODE_ENV !== 'production') console.log('[Chats] group chats:', snap.docs.length);
-      callback(snap.docs.map((d) => docToTravelGroup(d.id, d.data())));
+      const ready = snap.docs.filter((d) => !((d.data().pendingMembers as string[] | undefined)?.length));
+      // Creation interrupted between chunks (app killed, offline): the creator's
+      // client finishes it — or rolls it back — whenever it sees the group again.
+      snap.docs
+        .filter((d) => d.data().createdBy === uid && (d.data().pendingMembers as string[] | undefined)?.length)
+        .forEach((d) => resumeGroupCreation(d.id));
+      callback(ready.map((d) => docToTravelGroup(d.id, d.data())));
     },
     (err) => { if (err.code !== 'cancelled') callback([]); },
   );
@@ -273,6 +280,13 @@ export function subscribeToGroups(
 // and accept at most this many additions per write.
 const GROUP_MEMBERS_PER_WRITE = 8;
 
+/**
+ * Creates a group in resumable chunks. Members beyond the first chunk are held
+ * in `pendingMembers`; a group with pending members is hidden from every
+ * member's list until creation completes, so an interruption (between chunks
+ * or during rollback) never exposes a half-built group. If any member is
+ * refused (e.g. their account is being deleted) the group is removed.
+ */
 export async function createGroup(
   createdBy: string,
   name: string,
@@ -282,12 +296,11 @@ export async function createGroup(
 ): Promise<string> {
   const groupRef = doc(collection(db, 'groups'));
   const ordered = [createdBy, ...members.filter((m) => m !== createdBy)];
-  const chunks: string[][] = [];
-  for (let i = 0; i < ordered.length; i += GROUP_MEMBERS_PER_WRITE) chunks.push(ordered.slice(i, i + GROUP_MEMBERS_PER_WRITE));
   await setDoc(groupRef, {
     name: name.trim(),
     createdBy,
-    members: chunks[0],
+    members: ordered.slice(0, GROUP_MEMBERS_PER_WRITE),
+    pendingMembers: ordered.slice(GROUP_MEMBERS_PER_WRITE),
     memberInfo,
     tripId: tripId ?? null,
     lastMessage: null,
@@ -295,16 +308,38 @@ export async function createGroup(
     unreadCounts: Object.fromEntries(ordered.map((m) => [m, 0])),
     createdAt: serverTimestamp(),
   });
-  try {
-    for (const chunk of chunks.slice(1)) {
-      await updateDoc(groupRef, { members: arrayUnion(...chunk) });
-    }
-  } catch (err) {
-    // A member was refused (e.g. account being deleted): don't leave a partial group.
-    await deleteDoc(groupRef).catch(() => {});
-    throw err;
-  }
+  await completeGroupCreation(groupRef.id);
   return groupRef.id;
+}
+
+/** Moves pending members into the group chunk by chunk; idempotent and safe to repeat. */
+export async function completeGroupCreation(groupId: string): Promise<void> {
+  const ref = doc(db, 'groups', groupId);
+  for (;;) {
+    const snap = await getDoc(ref);
+    const pending = (snap.exists() ? (snap.data().pendingMembers as string[] | undefined) : undefined) ?? [];
+    if (pending.length === 0) return;
+    const chunk = pending.slice(0, GROUP_MEMBERS_PER_WRITE);
+    try {
+      await updateDoc(ref, { members: arrayUnion(...chunk), pendingMembers: arrayRemove(...chunk) });
+    } catch (err) {
+      if ((err as { code?: string }).code === 'permission-denied') {
+        // Refused member: the group was never shown, so roll it back. If this
+        // delete is interrupted the group stays hidden and is retried on resume.
+        await deleteDoc(ref);
+      }
+      throw err;
+    }
+  }
+}
+
+const resumingGroups = new Set<string>();
+function resumeGroupCreation(groupId: string): void {
+  if (resumingGroups.has(groupId)) return;
+  resumingGroups.add(groupId);
+  completeGroupCreation(groupId)
+    .catch(() => {})
+    .finally(() => resumingGroups.delete(groupId));
 }
 
 export function subscribeToGroupMessages(

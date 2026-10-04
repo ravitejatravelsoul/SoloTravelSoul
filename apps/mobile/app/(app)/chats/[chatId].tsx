@@ -1,4 +1,5 @@
 import { useRef, useCallback, useEffect, useMemo } from 'react';
+import { useModerationActions } from '@/hooks/useModerationActions';
 import {
   View,
   FlatList,
@@ -37,6 +38,7 @@ export default function DirectChatScreen() {
 
   const directChats = useChatStore((s) => s.directChats);
   const chat = directChats.find((c) => c.id === chatId);
+  const moderation = useModerationActions();
   const otherUid = chat?.participants.find((p) => p !== uid);
   const otherInfo = otherUid ? chat?.participantInfo[otherUid] : null;
   // Stable reference — prevents sendMessage callback from being recreated every render
@@ -100,7 +102,18 @@ export default function DirectChatScreen() {
             {otherInfo?.name ?? 'Chat'}
           </Text>
         </View>
-        <View style={{ width: 34 }} />
+        {otherUid ? (
+          <TouchableOpacity
+            onPress={() => moderation.openMenu({ targetType: 'user', targetId: otherUid, authorId: otherUid, authorName: otherInfo?.name ?? '', label: 'User', onBlocked: () => router.back() })}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel="Report or block"
+            style={{ width: 34, alignItems: 'flex-end' }}
+          >
+            <Ionicons name="ellipsis-horizontal" size={22} color={Colors.textPrimary} />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 34 }} />
+        )}
       </View>
 
       {!isConnected && (

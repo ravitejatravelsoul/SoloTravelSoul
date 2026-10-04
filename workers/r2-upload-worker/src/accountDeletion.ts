@@ -671,9 +671,37 @@ export async function finalizePendingDeletions(deps: DeletionDeps): Promise<numb
   return finalized;
 }
 
-/** Cron entry: finish stranded jobs first, then sweep late media. */
-export async function runScheduledMaintenance(deps: DeletionDeps): Promise<{ finalized: number; swept: number }> {
+/**
+ * Continues deletions that stopped before reaching Auth removal (a failed
+ * step, a lost lease, or a Worker request that ran out of subrequests), so a
+ * started deletion completes without the user retrying. Runs the normal plan
+ * through deleteAccount, whose lease acquisition fences it against retries
+ * and other cron runs; jobs held by a live attempt are skipped.
+ */
+export async function resumeIncompleteDeletions(deps: DeletionDeps): Promise<number> {
+  const now = deps.now ?? Date.now;
+  const jobs = [
+    ...(await deps.store.query(JOBS, [{ field: 'status', op: 'EQUAL', value: 'failed' }])),
+    ...(await deps.store.query(JOBS, [{ field: 'status', op: 'EQUAL', value: 'in_progress' }])),
+  ];
+  let resumed = 0;
+  for (const job of jobs) {
+    if (job.data.pendingFinalization === true) continue; // finalizePendingDeletions owns these
+    if (job.data.status === 'in_progress' && num(job.data.leaseUntil) > now()) continue;
+    try {
+      await deleteAccount({ uid: lastSegment(job.path), email: null }, deps);
+      resumed++;
+    } catch {
+      // Recorded on the job (or another party holds it); the next run continues.
+    }
+  }
+  return resumed;
+}
+
+/** Cron entry: finish stranded jobs, continue stalled deletions, then sweep late media. */
+export async function runScheduledMaintenance(deps: DeletionDeps): Promise<{ finalized: number; resumed: number; swept: number }> {
   const finalized = await finalizePendingDeletions(deps);
+  const resumed = await resumeIncompleteDeletions(deps);
   const swept = await sweepRecentlyDeletedMedia(deps);
-  return { finalized, swept };
+  return { finalized, resumed, swept };
 }

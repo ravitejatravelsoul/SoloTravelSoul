@@ -181,6 +181,45 @@ function client(file, db) {
         assert.equal(big.docs[0].data().members.length, 14);
       });
     });
+    // Group creation interrupted between chunks or before rollback: the group is
+    // hidden from every member's list until the creator's client resumes it.
+    // Resolves with the first group list that satisfies `ready` (snapshots may come from cache first).
+    const groupsWhen = (mod, uid, ready) => new Promise((resolve, reject) => {
+      let unsub;
+      const timer = setTimeout(() => { unsub && unsub(); reject(new Error('group list never reached the expected state')); }, 8000);
+      unsub = mod.subscribeToGroups(uid, (groups) => {
+        if (!ready(groups)) return;
+        clearTimeout(timer); setTimeout(() => unsub && unsub(), 0); resolve(groups);
+      });
+    });
+    const has = (id) => (groups) => groups.some((g) => g.id === id);
+    // A complete group shared by actor and friend: a list containing it is server-confirmed.
+    await sdk.setDoc(sdk.doc(db, 'groups/marker'), { name: 'Marker', createdBy: 'actor', members: ['actor', 'friend'], memberInfo: {}, unreadCounts: {}, lastMessage: null, updatedAt: sdk.Timestamp.now() });
+    const firstGroups = (mod, uid) => groupsWhen(mod, uid, has('marker'));
+    // withSecurityRulesDisabled resolves to undefined, so capture the read explicitly.
+    const adminGet = async (p) => { let data; await env.withSecurityRulesDisabled(async (ctx) => { data = (await sdk.getDoc(sdk.doc(ctx.firestore(), p))).data(); }); return data; };
+    const friendChat = client('packages/firebase/src/chat.ts', env.authenticatedContext('friend').firestore());
+    const waitFor = async (fn) => { for (let i = 0; i < 50; i++) { if (await fn()) return true; await new Promise((r) => setTimeout(r, 100)); } return false; };
+    const groupData = (pending) => ({ name: 'Paused', createdBy: 'actor', members: ['actor', 'friend', ...Array.from({ length: 6 }, (_, i) => `p${i}`)],
+      pendingMembers: pending, memberInfo: {}, unreadCounts: {}, lastMessage: null, updatedAt: sdk.Timestamp.now() });
+    await check('interrupted group creation is hidden, then resumed by the creator', async () => {
+      // State left by an app killed after the first chunk.
+      await sdk.setDoc(sdk.doc(db, 'groups/interrupted'), groupData(['q1', 'q2', 'q3']));
+      assert.ok(!(await firstGroups(friendChat, 'friend')).some((g) => g.id === 'interrupted'), 'hidden from members while pending');
+      await firstGroups(chat, 'actor'); // creator's client sees it and resumes
+      assert.ok(await waitFor(async () => !((await adminGet('groups/interrupted'))?.pendingMembers?.length)));
+      assert.equal((await adminGet('groups/interrupted')).members.length, 11);
+      await groupsWhen(friendChat, 'friend', has('interrupted')); // visible once complete
+    });
+    await check('creation interrupted before rollback of a refused member is rolled back on resume', async () => {
+      await sdk.setDoc(sdk.doc(db, 'groups/refused'), groupData(['q1', 'gone']));
+      assert.ok(!(await firstGroups(friendChat, 'friend')).some((g) => g.id === 'refused'));
+      await assertFails(chat.completeGroupCreation('refused'));
+      assert.equal(await adminGet('groups/refused'), undefined, 'rolled back');
+      await sdk.setDoc(sdk.doc(db, 'groups/refused2'), groupData(['gone']));
+      await firstGroups(chat, 'actor');
+      assert.ok(await waitFor(async () => (await adminGet('groups/refused2')) === undefined), 'resume rolls back too');
+    });
     await env.withSecurityRulesDisabled(ctx => sdk.setDoc(sdk.doc(ctx.firestore(), 'blocks/owner/blocked/actor'), {}));
     await check('blocked sender cannot send', () => assertFails(chat.sendDirectMessage('chat', 'actor', 'Blocked', 'blocked', ['owner'])));
     console.log(`${checks} release rule checks passed`);

@@ -33,7 +33,7 @@ function deletionErrorMessage(code: string): string {
     case 'auth/network-request-failed':
       return 'Network error. Deletion may already have started — please reconnect and try again to make sure it completes.';
     default:
-      return 'Account deletion did not finish. Some of your data may already be deleted and your account is locked against changes. Please try again to complete it.';
+      return 'Account deletion did not finish. Some of your data may already be deleted and your account is locked against changes. You can try again now; otherwise we finish it automatically within a few hours.';
   }
 }
 

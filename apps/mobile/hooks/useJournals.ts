@@ -10,6 +10,7 @@ import {
   unlikeJournal,
   isJournalLiked,
 } from '@solotravelsoul/firebase';
+import { useWithoutBlocked } from './useWithoutBlocked';
 import { useAuthStore } from '@/stores/authStore';
 import type { TravelJournal } from '@solotravelsoul/shared';
 
@@ -46,7 +47,7 @@ export function useExploreJournals(limit = 20) {
     return () => { unsubRef.current?.(); unsubRef.current = null; };
   }, [limit]);
 
-  return { journals, loading };
+  return { journals: useWithoutBlocked(journals), loading };
 }
 
 export function useLikeJournal(journalId: string) {

@@ -34,7 +34,7 @@ function mobile(file, deps) {
     module: m, exports: m.exports, console: { error() {}, log() {} },
     process: { env: { EXPO_PUBLIC_R2_UPLOAD_WORKER_URL: 'https://worker.test/' } },
     require: (n) => { if (n in deps) return deps[n]; throw Error('Unexpected ' + n); },
-    Promise, Error, Object, JSON, Set, Map, Array, String, fetch: (...a) => global.fetch(...a),
+    Promise, Error, Object, JSON, Set, Map, Array, String, fetch: (...a) => global.fetch(...a), __DEV__: false,
   }, { filename: file });
   return m.exports;
 }
@@ -771,14 +771,14 @@ test('final completed-job write fails: late media is still swept and scheduled f
   // Recovery never acts under a live lease; once the dead attempt's lease lapses it finishes.
   restore();
   h.r2.objects.add(`profile_photos/${ME}/later.jpg`);
-  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, swept: 1 });
+  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, resumed: 0, swept: 1 });
   h.advance(LEASE_MS + 1);
-  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 1, swept: 1 });
+  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 1, resumed: 0, swept: 1 });
   job = (await store.get(`accountDeletions/${ME}`)).data;
   assert.deepEqual([job.status, job.pendingFinalization, job.recoveredBy], ['completed', false, 'scheduled-finalization']);
   assert.equal(h.authCalls.length, 1, 'no second Auth removal needed');
   await expectState(store, h);
-  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, swept: 1 }, 'idempotent');
+  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, resumed: 0, swept: 1 }, 'idempotent');
 });
 
 test('Auth removal failed after media was cleared: finalization removes Auth without the user, but never under an active attempt', async () => {
@@ -988,7 +988,8 @@ test('entry point: barrier read through Firestore REST blocks uploads; final-wri
     assert.equal(resp.status, 200);
     const stored = (await resp.json()).photoURL.replace('https://cdn.test/', '');
     bucket.objects.delete(stored);
-    await store.commit([{ kind: 'update', path: `accountDeletions/${CAROL}`, set: { uid: CAROL, status: 'in_progress' }, mustExist: false }]);
+    // CAROL's deletion is actively running elsewhere (live lease), so maintenance leaves it alone.
+    await store.commit([{ kind: 'update', path: `accountDeletions/${CAROL}`, set: { uid: CAROL, status: 'in_progress', attemptId: 'elsewhere', leaseUntil: Date.now() + 60 * 60 * 1000 }, mustExist: false }]);
     const puts = bucket.puts;
     resp = await workerIndex().fetch(multipart(await idToken(keys, CAROL)), env);
     assert.deepEqual([resp.status, (await resp.json()).code, bucket.puts], [403, 'account/deletion-in-progress', puts]);
@@ -1018,6 +1019,123 @@ test('entry point: barrier read through Firestore REST blocks uploads; final-wri
     fakes.restore();
   }
 }, 'emulator');
+
+// ── Stalled deletions complete without the user ───────────────────────────────
+
+test('a deletion that failed mid-way (e.g. out of Worker subrequests) is finished by the cron', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  h.r2.failNext = 1; // stands in for "Too many subrequests" / any mid-plan failure
+  await assert.rejects(deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps), (e) => e.step === 'r2Media');
+  assert.equal(h.authCalls.length, 0);
+  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, resumed: 1, swept: 1 });
+  assert.equal(await h.deps.authUserExists(ME), false, 'completed without the user signing in again');
+  await expectState(store, h);
+});
+
+test('cron resumes an attempt whose lease lapsed mid-plan, but never one with a live lease', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  const base = store.commit.bind(store);
+  let stalled = false;
+  store.commit = async (writes) => {
+    if (!stalled && writes.some((w) => w.path.startsWith('follows/'))) { stalled = true; h.advance(LEASE_MS + 1); }
+    return base(writes);
+  };
+  await assert.rejects(deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps), deletion.DeletionAttemptLost);
+  store.commit = base;
+  // A different account mid-deletion under a live lease must be left alone.
+  await store.commit([{ kind: 'update', path: `accountDeletions/${BOB}`, mustExist: false,
+    set: { uid: BOB, status: 'in_progress', attemptId: 'other', leaseUntil: h.now() + LEASE_MS } }]);
+  const result = await deletion.runScheduledMaintenance(h.deps);
+  assert.equal(result.resumed, 1);
+  assert.equal((await store.get(`accountDeletions/${BOB}`)).data.attemptId, 'other');
+  assert.ok(await store.get(`users/${BOB}`));
+  await expectState(store, h);
+});
+
+// ── Google Play web deletion resource and operator fulfilment ─────────────────
+
+test('entry point: GET /account-deletion serves the web deletion request page', async () => {
+  const resp = await workerIndex().fetch(new Request('https://worker.test/account-deletion'), { R2_BUCKET: fakeR2(), FIREBASE_PROJECT_ID: PROJECT });
+  const html = await resp.text();
+  assert.equal(resp.status, 200);
+  assert.match(resp.headers.get('Content-Type'), /text\/html/);
+  for (const needle of ['SoloTravelSoul', 'mailto:privacy@solotravelsoul.app', 'Delete account', 'What is deleted', 'What is kept']) {
+    assert.ok(html.includes(needle), needle);
+  }
+}, 'memory');
+
+test('entry point: operator deletion endpoint is disabled without a token and rejects bad tokens or input', async () => {
+  const req = (auth, body) => new Request('https://worker.test/admin/account-deletion', {
+    method: 'POST', headers: auth ? { Authorization: auth, 'Content-Type': 'application/json' } : {}, body: JSON.stringify(body ?? { uid: ME }),
+  });
+  const env = (token, secret) => ({ R2_BUCKET: fakeR2(), FIREBASE_PROJECT_ID: PROJECT, FIREBASE_STORAGE_BUCKET: 'b', ADMIN_DELETION_TOKEN: token, GOOGLE_SERVICE_ACCOUNT_JSON: secret });
+  assert.equal((await workerIndex().fetch(req('Bearer anything'), env(undefined))).status, 404);
+  assert.equal((await workerIndex().fetch(req('Bearer wrong-token'), env('right-token'))).status, 403);
+  assert.equal((await workerIndex().fetch(req(null), env('right-token'))).status, 403);
+  assert.equal((await workerIndex().fetch(req('Bearer right-token', { uid: '../users' }), env('right-token'))).status, 400);
+  assert.equal((await workerIndex().fetch(req('Bearer right-token'), env('right-token'))).status, 503, 'no deletion credentials');
+}, 'memory');
+
+test('entry point: operator deletion fulfils a web request with the full plan', async () => {
+  const keys = await rsaKeys();
+  const store = await newStore(); await seed(store);
+  const h = harness(store);
+  const bucket = fakeR2(h.r2.objects);
+  const storageObjects = new Set(h.storage.objects);
+  const authUsers = new Set([ME, BOB]);
+  const fakes = installGoogleFakes(keys, { storageObjects, authUsers });
+  const env = { R2_BUCKET: bucket, PUBLIC_R2_BASE_URL: 'https://cdn.test', FIREBASE_PROJECT_ID: PROJECT, FIREBASE_STORAGE_BUCKET: 'bucket',
+    GOOGLE_SERVICE_ACCOUNT_JSON: keys.serviceAccount, ADMIN_DELETION_TOKEN: 'operator-secret' };
+  try {
+    const resp = await workerIndex().fetch(new Request('https://worker.test/admin/account-deletion', {
+      method: 'POST', headers: { Authorization: 'Bearer operator-secret', 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: ME }),
+    }), env);
+    assert.deepEqual([resp.status, await resp.json()], [200, { status: 'deleted', uid: ME }]);
+    assert.deepEqual(fakes.state.authDeletes, [ME]);
+    await expectState(store, { r2: { objects: bucket.objects }, storage: { objects: storageObjects } });
+  } finally {
+    fakes.restore();
+  }
+}, 'emulator');
+
+// ── Client and store-policy regressions ───────────────────────────────────────
+
+test('client: photo picking never requests broad media-library permission (Play photo policy)', async () => {
+  let permissionRequested = false;
+  const picker = mobile('apps/mobile/utils/imageUtils.ts', {
+    'expo-image-picker': {
+      requestMediaLibraryPermissionsAsync: async () => { permissionRequested = true; return { status: 'denied' }; },
+      launchImageLibraryAsync: async () => ({ canceled: false, assets: [{ uri: 'file:///picked.jpg' }] }),
+    },
+    'expo-image-manipulator': {},
+  });
+  assert.equal(await picker.pickImageFromLibrary(), 'file:///picked.jpg');
+  assert.equal(permissionRequested, false);
+}, 'memory');
+
+test('client: blocked users\' posts, journals and comments are hidden', async () => {
+  let blocked = [BOB];
+  const filter = mobile('apps/mobile/hooks/useWithoutBlocked.ts', {
+    react: { useMemo: (f) => f() },
+    '@/stores/blockStore': { useBlockStore: (sel) => sel({ blockedUids: blocked }) },
+  });
+  const items = [{ authorId: BOB, id: 1 }, { authorId: CAROL, id: 2 }];
+  assert.deepEqual(filter.useWithoutBlocked(items).map((i) => i.id), [2]);
+  blocked = [];
+  assert.equal(filter.useWithoutBlocked(items).length, 2);
+}, 'memory');
+
+test('store config: restricted Android permissions blocked, release builds auto-increment', async () => {
+  const app = JSON.parse(fs.readFileSync(path.join(root, 'apps/mobile/app.json'), 'utf8')).expo;
+  const eas = JSON.parse(fs.readFileSync(path.join(root, 'apps/mobile/eas.json'), 'utf8'));
+  for (const p of ['READ_MEDIA_IMAGES', 'READ_EXTERNAL_STORAGE', 'SCHEDULE_EXACT_ALARM', 'USE_EXACT_ALARM', 'RECORD_AUDIO']) {
+    assert.ok(!app.android.permissions.includes(`android.permission.${p}`), p);
+    assert.ok(app.android.blockedPermissions.includes(`android.permission.${p}`), `${p} blocked`);
+  }
+  assert.equal(eas.build.production.autoIncrement, true);
+  assert.equal(eas.build.production.environment, 'production');
+  assert.equal(app.ios.config.usesNonExemptEncryption, false);
+}, 'memory');
 
 (async () => {
   let passed = 0;

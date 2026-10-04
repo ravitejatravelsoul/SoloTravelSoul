@@ -22,12 +22,16 @@ const SECTIONS = [
     body: 'You agree not to misuse the service, attempt unauthorized access, or use the app for commercial purposes without written permission.',
   },
   {
-    title: '5. Disclaimer',
+    title: '5. Community standards',
+    body: 'SoloTravelSoul has zero tolerance for objectionable content and abusive users. Do not post or send content that is illegal, sexually explicit, hateful, harassing, threatening, violent, deceptive or that infringes the rights of others, and do not impersonate anyone. You can report posts, journals, comments, messages, profiles, trips and groups, and block any user, from the app. We review reports, remove content that breaks these rules and suspend or remove the accounts responsible.',
+  },
+  {
+    title: '6. Disclaimer',
     body: 'SoloTravelSoul is provided "as is" without warranty of any kind. Travel information shown in the app (local attractions, recommendations) is for inspiration only. Always verify travel requirements, safety conditions, and entry requirements from official sources before traveling.',
   },
   {
-    title: '6. Changes',
-    body: 'We may update these terms. Continued use after changes constitutes acceptance. We will notify you of material changes via the app.\n\nLast updated: May 2026\n\nContact: legal@solotravelsoul.app',
+    title: '7. Changes',
+    body: 'We may update these terms. Continued use after changes constitutes acceptance. We will notify you of material changes via the app.\n\nLast updated: October 2026\n\nContact: legal@solotravelsoul.app',
   },
 ];
 

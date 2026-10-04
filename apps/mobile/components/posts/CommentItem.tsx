@@ -1,5 +1,6 @@
 import { memo, useState, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert, TextInput } from 'react-native';
+import { useModerationActions } from '@/hooks/useModerationActions';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, Avatar } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
@@ -29,8 +30,15 @@ export const CommentItem = memo(function CommentItem({ comment, onReply, onDelet
   const [editText, setEditText] = useState(comment.text);
   const isOwner = myUid === comment.authorId;
 
+  const moderation = useModerationActions();
+
   const handleLongPress = useCallback(() => {
-    if (!isOwner) return;
+    if (!isOwner) {
+      if (!comment.isDeleted) {
+        moderation.openMenu({ targetType: 'comment', targetId: comment.commentId, authorId: comment.authorId, authorName: comment.authorName, label: 'Comment' });
+      }
+      return;
+    }
     Alert.alert('Comment', undefined, [
       { text: 'Edit', onPress: () => setEditing(true) },
       {
@@ -40,7 +48,7 @@ export const CommentItem = memo(function CommentItem({ comment, onReply, onDelet
       },
       { text: 'Cancel', style: 'cancel' },
     ]);
-  }, [isOwner, comment, onDelete]);
+  }, [isOwner, comment, onDelete, moderation]);
 
   const handleEditSave = useCallback(() => {
     if (editText.trim() && editText.trim() !== comment.text) {

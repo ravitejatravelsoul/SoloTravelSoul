@@ -7,6 +7,7 @@ import {
   subscribeReplies,
   createSocialNotification,
 } from '@solotravelsoul/firebase';
+import { useWithoutBlocked } from './useWithoutBlocked';
 import { useAuthStore } from '@/stores/authStore';
 import type { PostComment } from '@solotravelsoul/shared';
 
@@ -71,7 +72,7 @@ export function useComments(postId: string, postAuthorId: string) {
     await editComment(commentId, text.trim());
   }, []);
 
-  return { comments, loading, submitting, submit, remove, edit };
+  return { comments: useWithoutBlocked(comments), loading, submitting, submit, remove, edit };
 }
 
 // ── useReplies — for a single comment thread ──────────────────────────────────
@@ -96,5 +97,5 @@ export function useReplies(parentCommentId: string) {
     return () => { unsubRef.current?.(); unsubRef.current = null; };
   }, []);
 
-  return { replies, loading, expanded, expand };
+  return { replies: useWithoutBlocked(replies), loading, expanded, expand };
 }

@@ -11,6 +11,7 @@ import {
   unlikePost,
   isPostLiked,
 } from '@solotravelsoul/firebase';
+import { useWithoutBlocked } from './useWithoutBlocked';
 import { useAuthStore } from '@/stores/authStore';
 import type { TravelPost, PostType, PostVisibility } from '@solotravelsoul/shared';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
@@ -55,7 +56,7 @@ export function useExplorePosts(limit = 30) {
     return () => { unsubRef.current?.(); unsubRef.current = null; };
   }, [limit]);
 
-  return { posts, loading };
+  return { posts: useWithoutBlocked(posts), loading };
 }
 
 // ── useFeedPosts — posts from followed users for "For You" feed ───────────────
@@ -74,7 +75,7 @@ export function useFeedPosts(followingIds: string[], limit = 50) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsKey, limit]);
 
-  return { posts, loading };
+  return { posts: useWithoutBlocked(posts), loading };
 }
 
 // ── useLikePost ───────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { verifyFirebaseToken } from './auth';
-import { handleAccountDeletion } from './accountRoute';
+import { handleAccountDeletion, handleAdminAccountDeletion } from './accountRoute';
+import { accountDeletionPage } from './deletionPage';
 import { runScheduledMaintenance, type DeletionDeps } from './accountDeletion';
 import { FirestoreRest, type DocStore } from './firestoreRest';
 import { firebaseStorageDeleter, r2Deleter } from './objectStores';
@@ -14,6 +15,8 @@ export interface Env {
   FIREBASE_STORAGE_BUCKET?: string;
   /** Secret: service-account JSON used only for account deletion (wrangler secret put). */
   GOOGLE_SERVICE_ACCOUNT_JSON?: string;
+  /** Secret: operator bearer token for POST /admin/account-deletion (unset = disabled). */
+  ADMIN_DELETION_TOKEN?: string;
 }
 
 function deletionDeps(env: Env): DeletionDeps | null {
@@ -78,6 +81,18 @@ export default {
     }
 
     const { pathname } = new URL(request.url);
+
+    if (request.method === 'GET' && pathname === '/account-deletion') {
+      return accountDeletionPage();
+    }
+
+    if (request.method === 'POST' && pathname === '/admin/account-deletion') {
+      return handleAdminAccountDeletion(request, {
+        adminToken: env.ADMIN_DELETION_TOKEN,
+        deletion: () => deletionDeps(env),
+        json,
+      });
+    }
 
     if (request.method === 'POST' && pathname === '/upload/profile-photo') {
       return upload(request, env, PROFILE_PHOTO);

@@ -4,6 +4,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen, Text, Divider } from '@/components/ui';
 import { Colors, Spacing } from '@/constants/theme';
 
+// Google Play requires a web resource for deletion requests (no app needed).
+const WORKER_URL = (process.env.EXPO_PUBLIC_R2_UPLOAD_WORKER_URL ?? '').replace(/\/$/, '');
+const DELETION_WEB_REQUEST = WORKER_URL
+  ? ` You can also request deletion without the app at ${WORKER_URL}/account-deletion.`
+  : '';
+
 const SECTIONS = [
   {
     title: 'What we collect',
@@ -23,7 +29,7 @@ const SECTIONS = [
   },
   {
     title: 'Data deletion',
-    body: 'You can delete your account at any time from the Profile screen after confirming your password. Deletion permanently removes your profile, trips, itinerary, checklists, journal entries, saved places, public profile, traveler discovery data, travel posts, travel journals, likes, saves, follows, notifications, place reviews, activity feed items, join requests, the community trips and groups you created, and the photos you uploaded to our storage. Comments you left on posts by other travelers are replaced with an empty "Deleted User" placeholder so replies by others stay readable. Messages you sent in group or direct chats remain visible to the other participants, labelled "Deleted User". Safety reports you submitted are kept for moderation. Once deletion starts your account can no longer be changed. If deletion is interrupted, some of your data may already be removed; your login is kept so you can sign in and retry until it completes. To request assistance with data removal, email privacy@solotravelsoul.app.',
+    body: 'You can delete your account at any time from the Profile screen after confirming your password. Deletion permanently removes your profile, trips, itinerary, checklists, journal entries, saved places, public profile, traveler discovery data, travel posts, travel journals, likes, saves, follows, notifications, place reviews, activity feed items, join requests, the community trips and groups you created, and the photos you uploaded to our storage. Comments you left on posts by other travelers are replaced with an empty "Deleted User" placeholder so replies by others stay readable. Messages you sent in group or direct chats remain visible to the other participants, labelled "Deleted User". Safety reports you submitted are kept for moderation. Once deletion starts your account can no longer be changed. If deletion is interrupted, some of your data may already be removed; we finish the deletion automatically, usually within a few hours, and you can also sign in and retry it.' + DELETION_WEB_REQUEST + ' To request assistance with data removal, email privacy@solotravelsoul.app.',
   },
   {
     title: 'Community features',

@@ -144,6 +144,7 @@ export {
   markDirectChatRead,
   subscribeToGroups,
   createGroup,
+  completeGroupCreation,
   subscribeToGroupMessages,
   sendGroupMessage,
   markGroupRead,
