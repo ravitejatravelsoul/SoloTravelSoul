@@ -7,11 +7,56 @@ service cloud.firestore {
     // (accountDeletions/{uid} exists), no token for that UID can write anything
     // again — including tokens still valid on other devices. Deletion itself,
     // and its retries, run server-side with Admin credentials.
+    // ── Moderation ─────────────────────────────────────────────────────
+    // moderators/{uid} is managed by the project owner (console/Admin only).
+    function isModerator() {
+      return request.auth != null && exists(/databases/$(database)/documents/moderators/$(request.auth.uid));
+    }
+    function suspended(uid) {
+      return exists(/databases/$(database)/documents/accountSuspensions/$(uid));
+    }
+    // Server-side content filter for public text; pattern generated from
+    // packages/shared/src/moderation.ts (BLOCKED_TERMS_RULES_PATTERN) — a
+    // release test fails if they differ.
+    function clean(value) {
+      return !(value is string) || !value.matches('(?is).*\\b(fuck\\w*|motherfuck\\w*|cunts?|pussy|porn\\w*|blowjobs?|handjobs?|rap(e|ist|ists)|p(a)?edophil\\w*|nigg(er|ers|a|as)|faggots?|fags|retards?|kikes?|trann(y|ies)|whores?|sluts?|kill yourself|kys)\\b.*');
+    }
+    function cleanFields(data, keys) {
+      return clean(data.get(keys[0], null)) && (keys.size() < 2 || clean(data.get(keys[1], null)))
+        && (keys.size() < 3 || clean(data.get(keys[2], null))) && (keys.size() < 4 || clean(data.get(keys[3], null)));
+    }
+    // A reporter's +1 on a post/journal, backed by their report created in the
+    // same write. At the hide threshold a public item must become 'under_review'.
+    function reportStep(id, type) {
+      let report = /databases/$(database)/documents/reports/$(type + '___' + id + '___' + request.auth.uid);
+      let next = request.resource.data.get('reportCount', 0);
+      let keys = request.resource.data.diff(resource.data).affectedKeys();
+      let mustHide = next >= 3 && resource.data.get('visibility', 'public') == 'public';
+      return !exists(report) && existsAfter(report)
+        && next == resource.data.get('reportCount', 0) + 1
+        && (mustHide
+          ? keys.hasOnly(['reportCount', 'visibility']) && request.resource.data.visibility == 'under_review'
+          : keys.hasOnly(['reportCount']));
+    }
+    // Authors cannot undo moderation (under_review / removed).
+    function authorKeepsModeration() {
+      return !(resource.data.get('visibility', 'public') in ['under_review', 'removed'])
+        || request.resource.data.get('visibility', 'public') == resource.data.get('visibility', 'public');
+    }
+    function moderatorSetsVisibility() {
+      return isModerator()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visibility', 'reportCount', 'moderatedBy', 'moderatedAt'])
+        && request.resource.data.visibility in ['public', 'private', 'under_review', 'removed']
+        && request.resource.data.get('reportCount', 0) in [0, resource.data.get('reportCount', 0)]
+        && request.resource.data.moderatedBy == request.auth.uid && request.resource.data.moderatedAt == request.time;
+    }
+
     function deleting(uid) {
       return exists(/databases/$(database)/documents/accountDeletions/$(uid));
     }
+    // Writes are refused for accounts being deleted or suspended by a moderator.
     function notDeleting() {
-      return request.auth == null || !deleting(request.auth.uid);
+      return request.auth == null || (!deleting(request.auth.uid) && !suspended(request.auth.uid));
     }
     // No new inbound relationships (likes, saves, follows, comments, replies,
     // memberships, join requests) may target an account being deleted.
@@ -37,7 +82,8 @@ service cloud.firestore {
     }
     function visible(data) {
       return request.auth != null && (data.authorId == request.auth.uid
-        || (data.get('visibility', 'private') == 'public' && !data.get('isArchived', false)));
+        || (data.get('visibility', 'private') == 'public' && !data.get('isArchived', false))
+        || isModerator());
     }
     function readablePost(id) {
       return exists(/databases/$(database)/documents/travelPosts/$(id))
@@ -337,10 +383,12 @@ service cloud.firestore {
         || (resource != null && resource.data.get('profileVisibility', 'public') == 'public' && unblocked(request.auth.uid, uid)));
       allow list: if request.auth != null && resource.data.get('profileVisibility', 'public') == 'public';
       allow create: if notDeleting() && (request.auth != null && request.auth.uid == uid
-        && request.resource.data.get('followersCount', 0) == 0 && request.resource.data.get('followingCount', 0) == 0);
+        && request.resource.data.get('followersCount', 0) == 0 && request.resource.data.get('followingCount', 0) == 0
+        && cleanFields(request.resource.data, ['displayName', 'bio', 'currentCity']));
       allow delete: if notDeleting() && (request.auth != null && request.auth.uid == uid);
       allow update: if notDeleting() && (request.auth != null && (
-        (request.auth.uid == uid && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['followersCount', 'followingCount']))
+        (request.auth.uid == uid && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['followersCount', 'followingCount'])
+          && cleanFields(request.resource.data, ['displayName', 'bio', 'currentCity']))
         || followerCounter(uid) || followingCounter(uid)));
     }
 
@@ -348,10 +396,12 @@ service cloud.firestore {
     match /publicTrips/{tripId} {
       allow read: if request.auth != null;
       allow create: if notDeleting() && (request.auth != null
-        && request.resource.data.ownerUid == request.auth.uid);
+        && request.resource.data.ownerUid == request.auth.uid
+        && cleanFields(request.resource.data, ['title', 'description', 'destination']));
       allow update: if notDeleting() && (request.auth != null
         && resource != null
-        && resource.data.ownerUid == request.auth.uid);
+        && resource.data.ownerUid == request.auth.uid
+        && cleanFields(request.resource.data, ['title', 'description', 'destination']));
       // Allow delete even when doc doesn't exist (batch delete when trip goes private).
       allow delete: if notDeleting() && (request.auth != null
         && (resource == null
@@ -414,10 +464,12 @@ service cloud.firestore {
             || resource.data.visibility == 'public'
             || resource.data.ownerUid == request.auth.uid);
       allow create: if notDeleting() && (request.auth != null
-        && request.resource.data.ownerUid == request.auth.uid);
+        && request.resource.data.ownerUid == request.auth.uid
+        && cleanFields(request.resource.data, ['name', 'description', 'rules', 'destination']));
       allow update: if notDeleting() && (request.auth != null
         && resource != null
-        && resource.data.ownerUid == request.auth.uid);
+        && resource.data.ownerUid == request.auth.uid
+        && cleanFields(request.resource.data, ['name', 'description', 'rules', 'destination']));
       allow delete: if notDeleting() && (request.auth != null
         && resource != null
         && resource.data.ownerUid == request.auth.uid);
@@ -489,32 +541,71 @@ service cloud.firestore {
     }
 
     // ── Community: Reports ────────────────────────────────────────────
+    // One report per reporter and target ({type}___{targetId}___{reporterUid}).
+    // Reports on posts/journals increment the target's reportCount in the same
+    // write (reportStep); only moderators can list, read others' or review.
     match /reports/{reportId} {
       allow create: if notDeleting() && (request.auth != null
-        && request.resource.data.reporterUid == request.auth.uid);
-      allow read: if false;
-      allow update, delete: if false;
+        && request.resource.data.reporterUid == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.targetType in ['user', 'trip', 'group', 'message', 'post', 'journal', 'comment']
+        && request.resource.data.targetId is string
+        && reportId == request.resource.data.targetType + '___' + request.resource.data.targetId + '___' + request.auth.uid
+        && (!(request.resource.data.targetType in ['post', 'journal'])
+          || linkedCounter(request.resource.data.targetType == 'post' ? 'travelPosts' : 'travelJournals',
+               request.resource.data.targetId, 'reportCount', 1)));
+      allow get: if request.auth != null && (resource == null || resource.data.reporterUid == request.auth.uid || isModerator());
+      allow list: if isModerator();
+      allow update: if notDeleting() && isModerator()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'resolution', 'reviewedBy', 'reviewedAt'])
+        && request.resource.data.status in ['reviewing', 'actioned', 'dismissed']
+        && request.resource.data.reviewedBy == request.auth.uid && request.resource.data.reviewedAt == request.time;
+      allow delete: if false;
+    }
+
+    // ── Moderation roles and suspensions ──────────────────────────────
+    match /moderators/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list, write: if false;
+    }
+    match /accountSuspensions/{uid} {
+      allow get: if request.auth != null && (request.auth.uid == uid || isModerator());
+      allow list: if isModerator();
+      allow create: if notDeleting() && isModerator() && uid != request.auth.uid
+        && request.resource.data.suspendedBy == request.auth.uid && request.resource.data.createdAt == request.time
+        && request.resource.data.reason is string && request.resource.data.reason.size() <= 500;
+      allow delete: if notDeleting() && isModerator();
+      allow update: if false;
     }
 
     // ── Phase 2: Travel Posts and Journals ────────────────────────────
     match /travelPosts/{postId} {
       allow read: if visible(resource.data);
       allow create: if notDeleting() && (request.auth != null && request.resource.data.authorId == request.auth.uid
-        && request.resource.data.likeCount == 0 && request.resource.data.commentCount == 0 && request.resource.data.saveCount == 0);
+        && request.resource.data.likeCount == 0 && request.resource.data.commentCount == 0 && request.resource.data.saveCount == 0
+        && request.resource.data.get('reportCount', 0) == 0
+        && !(request.resource.data.get('visibility', 'public') in ['under_review', 'removed'])
+        && cleanFields(request.resource.data, ['caption', 'body', 'location', 'country']));
       allow update: if notDeleting() && (request.auth != null && (
         (resource.data.authorId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['caption', 'body', 'location', 'country', 'hashtags', 'visibility', 'images', 'updatedAt', 'isArchived']))
-        || likeCounter(postId, 'post') || saveCounter(postId) || commentCounter(postId)));
+          .hasOnly(['caption', 'body', 'location', 'country', 'hashtags', 'visibility', 'images', 'updatedAt', 'isArchived'])
+          && authorKeepsModeration() && cleanFields(request.resource.data, ['caption', 'body', 'location', 'country']))
+        || likeCounter(postId, 'post') || saveCounter(postId) || commentCounter(postId)
+        || reportStep(postId, 'post') || moderatorSetsVisibility()));
       allow delete: if notDeleting() && (request.auth != null && resource.data.authorId == request.auth.uid);
     }
     match /travelJournals/{journalId} {
       allow read: if visible(resource.data);
       allow create: if notDeleting() && (request.auth != null && request.resource.data.authorId == request.auth.uid
-        && request.resource.data.likeCount == 0 && request.resource.data.commentCount == 0 && request.resource.data.saveCount == 0);
+        && request.resource.data.likeCount == 0 && request.resource.data.commentCount == 0 && request.resource.data.saveCount == 0
+        && request.resource.data.get('reportCount', 0) == 0
+        && !(request.resource.data.get('visibility', 'public') in ['under_review', 'removed'])
+        && cleanFields(request.resource.data, ['title', 'subtitle', 'body', 'location']));
       allow update: if notDeleting() && (request.auth != null && (
         (resource.data.authorId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['title', 'subtitle', 'body', 'coverImageURL', 'images', 'location', 'country', 'hashtags', 'visibility', 'readTimeMinutes', 'updatedAt', 'isArchived']))
-        || likeCounter(journalId, 'journal')));
+          .hasOnly(['title', 'subtitle', 'body', 'coverImageURL', 'images', 'location', 'country', 'hashtags', 'visibility', 'readTimeMinutes', 'updatedAt', 'isArchived'])
+          && authorKeepsModeration() && cleanFields(request.resource.data, ['title', 'subtitle', 'body', 'location']))
+        || likeCounter(journalId, 'journal') || reportStep(journalId, 'journal') || moderatorSetsVisibility()));
       allow delete: if notDeleting() && (request.auth != null && resource.data.authorId == request.auth.uid);
     }
     match /postLikes/{likeId} {
@@ -568,16 +659,21 @@ service cloud.firestore {
         && (request.resource.data.get('parentCommentId', null) == null
           || !deleting(authorOf('postComments', request.resource.data.parentCommentId)))
         && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 500
+        && clean(request.resource.data.text)
         && request.resource.data.replyCount == 0 && request.resource.data.isDeleted == false
         && postCommentLinked(commentId, request.resource.data.postId, 1) && replyLinked(request.resource.data, commentId, 1));
       allow update: if notDeleting() && (request.auth != null && (
         (resource.data.authorId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'updatedAt'])
           && resource.data.isDeleted == false && request.resource.data.text is string
-          && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 500)
+          && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 500
+          && clean(request.resource.data.text) && resource.data.get('moderationRemoved', false) == false)
         || (resource.data.authorId == request.auth.uid && resource.data.isDeleted == false && request.resource.data.isDeleted == true
           && request.resource.data.text == '' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isDeleted', 'text', 'updatedAt'])
           && postCommentLinked(commentId, resource.data.postId, -1) && replyLinked(resource.data, commentId, -1))
-        || replyCounter(commentId)));
+        || replyCounter(commentId)
+        || (isModerator() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'moderationRemoved', 'moderatedBy', 'moderatedAt'])
+          && request.resource.data.text == '' && request.resource.data.moderationRemoved == true
+          && request.resource.data.moderatedBy == request.auth.uid && request.resource.data.moderatedAt == request.time)));
       allow delete: if false;
     }
 

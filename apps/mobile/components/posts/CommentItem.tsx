@@ -34,7 +34,7 @@ export const CommentItem = memo(function CommentItem({ comment, onReply, onDelet
 
   const handleLongPress = useCallback(() => {
     if (!isOwner) {
-      if (!comment.isDeleted) {
+      if (!comment.isDeleted && !comment.moderationRemoved) {
         moderation.openMenu({ targetType: 'comment', targetId: comment.commentId, authorId: comment.authorId, authorName: comment.authorName, label: 'Comment' });
       }
       return;
@@ -59,10 +59,10 @@ export const CommentItem = memo(function CommentItem({ comment, onReply, onDelet
 
   const initials = getUserInitials(comment.authorName);
 
-  if (comment.isDeleted) {
+  if (comment.isDeleted || comment.moderationRemoved) {
     return (
       <View style={[styles.row, isReply && styles.replyRow]}>
-        <Text style={styles.deleted}>(Comment deleted)</Text>
+        <Text style={styles.deleted}>{comment.moderationRemoved ? '(Removed by a moderator)' : '(Comment deleted)'}</Text>
       </View>
     );
   }

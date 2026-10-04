@@ -1,6 +1,7 @@
 import { verifyFirebaseToken } from './auth';
-import { handleAccountDeletion, handleAdminAccountDeletion } from './accountRoute';
+import { handleAccountDeletion, handleAdminAccountDeletion, handleAdminDeletionStatus } from './accountRoute';
 import { accountDeletionPage } from './deletionPage';
+import { handleRemoveMedia } from './moderationRoute';
 import { runScheduledMaintenance, type DeletionDeps } from './accountDeletion';
 import { FirestoreRest, type DocStore } from './firestoreRest';
 import { firebaseStorageDeleter, r2Deleter } from './objectStores';
@@ -66,7 +67,9 @@ async function upload(request: Request, env: Env, kind: UploadKind): Promise<Res
   }
   return handlePhotoUpload(request, kind, {
     verify: (token) => verifyFirebaseToken(token, env.FIREBASE_PROJECT_ID),
-    isDeleting: async (uid) => !!(await store.get(`accountDeletions/${uid}`)),
+    // Accounts being deleted or suspended by a moderator cannot upload.
+    isDeleting: async (uid) =>
+      !!(await store.get(`accountDeletions/${uid}`)) || !!(await store.get(`accountSuspensions/${uid}`)),
     bucket: env.R2_BUCKET,
     publicBaseUrl: env.PUBLIC_R2_BASE_URL,
     json,
@@ -84,6 +87,20 @@ export default {
 
     if (request.method === 'GET' && pathname === '/account-deletion') {
       return accountDeletionPage();
+    }
+
+    if (request.method === 'POST' && pathname === '/moderation/remove-media') {
+      return handleRemoveMedia(request, {
+        verify: (token) => verifyFirebaseToken(token, env.FIREBASE_PROJECT_ID),
+        store: barrierStore(env),
+        bucket: env.R2_BUCKET,
+        publicBaseUrl: env.PUBLIC_R2_BASE_URL,
+        json,
+      });
+    }
+
+    if (request.method === 'GET' && pathname === '/admin/deletion-status') {
+      return handleAdminDeletionStatus(request, { adminToken: env.ADMIN_DELETION_TOKEN, deletion: () => deletionDeps(env), json });
     }
 
     if (request.method === 'POST' && pathname === '/admin/account-deletion') {

@@ -1,7 +1,7 @@
 // POST /account/delete — authenticated, recent-login-only account deletion.
 
 import { isRecentAuth, type VerifiedToken } from './auth';
-import { deleteAccount, DeletionAttemptLost, DeletionInProgress, DeletionStepFailed, type DeletionDeps } from './accountDeletion';
+import { deleteAccount, DeletionAttemptLost, DeletionInProgress, DeletionStepFailed, listStalledDeletions, type DeletionDeps } from './accountDeletion';
 
 export interface AccountRouteDeps {
   verify(token: string): Promise<VerifiedToken>;
@@ -48,7 +48,7 @@ export async function handleAccountDeletion(request: Request, deps: AccountRoute
     console.error(`[Worker] account deletion failed at ${step}:`, (cause as Error)?.message);
     return deps.json(
       {
-        error: 'Account deletion did not finish. Some of your data may already be deleted, and your account is locked against changes. You can try again now; otherwise we finish it automatically within a few hours.',
+        error: 'Account deletion did not finish. Some of your data may already be deleted, and your account is locked against changes. We retry automatically and our team is alerted if it stays stuck; you can also try again now.',
         code: 'deletion/failed',
         step,
         retryable: true,
@@ -96,4 +96,21 @@ export async function handleAdminAccountDeletion(
     // The barrier is in place; the hourly cron continues the deletion.
     return deps.json({ code: 'deletion/failed', step, retryable: true }, 500);
   }
+}
+
+/**
+ * GET /admin/deletion-status — stalled deletions for operators and monitoring
+ * (same ADMIN_DELETION_TOKEN; UIDs and step names only).
+ */
+export async function handleAdminDeletionStatus(
+  request: Request,
+  deps: { adminToken: string | undefined; deletion(): DeletionDeps | null; json(data: unknown, status?: number): Response }
+): Promise<Response> {
+  if (!deps.adminToken) return deps.json({ error: 'Not found' }, 404);
+  const presented = (request.headers.get('Authorization') ?? '').replace(/^Bearer /, '');
+  if (!sameSecret(presented, deps.adminToken)) return deps.json({ error: 'Forbidden' }, 403);
+  const deletion = deps.deletion();
+  if (!deletion) return deps.json({ error: 'Account deletion is not configured.', code: 'deletion/unavailable' }, 503);
+  const stalled = await listStalledDeletions(deletion);
+  return deps.json({ stalled, count: stalled.length, checkedAt: new Date((deletion.now ?? Date.now)()).toISOString() });
 }

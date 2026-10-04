@@ -35,6 +35,15 @@ import type {
   PostType,
   PostVisibility,
 } from '@solotravelsoul/shared';
+import { containsBlockedTerm } from '@solotravelsoul/shared';
+
+// Mirrors the server-side content filter in firestore.rules (clean()), so the
+// user gets a clear message instead of a permission error.
+function assertAllowedText(...values: (string | null | undefined)[]): void {
+  if (values.some((v) => containsBlockedTerm(v))) {
+    throw Object.assign(new Error('This contains language that is not allowed on SoloTravelSoul.'), { code: 'moderation/blocked-term' });
+  }
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -93,6 +102,7 @@ function postFromDoc(id: string, d: DocumentData): TravelPost {
 export async function createPost(
   post: Omit<TravelPost, 'postId' | 'likeCount' | 'commentCount' | 'saveCount' | 'isArchived' | 'createdAt' | 'updatedAt'>
 ): Promise<string> {
+  assertAllowedText(post.caption, post.body, post.location, post.country);
   const ref = doc(collection(db, 'travelPosts'));
   await setDoc(ref, {
     ...post,
@@ -117,6 +127,7 @@ export async function updatePost(
   authorId: string,
   updates: Partial<Pick<TravelPost, 'caption' | 'body' | 'location' | 'country' | 'hashtags' | 'visibility' | 'images'>>
 ): Promise<void> {
+  assertAllowedText(updates.caption, updates.body, updates.location, updates.country);
   await updateDoc(doc(db, 'travelPosts', postId), {
     ...updates,
     updatedAt: serverTimestamp(),
@@ -335,6 +346,7 @@ function commentFromDoc(id: string, d: DocumentData): PostComment {
     parentCommentId: (d.parentCommentId as string | null) ?? null,
     replyCount: (d.replyCount as number) ?? 0,
     isDeleted: (d.isDeleted as boolean) ?? false,
+    moderationRemoved: (d.moderationRemoved as boolean) ?? false,
     createdAt: tsToDate(d.createdAt),
     updatedAt: tsToDate(d.updatedAt),
   };
@@ -343,6 +355,7 @@ function commentFromDoc(id: string, d: DocumentData): PostComment {
 export async function addComment(
   comment: Omit<PostComment, 'commentId' | 'replyCount' | 'isDeleted' | 'createdAt' | 'updatedAt'>
 ): Promise<string> {
+  assertAllowedText(comment.text);
   const ref = doc(collection(db, 'postComments'));
   const batch = writeBatch(db);
 
@@ -374,6 +387,7 @@ export async function addComment(
 }
 
 export async function editComment(commentId: string, text: string): Promise<void> {
+  assertAllowedText(text);
   await updateDoc(doc(db, 'postComments', commentId), {
     text,
     updatedAt: serverTimestamp(),
@@ -530,6 +544,7 @@ function journalFromDoc(id: string, d: DocumentData): TravelJournal {
 export async function createJournal(
   journal: Omit<TravelJournal, 'journalId' | 'likeCount' | 'commentCount' | 'saveCount' | 'isArchived' | 'createdAt' | 'updatedAt'>
 ): Promise<string> {
+  assertAllowedText(journal.title, journal.subtitle, journal.body, journal.location);
   const ref = doc(collection(db, 'travelJournals'));
   await setDoc(ref, {
     ...journal,
@@ -553,6 +568,7 @@ export async function updateJournal(
   journalId: string,
   updates: Partial<Pick<TravelJournal, 'title' | 'subtitle' | 'body' | 'coverImageURL' | 'images' | 'location' | 'country' | 'hashtags' | 'visibility' | 'readTimeMinutes'>>
 ): Promise<void> {
+  assertAllowedText(updates.title, updates.subtitle, updates.body, updates.location);
   await updateDoc(doc(db, 'travelJournals', journalId), {
     ...updates,
     updatedAt: serverTimestamp(),

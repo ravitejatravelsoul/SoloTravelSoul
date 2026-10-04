@@ -19,6 +19,7 @@
   Timestamp,
   writeBatch,
   increment,
+  runTransaction,
   type DocumentData,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore';
@@ -56,7 +57,7 @@ import type {
   RequestStatus,
   ReportTargetType,
 } from '@solotravelsoul/shared';
-import { DEFAULT_USER_PROFILE } from '@solotravelsoul/shared';
+import { DEFAULT_USER_PROFILE, REPORT_HIDE_THRESHOLD } from '@solotravelsoul/shared';
 
 // Use memoryLocalCache so documents fetched this session are reused if
 // Firestore briefly goes offline (avoids "client is offline" on re-reads).
@@ -1451,6 +1452,12 @@ export async function isBlocked(blockerUid: string, blockedUid: string): Promise
   }
 }
 
+/**
+ * One report per reporter and target (deterministic ID; repeating is a no-op).
+ * Reports on posts and journals also increment the item's reportCount in the
+ * same transaction; at REPORT_HIDE_THRESHOLD a public item is hidden as
+ * 'under_review' until a moderator restores or removes it (enforced by rules).
+ */
 export async function reportContent(
   reporterUid: string,
   targetType: ReportTargetType,
@@ -1458,15 +1465,26 @@ export async function reportContent(
   reason: 'spam' | 'inappropriate' | 'harassment' | 'fake' | 'safety' | 'other',
   details: string
 ): Promise<void> {
-  const ref = doc(collection(db, 'reports'));
-  await setDoc(ref, {
-    reporterUid,
-    targetType,
-    targetId,
-    reason,
-    details: details.trim(),
-    status: 'pending',
-    createdAt: serverTimestamp(),
+  const reportRef = doc(db, 'reports', `${targetType}___${targetId}___${reporterUid}`);
+  const counted = targetType === 'post' ? 'travelPosts' : targetType === 'journal' ? 'travelJournals' : null;
+  await runTransaction(db, async (tx) => {
+    if ((await tx.get(reportRef)).exists()) return;
+    const targetRef = counted ? doc(db, counted, targetId) : null;
+    const target = targetRef ? await tx.get(targetRef) : null;
+    tx.set(reportRef, {
+      reporterUid,
+      targetType,
+      targetId,
+      reason,
+      details: details.trim(),
+      status: 'pending',
+      createdAt: serverTimestamp(),
+    });
+    if (targetRef && target?.exists()) {
+      const next = ((target.data().reportCount as number | undefined) ?? 0) + 1;
+      const hide = next >= REPORT_HIDE_THRESHOLD && (target.data().visibility ?? 'public') === 'public';
+      tx.update(targetRef, hide ? { reportCount: next, visibility: 'under_review' } : { reportCount: next });
+    }
   });
 }
 

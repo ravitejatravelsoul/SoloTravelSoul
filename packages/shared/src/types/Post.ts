@@ -57,6 +57,7 @@ export interface PostComment {
   parentCommentId: string | null;  // null = top-level reply; set = reply to a comment
   replyCount: number;
   isDeleted: boolean;              // soft delete — preserves thread structure
+  moderationRemoved?: boolean;     // text removed by a moderator
   createdAt: Date;
   updatedAt: Date;
 }

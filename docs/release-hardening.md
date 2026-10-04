@@ -28,7 +28,7 @@ Do not deploy only these rules while old clients remain active. Old clients use 
 - Deleted: `users/{uid}` and every subcollection, saved places, directory entries (exact-email alias only when it still belongs to the user), public profile, nearby/reputation docs, block list, notifications, place reviews, activity feed, posts, journals, stories, owned public trips/groups (with member subcollections), join requests, the user's likes/saves/follows, memberships, R2 `profile_photos/{uid}/` + `post_photos/{uid}/`, Firebase Storage `profile_photos/`, `trip_covers/`, `journals/` for the UID.
 - Counters on other users' documents (likes, saves, comments, replies, followers/following, memberCount) are released in the same atomic commit as the relationship, with optimistic preconditions; never below zero.
 - Preserved, anonymized as "Deleted User": the user's comments on others' posts (tombstoned, replies kept), sent chat messages, group chat previews, DM participant info, notifications delivered to others. Safety reports are retained.
-- Barrier: `accountDeletions/{uid}` is created before any step and never removed. Every client write rule in `firestore.rules` and every write in `storage.rules` (cross-service `firestore.exists`) refuses that UID while it exists, and the Worker upload endpoints check it before storing and again after (removing an object whose upload was in flight when deletion began). Other devices and still-valid ID tokens therefore cannot recreate data during or after deletion. Rules also refuse new inbound relationships to a deleting account or its content (likes, saves, follows, comments, replies, trip/group memberships, join requests) and new chat links: creating or adding to a chat group with a deleting member, creating a direct chat with one, or sending a direct message to one (the message, and the preview update). Existing chat history stays readable and can be marked read. Because rules cannot iterate a member list, each group create/update may add at most 8 members, each checked against the barrier; `createGroup` adds larger groups in chunks of 8 and deletes the group if a chunk is refused. Unrelated users' writes are unaffected. Uploads fail closed with 503 `uploads/unavailable` when the Worker has no usable service-account secret to read the barrier.
+- Barrier: `accountDeletions/{uid}` is created before any step and never removed. Every client write rule in `firestore.rules` and every write in `storage.rules` (cross-service `firestore.exists`) refuses that UID while it exists, and the Worker upload endpoints check it before storing and again after (removing an object whose upload was in flight when deletion began). Other devices and still-valid ID tokens therefore cannot recreate data during or after deletion. Rules also refuse new inbound relationships to a deleting account or its content (likes, saves, follows, comments, replies, trip/group memberships, join requests) and new chat links: creating or adding to a chat group with a deleting member, creating a direct chat with one, or sending a direct message to one (the message, and the preview update). Existing chat history stays readable and can be marked read. Because rules cannot iterate a member list, each group create/update may add at most 8 members, each checked against the barrier; `createGroup` adds larger groups in chunks of 8 (pending members are hidden until added) and drops any member the rules refuse, with that member's identity fields. Unrelated users' writes are unaffected. Uploads fail closed with 503 `uploads/unavailable` when the Worker has no usable service-account secret to read the barrier.
 - Late media and finalization: before Auth removal the job durably records `mediaClearedAtMs` and `pendingFinalization: true`. The hourly cron (1) completes any job still pending finalization. Recovery is fenced: it first claims the job lease with a conditional write on fresh state (refused if a live attempt holds it, and refusing user retries and other cron runs while it works), then re-verifies ownership with a conditional lease renewal immediately before removing a remaining Auth user, and stops if the lease was lost. Recovery never runs under another attempt's live lease, so a lost final write is completed on the first cron run after that lease expires; a lost final bookkeeping write or a failed Auth removal never depends on the user signing in again. (2) It resumes deletions that stopped before Auth removal (failed step, lost lease, or a Worker request that ran out of subrequests) through the normal fenced plan, skipping jobs under a live lease. (3) It sweeps media for every job whose media was cleared in the last 24 h, regardless of completion status, covering uploads that were authorized before the barrier and finished after the media step.
 - Attempts: each request claims the job with a unique `attemptId` and a 5-minute lease, renewed whenever less than half remains while it works (including per media page). Every job update is conditional on owning the job (`attemptId`, `in_progress`, unexpired lease, document `updateTime`). An attempt whose lease expired or was taken over stops at its next operation and cannot mark a newer attempt failed or overwrite a completed job.
 - Retry safety: steps are idempotent and rediscover work on every attempt. Firebase Auth is deleted only after every data and media step succeeds. After a failure some data may already be deleted and the account is locked against changes (barrier); the hourly cron finishes the deletion, and the user can also sign in and retry.
@@ -49,7 +49,7 @@ Tests: `npm run test:release` (in-memory store, route gate, client flow) and `np
 
 | Area | Defect | Fix |
 |---|---|---|
-| Groups | Creation interrupted between chunks left a partly populated group visible; an interrupted rollback left it behind. | Members beyond the first chunk are stored in `pendingMembers`; groups with pending members are hidden from every member's list. The creator's client resumes creation (or rolls it back if a member is refused) whenever it sees the group again. |
+| Groups | Creation interrupted between chunks left a partly populated group visible; an interrupted rollback left it behind. | Members beyond the first chunk are stored in `pendingMembers`; groups with pending members are hidden from every member's list. The creator's client resumes creation whenever it sees the group again, dropping only refused members (updated in the gap closure below). |
 | Account deletion | A deletion that stopped mid-plan (step failure, lost lease, Worker subrequest limit) stayed half-done and locked until the user retried. | Hourly cron resumes such jobs through the normal fenced plan; failure messaging and privacy text say deletion completes automatically. |
 | Google Play | No web resource for account-deletion requests; no way for an operator to fulfil one. | Worker `GET /account-deletion` page (in-app steps, email request, what is deleted/kept). `POST /admin/account-deletion` (bearer `ADMIN_DELETION_TOKEN` secret, constant-time check, disabled when unset) runs the same plan for a verified request. Privacy screen links the page from the configured Worker URL. |
 | App Store 1.2 | Posts, journals, comments and direct chats had no report action; blocked users' posts, journals and comments still appeared. | Report/block menu on post, journal and chat headers and on long-press of others' comments; reports accept `post`/`journal`/`comment` targets. Feed, explore, journal and comment/reply lists hide blocked authors. |
@@ -94,8 +94,67 @@ Run on a physical iPhone and an Android 14+ device (preview builds against stagi
 ### Remaining blockers
 
 - **No native or staging verification** — no Android SDK/emulator or device on this machine, iOS requires macOS, Wrangler is not logged in, and there is no authorized staging Firebase project. All items in the checklist above are unverified.
-- **Moderation operations** (App Store 1.2): reports are stored but there is no review tooling or documented response process; a human process to review `reports` and remove content/users promptly (Apple reviewers expect ~24 h) must exist before submission. No automated objectionable-content filter exists; reporting, blocking and moderation are the mitigation.
+- **Moderation operations** (App Store 1.2): tooling and enforcement now exist (see Gap closure → Moderation), but at least two moderators must be appointed, the response targets confirmed, and the process staffed before submission. The term filter is a short list and there is no automated image analysis; reported media is hidden at 3 reports and removed by moderators.
 - **Operator fulfilment of web requests** requires verifying the requester owns the account email before calling the admin endpoint; the processing time promised on the web page should be confirmed by the owner.
 - **Credentials/config** listed in the rollout order (Workers Paid, service account, admin token, Storage-to-Firestore grant, EAS env vars, store submit config) are not set up by this change.
 - Public photo URLs remain bearer-link accessible until deleted; legacy data repair and coordinated old-client rollout as described above.
 - `SYSTEM_ALERT_WINDOW` and `USE_FINGERPRINT` still appear in the merged Android manifest (template / local-authentication defaults); review in the Play Console permissions report.
+
+## Gap closure (from 1cee3fc)
+
+### Fixed
+
+| Gap | Reproduced failure | Fix |
+|---|---|---|
+| Recovery identity loss | Verified Auth email differed from the stale emails in `users/` and `userLookup/`; the first attempt failed before the directory step; cron resumed with no token email and completed, leaving the verified-email alias. | The directory step also queries `userLookupByEmail` for every alias whose `uid` is the deleting UID (Admin query; no email stored in the job). Aliases now owned by another UID are never removed. |
+| Pending group identity | Another user's group listed the deleting UID in `pendingMembers` (plus `memberInfo`/`unreadCounts`); deletion completed without touching it. | New `pendingGroups` step removes the UID from `pendingMembers` and its `memberInfo`/`unreadCounts` entries, conditional on the group's `updateTime` (a concurrent resume by the creator is re-read, never lost). The creator's resume now drops a refused member (and its identity fields) instead of deleting the whole group, so everyone else is kept. |
+| Recovery promises | App, Worker and privacy text promised completion "within a few hours". | Text now says deletion is retried automatically and stuck deletions are flagged to the team. Each cron run reports deletions older than 6 h that are not complete as a structured warning `account_deletion_stalled` (UIDs and step names only) and `GET /admin/deletion-status` (admin token) lists them. Runbook below. |
+| Moderation readiness | Report buttons and terms only; no filter, no review workflow, no enforcement. | See "Moderation" below. |
+
+### Moderation
+
+Enforced by `firestore.rules` / `storage.rules` and the Worker, not by the app UI:
+
+- **Text filter** (`packages/shared/src/moderation.ts`): public posts, journals, comments, public profiles (name, bio, city), community groups and public trips are rejected server-side when they contain a blocked term (`clean()` in the rules; the app shows "This contains language that is not allowed"). A release test fails if the rules pattern and the shared list diverge. The list is deliberately short (slurs, explicit sexual and self-harm terms) to avoid false positives; it does not cover hashtags, images or private messages.
+- **Media and everything the filter misses — community flagging**: reports are one per reporter and item (`reports/{type}___{id}___{reporter}`). Reports on posts and journals increment `reportCount` in the same write; at 3 distinct reports a public item is switched to `under_review` and disappears from feeds, explore and direct reads for everyone except its author and moderators. Authors cannot restore it. There is no automated image analysis (no paid AI dependency); photos are covered by this flag-and-hide path plus moderator review.
+- **Restricted review workflow**: moderators are listed in `moderators/{uid}` (created only by the project owner in the Firebase console / Admin SDK). Only moderators can list or review reports (`status`: pending → reviewing/actioned/dismissed, with `reviewedBy`, `reviewedAt`). In the app, moderators see **Profile → Safety → Moderation queue** (oldest first) with: dismiss; hide/restore/remove a post or journal; remove a comment (shown as "Removed by a moderator"); suspend the author.
+- **Removal deletes media**: removing a post/journal sets `visibility: 'removed'` and calls `POST /moderation/remove-media`, which re-checks the moderator role and the removed state and deletes the R2 objects under the author's own prefix (public R2 URLs are bearer links, so hiding the document alone is not enough).
+- **Suspension**: `accountSuspensions/{uid}` (moderators only) blocks every Firestore write, Storage upload and Worker upload for that account — the same barrier as deletion. Lifting it (delete the document) restores access.
+
+#### Responsibilities, response targets and escalation (owner to confirm before submission)
+
+| Role | Responsibility |
+|---|---|
+| Project owner | Appoints/removes moderators (`moderators/{uid}`), owns the blocked-term list, approves suspensions longer than 30 days, handles legal requests. |
+| Moderators (at least two, so the queue is covered every day) | Work the queue oldest-first, record a resolution on every report, remove violating content and its media, suspend repeat or severe offenders. |
+
+| Report type | Target first action |
+|---|---|
+| Child safety, credible threats, self-harm (`safety`) | Within 4 hours: hide/remove, suspend, escalate. |
+| Harassment, hate, sexual content (`harassment`, `inappropriate`) | Within 24 hours (App Review expects objectionable content to be acted on promptly). |
+| Spam, fake profiles, other | Within 72 hours. |
+
+Escalation: child sexual abuse material is never reviewed further or forwarded internally — remove it, suspend the account, preserve the report record, and report to NCMEC (CyberTipline) or the national authority; imminent danger goes to local emergency services; legal/law-enforcement requests go to the project owner (privacy@ / safety@solotravelsoul.app). Review the queue age daily; anything older than its target is escalated to the owner.
+
+### Stalled deletion runbook
+
+1. Alert source: Workers Logs / Logpush on `"event":"account_deletion_stalled"`, or `curl -H "Authorization: Bearer $ADMIN_DELETION_TOKEN" https://<worker-host>/admin/deletion-status`.
+2. For each UID, read `accountDeletions/{uid}` in the Firebase console: `lastError.step`, `attempts`, `status`, `leaseUntil`.
+3. Fix the cause by step: `r2Media` → R2 binding/bucket; `firebaseMedia` / `auth` / any Firestore step → service-account roles, `GOOGLE_SERVICE_ACCOUNT_JSON`, quota or indexes (a `FAILED_PRECONDITION` index error means the field overrides are not deployed); repeated subrequest errors → Workers plan.
+4. Re-run: wait for the next hourly cron, or `POST /admin/account-deletion {"uid": "..."}` with the admin token (same fenced plan; refuses while another attempt holds a live lease).
+5. Confirm `status: completed`, the Auth user is gone, and R2/Storage prefixes are empty. If the user contacted support, reply when complete. Never edit or delete `accountDeletions/{uid}` by hand — it is the deletion barrier.
+
+### Verified results (gap closure)
+
+- Reproductions written first: verified-alias test and both pending-group tests failed (34/37) before the fix and pass after.
+- `npm run test:release`: 13 queue/session checks + 38/38 account-deletion checks — pass.
+- `npm run test:rules` (Firestore + Storage emulators): 73/73 rules checks (incl. filter on posts/comments/profiles/groups/trips, rules↔shared list sync, one-report-per-user, auto-hide at 3 reports, author cannot unhide, moderator restore/remove/comment removal/review, suspension blocks writes and uploads, dropped refused pending member, concurrent resume) + 34/34 account-deletion checks (incl. moderator media removal and suspended upload through the Worker entry point) — pass.
+- Typecheck: 3 workspaces + Worker pass. Lint: 0 errors (81 pre-existing warnings, none new). iOS and Android JS exports: pass.
+- Not performed: native UI, staging two-account runs, real external services (same access limits as above).
+
+### Rollout additions (gap closure)
+
+- Deploy the new `reports (status, createdAt)` composite index before moderators use the queue.
+- Create `moderators/{uid}` documents for the appointed moderators in the Firebase console (clients cannot write them).
+- `storage.rules` now reads two Firestore documents per upload (deletion barrier and suspension); the Storage-to-Firestore grant from the rollout order is required for both.
+- Add a Workers Logs / Logpush alert on `account_deletion_stalled` and assign an owner for the stalled-deletion runbook.

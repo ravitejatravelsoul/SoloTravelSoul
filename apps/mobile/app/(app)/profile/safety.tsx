@@ -1,4 +1,7 @@
+import { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, Linking } from 'react-native';
+import { isModerator } from '@solotravelsoul/firebase';
+import { useAuthStore } from '@/stores/authStore';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -34,6 +37,9 @@ const GUIDELINES = [
 ];
 
 export default function SafetyScreen() {
+  const uid = useAuthStore((s) => s.user?.uid ?? '');
+  const [moderator, setModerator] = useState(false);
+  useEffect(() => { if (uid) isModerator(uid).then(setModerator); }, [uid]);
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.navBar}>
@@ -99,6 +105,14 @@ export default function SafetyScreen() {
         {/* Links */}
         <Text style={styles.sectionLabel}>LEGAL & SUPPORT</Text>
         <View style={styles.card}>
+          {moderator && (
+            <TouchableOpacity style={styles.linkRow} onPress={() => router.push('/(app)/moderation' as never)} accessibilityLabel="Moderation queue">
+              <Ionicons name="shield-outline" size={18} color={Colors.primary} />
+              <Text style={styles.linkLabel}>Moderation queue</Text>
+              <Ionicons name="chevron-forward" size={14} color={Colors.placeholder} />
+            </TouchableOpacity>
+          )}
+          {moderator && <View style={styles.divider} />}
           <TouchableOpacity
             style={styles.linkRow}
             onPress={() => router.push('/privacy')}

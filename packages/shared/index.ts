@@ -13,3 +13,4 @@ export * from './src/types/Reputation';
 // Utils
 export * from './src/utils/dateUtils';
 export * from './src/utils/validations';
+export * from './src/moderation';

@@ -150,3 +150,16 @@ export {
   markGroupRead,
   getGroup,
 } from './src/chat';
+export {
+  isModerator,
+  subscribeOpenReports,
+  getReportTarget,
+  reviewReport,
+  setContentVisibility,
+  removeComment,
+  suspendUser,
+  unsuspendUser,
+  type ModerationReport,
+  type ReportTargetPreview,
+  type ReportStatus,
+} from './src/moderation';

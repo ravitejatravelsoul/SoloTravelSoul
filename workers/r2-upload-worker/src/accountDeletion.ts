@@ -353,6 +353,30 @@ const leaveGroupChats: Step['run'] = async ({ uid, store }) => {
   }
 };
 
+// Groups another user is still creating can list this user as a pending
+// member (with name and unread entry). Remove the UID and its identity fields;
+// the group, its creator and other members are untouched. Conditional on the
+// group's updateTime, so a concurrent resume by the creator is re-read, never lost.
+const leavePendingGroups: Step['run'] = async ({ uid, store }) => {
+  for (const group of await store.query('groups', [{ field: 'pendingMembers', op: 'ARRAY_CONTAINS', value: uid }])) {
+    await atomically(store, async () => {
+      const current = await store.get(group.path);
+      if (!current) return null;
+      const pending = (current.data.pendingMembers as unknown[] | undefined) ?? [];
+      const info = current.data.memberInfo as Record<string, unknown> | undefined;
+      const unread = current.data.unreadCounts as Record<string, unknown> | undefined;
+      if (!pending.includes(uid) && info?.[uid] === undefined && unread?.[uid] === undefined) return null;
+      return [{
+        kind: 'update',
+        path: current.path,
+        set: { pendingMembers: pending.filter((m) => m !== uid) },
+        remove: [`memberInfo.${uid}`, `unreadCounts.${uid}`],
+        updateTime: current.updateTime,
+      }];
+    });
+  }
+};
+
 const anonymizeDirectChats: Step['run'] = async ({ uid, store }) => {
   for (const chat of await store.query('direct_chats', [{ field: 'participants', op: 'ARRAY_CONTAINS', value: uid }])) {
     const info = (chat.data.participantInfo as Record<string, Record<string, unknown>> | undefined)?.[uid];
@@ -376,6 +400,10 @@ const removeDirectory: Step['run'] = async ({ uid, email, store }) => {
   for (const e of [email, lookup?.data.email, profile?.data.email]) {
     if (typeof e === 'string' && e.trim()) emails.add(emailAliasId(e));
   }
+  // Recovery runs without the user's token email, and stored emails may be
+  // stale, so also discover every alias this UID still owns.
+  const owned = await store.query('userLookupByEmail', [{ field: 'uid', op: 'EQUAL', value: uid }]);
+  for (const doc of owned) emails.add(lastSegment(doc.path));
   for (const alias of emails) {
     const aliasDoc = await store.get(`userLookupByEmail/${alias}`);
     // Never remove an alias another account has since claimed.
@@ -388,7 +416,7 @@ const removeDirectory: Step['run'] = async ({ uid, email, store }) => {
 
 // Runs last among data steps so anything the client wrote during cleanup is caught.
 const deletePrivateData: Step['run'] = async ({ uid, store }) => {
-  for (const root of [`users/${uid}`, `blocks/${uid}`, `nearbyTravelers/${uid}`, `travelerReputation/${uid}`, `publicProfiles/${uid}`]) {
+  for (const root of [`users/${uid}`, `blocks/${uid}`, `nearbyTravelers/${uid}`, `travelerReputation/${uid}`, `publicProfiles/${uid}`, `moderators/${uid}`]) {
     await deleteTree(store, root);
   }
 };
@@ -426,6 +454,7 @@ export const DELETION_STEPS: readonly Step[] = [
   // Chats: anonymize messages before leaving, so a retry can still find them.
   { id: 'sentMessages', run: anonymizeSentMessages },
   { id: 'groupChats', run: leaveGroupChats },
+  { id: 'pendingGroups', run: leavePendingGroups },
   { id: 'directChats', run: anonymizeDirectChats },
   // Identity and private data.
   { id: 'directory', run: removeDirectory },
@@ -452,7 +481,7 @@ async function acquireLease(store: DocStore, uid: string, now: number, attempt: 
     const set = { uid, status: 'in_progress', attemptId: attempt.id, leaseUntil, currentStep: null, lastError: null };
     const write: StoreWrite = job
       ? { kind: 'update', path, set, increment: { attempts: 1 }, serverTime: ['updatedAt'], updateTime: job.updateTime }
-      : { kind: 'update', path, set: { ...set, attempts: 1 }, serverTime: ['startedAt', 'updatedAt'], mustExist: false };
+      : { kind: 'update', path, set: { ...set, attempts: 1, startedAtMs: now }, serverTime: ['startedAt', 'updatedAt'], mustExist: false };
     try {
       await store.commit([write]);
       attempt.leaseUntil = leaseUntil;
@@ -698,10 +727,65 @@ export async function resumeIncompleteDeletions(deps: DeletionDeps): Promise<num
   return resumed;
 }
 
-/** Cron entry: finish stranded jobs, continue stalled deletions, then sweep late media. */
-export async function runScheduledMaintenance(deps: DeletionDeps): Promise<{ finalized: number; resumed: number; swept: number }> {
+/** A started deletion is reported as stalled once it has run this long without completing. */
+export const STALLED_AFTER_MS = 6 * 60 * 60 * 1000;
+
+export interface StalledDeletion {
+  uid: string;
+  status: string;
+  currentStep: string | null;
+  lastErrorStep: string | null;
+  attempts: number;
+  pendingFinalization: boolean;
+  ageMs: number;
+}
+
+/**
+ * Deletions that started more than `stalledAfterMs` ago and are still not
+ * complete (persistent outage, missing credentials, a plan step that keeps
+ * failing). Retries alone cannot guarantee completion; these need an operator
+ * (see docs/release-hardening.md, "Stalled deletion runbook"). UIDs only — no
+ * email or profile data.
+ */
+export async function listStalledDeletions(deps: DeletionDeps, stalledAfterMs = STALLED_AFTER_MS): Promise<StalledDeletion[]> {
+  const now = deps.now ?? Date.now;
+  const jobs = [
+    ...(await deps.store.query(JOBS, [{ field: 'status', op: 'EQUAL', value: 'failed' }])),
+    ...(await deps.store.query(JOBS, [{ field: 'status', op: 'EQUAL', value: 'in_progress' }])),
+  ];
+  const stalled: StalledDeletion[] = [];
+  for (const job of jobs) {
+    const started = num(job.data.startedAtMs) || Date.parse(String(job.data.startedAt ?? '')) || 0;
+    const ageMs = started ? now() - started : Number.POSITIVE_INFINITY;
+    if (ageMs < stalledAfterMs) continue;
+    const lastError = job.data.lastError as { step?: string } | null | undefined;
+    stalled.push({
+      uid: lastSegment(job.path),
+      status: String(job.data.status),
+      currentStep: (job.data.currentStep as string | null | undefined) ?? null,
+      lastErrorStep: lastError?.step ?? null,
+      attempts: num(job.data.attempts),
+      pendingFinalization: job.data.pendingFinalization === true,
+      ageMs,
+    });
+  }
+  return stalled;
+}
+
+/**
+ * Cron entry: finish stranded jobs, continue stalled deletions, sweep late
+ * media, then report deletions that are still stuck as a structured warning
+ * (`account_deletion_stalled`) for log-based alerting.
+ */
+export async function runScheduledMaintenance(
+  deps: DeletionDeps
+): Promise<{ finalized: number; resumed: number; swept: number; stalled: number }> {
   const finalized = await finalizePendingDeletions(deps);
   const resumed = await resumeIncompleteDeletions(deps);
   const swept = await sweepRecentlyDeletedMedia(deps);
-  return { finalized, resumed, swept };
+  const stalledJobs = await listStalledDeletions(deps);
+  if (stalledJobs.length) {
+    console.warn(JSON.stringify({ event: 'account_deletion_stalled', count: stalledJobs.length, jobs: stalledJobs }));
+  }
+  return { finalized, resumed, swept, stalled: stalledJobs.length };
 }

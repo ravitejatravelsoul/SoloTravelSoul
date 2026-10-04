@@ -5,13 +5,22 @@ const assert = require('node:assert/strict');
 const { initializeTestEnvironment, assertFails } = require('@firebase/rules-unit-testing');
 const sdk = require('firebase/firestore');
 const root = path.resolve(__dirname, '../..');
+let sharedModule;
+function loadShared() {
+  if (!sharedModule) {
+    sharedModule = { exports: {} };
+    const code = ts.transpileModule(fs.readFileSync(path.join(root, 'packages/shared/src/moderation.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+    new Function('module', 'exports', code)(sharedModule, sharedModule.exports);
+  }
+  return sharedModule.exports;
+}
 function client(file, db) {
   const module = { exports: {} };
   const code = ts.transpileModule(fs.readFileSync(path.join(root, file), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const dependencies = name => {
     if (name === 'firebase/firestore') return { ...sdk, initializeFirestore:()=>db, getFirestore:()=>db };
     if (name === './config') return { app:{} };
-    if (name === '@solotravelsoul/shared') return { DEFAULT_USER_PROFILE:{} };
+    if (name === '@solotravelsoul/shared') return { DEFAULT_USER_PROFILE:{}, ...loadShared() };
     if (name === './firestore') return { db };
     if (name === './auth') return { auth: { currentUser: { uid: 'actor' } } };
     throw Error(`Unexpected dependency: ${name}`);
@@ -20,7 +29,9 @@ function client(file, db) {
   return module.exports;
 }
 (async () => {
-  const env = await initializeTestEnvironment({ projectId: 'demo-sts-release-review', firestore: { host: '127.0.0.1', port: 8188, rules: fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8') } });
+  const env = await initializeTestEnvironment({ projectId: 'demo-sts-release-review',
+    firestore: { host: '127.0.0.1', port: 8188, rules: fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8') },
+    storage: { host: '127.0.0.1', port: 9188, rules: fs.readFileSync(path.join(root, 'storage.rules'), 'utf8') } });
   let checks = 0;
   const check = async (name, work) => { await work(); checks++; console.log(`PASS ${name}`); };
   try {
@@ -150,7 +161,6 @@ function client(file, db) {
     const info = { name: 'X', initials: 'X' };
     const chatActions = (target, tag) => [
       ['create group containing it', () => chat.createGroup('actor', 'Trip', ['actor', 'friend', target], {})],
-      ['create large group containing it late in the list', () => chat.createGroup('actor', 'Big', ['actor', ...Array.from({ length: 12 }, (_, i) => `member${i}`), target], {})],
       ['add it to an existing group', () => sdk.updateDoc(sdk.doc(db, `groups/existing-${target}`), { members: sdk.arrayUnion(target) })],
       ['replace group members to include it', () => sdk.updateDoc(sdk.doc(db, `groups/existing-${target}`), { members: ['actor', 'friend', 'other', target] })],
       ['create direct chat with it', async () => {
@@ -174,13 +184,20 @@ function client(file, db) {
     }
     for (const [name, action] of chatActions('staying', 'staying')) await check(`allow chat: ${name} (unaffected)`, () => action());
     assert.ok((await get(`groups/existing-staying`)).members.includes('staying'));
-    await check('refused chunked group creation leaves no partial group', async () => {
-      await env.withSecurityRulesDisabled(async ctx => {
-        const big = await sdk.getDocs(sdk.query(sdk.collection(ctx.firestore(), 'groups'), sdk.where('name', '==', 'Big')));
-        assert.equal(big.size, 1, 'only the unaffected large group exists');
-        assert.equal(big.docs[0].data().members.length, 14);
+    for (const target of ['leaving', 'gone', 'staying']) {
+      await check(`large group listing ${target} late: refused member dropped, everyone else kept`, async () => {
+        const id = await chat.createGroup('actor', `Big-${target}`, ['actor', ...Array.from({ length: 12 }, (_, i) => `member${i}`), target],
+          { [target]: { name: target, initials: 'T' }, member0: { name: 'm0', initials: 'M' } });
+        let g;
+        await env.withSecurityRulesDisabled(async ctx => { g = (await sdk.getDoc(sdk.doc(ctx.firestore(), `groups/${id}`))).data(); });
+        const expectMember = target === 'staying';
+        assert.equal(g.members.length, expectMember ? 14 : 13);
+        assert.equal(g.members.includes(target), expectMember);
+        assert.equal(g.memberInfo[target] !== undefined, expectMember);
+        assert.equal(g.unreadCounts[target] !== undefined, expectMember);
+        assert.deepEqual(g.pendingMembers, []);
       });
-    });
+    }
     // Group creation interrupted between chunks or before rollback: the group is
     // hidden from every member's list until the creator's client resumes it.
     // Resolves with the first group list that satisfies `ready` (snapshots may come from cache first).
@@ -211,14 +228,114 @@ function client(file, db) {
       assert.equal((await adminGet('groups/interrupted')).members.length, 11);
       await groupsWhen(friendChat, 'friend', has('interrupted')); // visible once complete
     });
-    await check('creation interrupted before rollback of a refused member is rolled back on resume', async () => {
-      await sdk.setDoc(sdk.doc(db, 'groups/refused'), groupData(['q1', 'gone']));
-      assert.ok(!(await firstGroups(friendChat, 'friend')).some((g) => g.id === 'refused'));
-      await assertFails(chat.completeGroupCreation('refused'));
-      assert.equal(await adminGet('groups/refused'), undefined, 'rolled back');
-      await sdk.setDoc(sdk.doc(db, 'groups/refused2'), groupData(['gone']));
-      await firstGroups(chat, 'actor');
-      assert.ok(await waitFor(async () => (await adminGet('groups/refused2')) === undefined), 'resume rolls back too');
+    await check('interrupted creation with a refused pending member: member dropped on resume, group completes', async () => {
+      await sdk.setDoc(sdk.doc(db, 'groups/refused'), { ...groupData(['q1', 'gone']), memberInfo: { gone: { name: 'Gone' }, q1: { name: 'Q' } }, unreadCounts: { gone: 0, q1: 0 } });
+      assert.ok(!(await firstGroups(friendChat, 'friend')).some((g) => g.id === 'refused'), 'hidden while pending');
+      await chat.completeGroupCreation('refused');
+      const g = await adminGet('groups/refused');
+      assert.ok(g.members.includes('q1') && !g.members.includes('gone'));
+      assert.deepEqual([g.pendingMembers, g.memberInfo.gone, g.unreadCounts.gone, g.memberInfo.q1.name], [[], undefined, undefined, 'Q']);
+      // Concurrent resumes (two app instances of the creator) converge to the same result.
+      await sdk.setDoc(sdk.doc(db, 'groups/refused2'), { ...groupData(['gone', 'q2']), memberInfo: { gone: { name: 'Gone' } }, unreadCounts: { gone: 0 } });
+      await Promise.all([chat.completeGroupCreation('refused2'), chat.completeGroupCreation('refused2')]);
+      const g2 = await adminGet('groups/refused2');
+      assert.deepEqual([g2.pendingMembers, g2.members.includes('q2'), g2.members.includes('gone'), g2.memberInfo.gone], [[], true, false, undefined]);
+      await groupsWhen(friendChat, 'friend', has('refused2')); // visible once complete
+    });
+    // ── Moderation: content filter, report queue, auto-hide, moderator actions, suspension ──
+    const shared = loadShared();
+    await env.withSecurityRulesDisabled(async ctx => {
+      const adb = ctx.firestore();
+      for (const [p, data] of Object.entries({
+        'moderators/mod': { grantedBy: 'owner-console' },
+        'travelPosts/flagged': { authorId: 'owner', likeCount: 0, commentCount: 0, saveCount: 0, visibility: 'public', isArchived: false, createdAt: sdk.Timestamp.now(), caption: 'Sunset', images: ['https://cdn.test/post_photos/owner/a.jpg'] },
+        'postComments/rude': { authorId: 'owner', authorName: 'Owner', postId: 'p', parentCommentId: null, text: 'mean words', isDeleted: false, replyCount: 0 },
+        'publicProfiles/actor': { uid: 'actor', profileVisibility: 'public', followersCount: 0, followingCount: 0, bio: 'Hi' },
+      })) await sdk.setDoc(sdk.doc(adb, p), data);
+    });
+    const ctxDb = (uid) => env.authenticatedContext(uid, { email: `${uid}@example.test` }).firestore();
+    const modDb = ctxDb('mod');
+    const ownerDb = ctxDb('owner');
+    const BAD = 'what the fuck';
+    const rawPost = (dbx, id, caption) => sdk.setDoc(sdk.doc(dbx, `travelPosts/${id}`), { authorId: 'actor', caption, body: '', location: '', country: '', likeCount: 0, commentCount: 0, saveCount: 0, visibility: 'public', isArchived: false, createdAt: sdk.serverTimestamp() });
+    // Same writes as addComment, without the client-side pre-check.
+    const rawComment = async (id, text) => {
+      const batch = sdk.writeBatch(db);
+      batch.set(sdk.doc(db, `postComments/${id}`), { authorId: 'actor', authorName: 'Actor', authorPhoto: null, postId: 'p', parentCommentId: null, text, replyCount: 0, isDeleted: false, createdAt: sdk.serverTimestamp(), updatedAt: sdk.serverTimestamp() });
+      batch.update(sdk.doc(db, 'travelPosts/p'), { commentCount: sdk.increment(1), lastCommentId: id, updatedAt: sdk.serverTimestamp() });
+      return batch.commit();
+    };
+
+    await check('filter list in rules matches the shared moderation module', async () => {
+      const rulesText = fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8');
+      const literal = rulesText.match(/value\.matches\('([^']+)'\)/)[1].replace(/\\\\/g, '\\');
+      assert.equal(literal, shared.BLOCKED_TERMS_RULES_PATTERN);
+      assert.match(rulesText, new RegExp(`next >= ${shared.REPORT_HIDE_THRESHOLD} &&`));
+    });
+    await check('server-side filter rejects blocked terms in public text; clean text passes', async () => {
+      await assertFails(rawPost(db, 'badPost', BAD));
+      await rawPost(db, 'goodPost', 'Lovely sunset in Lisbon');
+      await assertFails(rawComment('badComment', `this is ${BAD}`));
+      await rawComment('goodComment', 'Great photo');
+      await assertFails(sdk.updateDoc(sdk.doc(db, 'postComments/goodComment'), { text: BAD, updatedAt: sdk.serverTimestamp() }));
+      await assertFails(sdk.updateDoc(sdk.doc(db, 'publicProfiles/actor'), { bio: `I love ${BAD}` }));
+      await sdk.updateDoc(sdk.doc(db, 'publicProfiles/actor'), { bio: 'Solo hiker from Porto' });
+      await assertFails(sdk.setDoc(sdk.doc(db, 'travelGroups/badGroup'), { ownerUid: 'actor', name: BAD, description: '', visibility: 'public' }));
+      await assertFails(sdk.setDoc(sdk.doc(db, 'publicTrips/badTrip'), { ownerUid: 'actor', title: 'Trip', description: BAD }));
+      // The client service refuses before writing, with a clear code.
+      await assert.rejects(posts.addComment({ authorId: 'actor', postId: 'p', parentCommentId: null, text: BAD }), (e) => e.code === 'moderation/blocked-term');
+    });
+    await check('reports: one per reporter and target; only the reporter and moderators can read them', async () => {
+      const r1 = client('packages/firebase/src/firestore.ts', ctxDb('r1'));
+      await r1.reportContent('r1', 'post', 'flagged', 'inappropriate', 'not ok');
+      await r1.reportContent('r1', 'post', 'flagged', 'inappropriate', 'again'); // idempotent
+      assert.equal((await adminGet('travelPosts/flagged')).reportCount, 1);
+      await sdk.getDoc(sdk.doc(ctxDb('r1'), 'reports/post___flagged___r1'));
+      await assertFails(sdk.getDoc(sdk.doc(ctxDb('r2'), 'reports/post___flagged___r1')));
+      await assertFails(sdk.getDocs(sdk.collection(db, 'reports')));
+      assert.ok((await sdk.getDocs(sdk.query(sdk.collection(modDb, 'reports'), sdk.where('status', '==', 'pending')))).size >= 1);
+      await assertFails(sdk.setDoc(sdk.doc(db, 'reports/random-id'), { reporterUid: 'actor', targetType: 'post', targetId: 'flagged', status: 'pending' }));
+      await assertFails(sdk.updateDoc(sdk.doc(db, 'travelPosts/flagged'), { reportCount: 2 })); // no report behind it
+    });
+    await check('three distinct reports hide a post; only its author and moderators still see it', async () => {
+      for (const u of ['r2', 'r3']) await client('packages/firebase/src/firestore.ts', ctxDb(u)).reportContent(u, 'post', 'flagged', 'harassment', '');
+      const after = await adminGet('travelPosts/flagged');
+      assert.deepEqual([after.reportCount, after.visibility], [3, 'under_review']);
+      await assertFails(sdk.getDoc(sdk.doc(db, 'travelPosts/flagged')));
+      const explore = await sdk.getDocs(sdk.query(sdk.collection(db, 'travelPosts'), sdk.where('visibility', '==', 'public'), sdk.where('isArchived', '==', false)));
+      assert.ok(!explore.docs.some((d) => d.id === 'flagged'));
+      await sdk.getDoc(sdk.doc(ownerDb, 'travelPosts/flagged'));
+      await sdk.getDoc(sdk.doc(modDb, 'travelPosts/flagged'));
+      await assertFails(sdk.updateDoc(sdk.doc(ownerDb, 'travelPosts/flagged'), { visibility: 'public', updatedAt: sdk.serverTimestamp() }));
+      await sdk.updateDoc(sdk.doc(ownerDb, 'travelPosts/flagged'), { caption: 'Sunset (edited)', updatedAt: sdk.serverTimestamp() });
+    });
+    await check('moderators restore or remove content; nobody else can', async () => {
+      const mod = client('packages/firebase/src/moderation.ts', modDb);
+      const asActor = client('packages/firebase/src/moderation.ts', db);
+      await assertFails(asActor.setContentVisibility('post', 'flagged', 'actor', 'public'));
+      await mod.setContentVisibility('post', 'flagged', 'mod', 'public');
+      assert.deepEqual([(await adminGet('travelPosts/flagged')).visibility, (await adminGet('travelPosts/flagged')).reportCount], ['public', 0]);
+      await mod.setContentVisibility('post', 'flagged', 'mod', 'removed');
+      await assertFails(sdk.updateDoc(sdk.doc(ownerDb, 'travelPosts/flagged'), { visibility: 'public', updatedAt: sdk.serverTimestamp() }));
+      await assertFails(asActor.removeComment('rude', 'actor'));
+      await mod.removeComment('rude', 'mod');
+      assert.deepEqual([(await adminGet('postComments/rude')).text, (await adminGet('postComments/rude')).moderationRemoved], ['', true]);
+      await assertFails(sdk.updateDoc(sdk.doc(ownerDb, 'postComments/rude'), { text: 'back', updatedAt: sdk.serverTimestamp() }));
+      await mod.reviewReport('post___flagged___r1', 'mod', 'actioned', 'Removed');
+      await assertFails(sdk.updateDoc(sdk.doc(ctxDb('r2'), 'reports/post___flagged___r2'), { status: 'dismissed' }));
+      await assertFails(sdk.updateDoc(sdk.doc(modDb, 'reports/post___flagged___r2'), { status: 'dismissed', reviewedBy: 'someone-else', reviewedAt: sdk.serverTimestamp() }));
+    });
+    await check('suspension blocks writes and uploads until lifted; only moderators suspend', async () => {
+      const mod = client('packages/firebase/src/moderation.ts', modDb);
+      await assertFails(client('packages/firebase/src/moderation.ts', db).suspendUser('owner', 'actor', 'nope'));
+      await assertFails(mod.suspendUser('mod', 'mod', 'self'));
+      await sdk.setDoc(sdk.doc(ownerDb, 'users/owner/trips/before'), { destination: 'x' });
+      await mod.suspendUser('owner', 'mod', 'Repeated harassment');
+      await assertFails(sdk.setDoc(sdk.doc(ownerDb, 'users/owner/trips/during'), { destination: 'x' }));
+      await assertFails(env.authenticatedContext('owner').storage().ref('profile_photos/owner/new.jpg').put(new Uint8Array([1]), { contentType: 'image/jpeg' }));
+      await sdk.setDoc(sdk.doc(db, 'users/actor/trips/unaffected'), { destination: 'y' }); // others unaffected
+      await mod.unsuspendUser('owner');
+      await sdk.setDoc(sdk.doc(ownerDb, 'users/owner/trips/after'), { destination: 'x' });
     });
     await env.withSecurityRulesDisabled(ctx => sdk.setDoc(sdk.doc(ctx.firestore(), 'blocks/owner/blocked/actor'), {}));
     await check('blocked sender cannot send', () => assertFails(chat.sendDirectMessage('chat', 'actor', 'Blocked', 'blocked', ['owner'])));

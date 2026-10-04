@@ -6,9 +6,10 @@ import {
   writeBatch,
   runTransaction,
   updateDoc,
-  deleteDoc,
   arrayUnion,
   arrayRemove,
+  deleteField,
+  FieldPath,
   onSnapshot,
   query,
   where,
@@ -284,8 +285,9 @@ const GROUP_MEMBERS_PER_WRITE = 8;
  * Creates a group in resumable chunks. Members beyond the first chunk are held
  * in `pendingMembers`; a group with pending members is hidden from every
  * member's list until creation completes, so an interruption (between chunks
- * or during rollback) never exposes a half-built group. If any member is
- * refused (e.g. their account is being deleted) the group is removed.
+ * or while dropping a refused member) never exposes a half-built group. A
+ * member the rules refuse (e.g. their account is being deleted) is dropped,
+ * together with their name and unread entry; everyone else is kept.
  */
 export async function createGroup(
   createdBy: string,
@@ -312,6 +314,8 @@ export async function createGroup(
   return groupRef.id;
 }
 
+const isDenied = (err: unknown) => (err as { code?: string }).code === 'permission-denied';
+
 /** Moves pending members into the group chunk by chunk; idempotent and safe to repeat. */
 export async function completeGroupCreation(groupId: string): Promise<void> {
   const ref = doc(db, 'groups', groupId);
@@ -323,12 +327,18 @@ export async function completeGroupCreation(groupId: string): Promise<void> {
     try {
       await updateDoc(ref, { members: arrayUnion(...chunk), pendingMembers: arrayRemove(...chunk) });
     } catch (err) {
-      if ((err as { code?: string }).code === 'permission-denied') {
-        // Refused member: the group was never shown, so roll it back. If this
-        // delete is interrupted the group stays hidden and is retried on resume.
-        await deleteDoc(ref);
+      if (!isDenied(err)) throw err;
+      // Find the refused member(s) one at a time and drop only them.
+      for (const member of chunk) {
+        try {
+          await updateDoc(ref, { members: arrayUnion(member), pendingMembers: arrayRemove(member) });
+        } catch (memberErr) {
+          if (!isDenied(memberErr)) throw memberErr;
+          await updateDoc(ref, new FieldPath('pendingMembers'), arrayRemove(member),
+            new FieldPath('memberInfo', member), deleteField(),
+            new FieldPath('unreadCounts', member), deleteField());
+        }
       }
-      throw err;
     }
   }
 }

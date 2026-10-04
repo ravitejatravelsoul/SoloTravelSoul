@@ -771,14 +771,14 @@ test('final completed-job write fails: late media is still swept and scheduled f
   // Recovery never acts under a live lease; once the dead attempt's lease lapses it finishes.
   restore();
   h.r2.objects.add(`profile_photos/${ME}/later.jpg`);
-  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, resumed: 0, swept: 1 });
+  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, resumed: 0, swept: 1, stalled: 0 });
   h.advance(LEASE_MS + 1);
-  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 1, resumed: 0, swept: 1 });
+  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 1, resumed: 0, swept: 1, stalled: 0 });
   job = (await store.get(`accountDeletions/${ME}`)).data;
   assert.deepEqual([job.status, job.pendingFinalization, job.recoveredBy], ['completed', false, 'scheduled-finalization']);
   assert.equal(h.authCalls.length, 1, 'no second Auth removal needed');
   await expectState(store, h);
-  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, resumed: 0, swept: 1 }, 'idempotent');
+  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, resumed: 0, swept: 1, stalled: 0 }, 'idempotent');
 });
 
 test('Auth removal failed after media was cleared: finalization removes Auth without the user, but never under an active attempt', async () => {
@@ -927,7 +927,14 @@ test('entry point: uploads fail closed with 503 before storing when barrier cred
 
 // Real ID-token signatures and service-account JWTs; Google endpoints are
 // faked, Firestore REST goes to the emulator.
+// The Worker caches Google's JWKS per isolate, so every test signs with one key set.
+let cachedKeys;
 async function rsaKeys() {
+  if (cachedKeys) return cachedKeys;
+  cachedKeys = await makeRsaKeys();
+  return cachedKeys;
+}
+async function makeRsaKeys() {
   const algo = { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' };
   const id = await crypto.subtle.generateKey(algo, true, ['sign', 'verify']);
   const sa = await crypto.subtle.generateKey(algo, true, ['sign', 'verify']);
@@ -1027,7 +1034,7 @@ test('a deletion that failed mid-way (e.g. out of Worker subrequests) is finishe
   h.r2.failNext = 1; // stands in for "Too many subrequests" / any mid-plan failure
   await assert.rejects(deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps), (e) => e.step === 'r2Media');
   assert.equal(h.authCalls.length, 0);
-  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, resumed: 1, swept: 1 });
+  assert.deepEqual(await deletion.runScheduledMaintenance(h.deps), { finalized: 0, resumed: 1, swept: 1, stalled: 0 });
   assert.equal(await h.deps.authUserExists(ME), false, 'completed without the user signing in again');
   await expectState(store, h);
 });
@@ -1136,6 +1143,142 @@ test('store config: restricted Android permissions blocked, release builds auto-
   assert.equal(eas.build.production.environment, 'production');
   assert.equal(app.ios.config.usesNonExemptEncryption, false);
 }, 'memory');
+
+// ── Recovery identity and pending group membership ───────────────────────────
+
+test('cron recovery with no token email still removes the verified-email alias the UID owns', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  // Verified Auth email differs from the stale emails stored in users/ and userLookup/.
+  await store.commit([{ kind: 'update', path: 'userLookupByEmail/alice-verified@example.test', mustExist: false,
+    set: { uid: ME, email: 'alice-verified@example.test' } }]);
+  // First attempt (with the verified token email) fails before the directory step.
+  const query = store.query.bind(store);
+  let failed = false;
+  store.query = async (collectionId, ...rest) => {
+    if (!failed && collectionId === 'notifications') { failed = true; throw new Error('backend unavailable'); }
+    return query(collectionId, ...rest);
+  };
+  await assert.rejects(deletion.deleteAccount({ uid: ME, email: 'alice-verified@example.test' }, h.deps), (e) => e.step === 'notifications');
+  store.query = query;
+  // Cron resumes without any token email.
+  const result = await deletion.runScheduledMaintenance(h.deps);
+  assert.equal(result.resumed, 1);
+  assert.equal((await store.get(`accountDeletions/${ME}`)).data.status, 'completed');
+  assert.equal(await store.get('userLookupByEmail/alice-verified@example.test'), null, 'verified alias removed');
+  assert.equal((await store.get('userLookupByEmail/old-alice@example.test')).data.uid, BOB, "another account's alias kept");
+  await expectState(store, h);
+});
+
+test("deletion removes the user from other users' pending groups, preserving the group and its members", async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  await store.commit([{ kind: 'update', path: 'groups/bobPending', mustExist: false, set: {
+    name: 'Bob trip', createdBy: BOB, members: [BOB], pendingMembers: [ME, CAROL],
+    memberInfo: { [BOB]: { name: 'Bob', initials: 'B' }, [ME]: { name: 'Alice', initials: 'A' }, [CAROL]: { name: 'Carol', initials: 'C' } },
+    unreadCounts: { [BOB]: 0, [ME]: 0, [CAROL]: 0 }, lastMessage: null,
+  } }]);
+  await deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps);
+  const g = (await store.get('groups/bobPending')).data;
+  assert.deepEqual(g.members, [BOB]);
+  assert.deepEqual(g.pendingMembers, [CAROL]);
+  assert.equal(g.memberInfo[ME], undefined);
+  assert.equal(g.unreadCounts[ME], undefined);
+  assert.equal(g.memberInfo[CAROL].name, 'Carol');
+  await expectState(store, h);
+});
+
+test('pending-group cleanup is retry-safe and tolerates a concurrent group change', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  await store.commit([{ kind: 'update', path: 'groups/bobPending', mustExist: false, set: {
+    name: 'Bob trip', createdBy: BOB, members: [BOB], pendingMembers: [ME, CAROL],
+    memberInfo: { [BOB]: { name: 'Bob' }, [ME]: { name: 'Alice' }, [CAROL]: { name: 'Carol' } }, unreadCounts: { [BOB]: 0, [ME]: 0, [CAROL]: 0 },
+  } }]);
+  // The creator's client resumes concurrently: Carol is added just before the cleanup commit.
+  const base = store.commit.bind(store);
+  let raced = false;
+  store.commit = async (writes) => {
+    if (!raced && writes.some((w) => w.path === 'groups/bobPending')) {
+      raced = true;
+      const g = (await store.get('groups/bobPending')).data;
+      await base([{ kind: 'update', path: 'groups/bobPending', set: { members: [...g.members, CAROL], pendingMembers: g.pendingMembers.filter((m) => m !== CAROL) } }]);
+    }
+    return base(writes);
+  };
+  await deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps);
+  store.commit = base;
+  const g = (await store.get('groups/bobPending')).data;
+  assert.deepEqual([g.members, g.pendingMembers], [[BOB, CAROL], []]);
+  assert.equal(g.memberInfo[ME], undefined);
+  assert.equal(g.memberInfo[CAROL].name, 'Carol');
+});
+
+// ── Stalled-deletion reporting ────────────────────────────────────────────────
+
+test('deletions stuck past the threshold are reported (cron warning + operator status), others are not', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  h.r2.failNext = 1000; // persistent outage: every attempt fails at the media step
+  await assert.rejects(deletion.deleteAccount({ uid: ME, email: 'alice@example.test' }, h.deps));
+  const warnings = [];
+  const warn = console.warn;
+  console.warn = (msg) => warnings.push(msg);
+  try {
+    let result = await deletion.runScheduledMaintenance(h.deps);
+    assert.deepEqual([result.resumed, result.stalled], [0, 0], 'young failures are retried, not reported');
+    h.advance(deletion.STALLED_AFTER_MS + 60_000);
+    result = await deletion.runScheduledMaintenance(h.deps);
+    assert.equal(result.stalled, 1);
+  } finally {
+    console.warn = warn;
+  }
+  const event = JSON.parse(warnings.find((w) => w.includes('account_deletion_stalled')));
+  assert.deepEqual([event.count, event.jobs[0].uid, event.jobs[0].lastErrorStep], [1, ME, 'r2Media']);
+  assert.ok(!JSON.stringify(event).includes('alice@'), 'no email in the report');
+
+  // Operator status endpoint (same admin token as operator deletion).
+  const status = (auth) => route.handleAdminDeletionStatus(new Request('https://worker.test/admin/deletion-status', { headers: auth ? { Authorization: auth } : {} }),
+    { adminToken: 'ops', deletion: () => h.deps, json });
+  assert.equal((await status('Bearer wrong')).status, 403);
+  const ok = await status('Bearer ops');
+  const body = await ok.json();
+  assert.deepEqual([ok.status, body.count, body.stalled[0].uid, body.stalled[0].status], [200, 1, ME, 'failed']);
+  assert.equal((await route.handleAdminDeletionStatus(new Request('https://w/admin/deletion-status'), { adminToken: undefined, deletion: () => h.deps, json })).status, 404);
+});
+
+// ── Moderation media removal and suspension through the Worker entry point ────
+
+test('entry point: moderators delete the media of removed posts; others cannot; suspended users cannot upload', async () => {
+  const keys = await rsaKeys();
+  const store = await newStore(); await seed(store);
+  const bucket = fakeR2([`post_photos/${BOB}/y.jpg`, `post_photos/${CAROL}/z.jpg`, `post_photos/${BOB}/keep.jpg`]);
+  const fakes = installGoogleFakes(keys, { storageObjects: new Set(), authUsers: new Set([ME, BOB, CAROL]) });
+  const env = { R2_BUCKET: bucket, PUBLIC_R2_BASE_URL: 'https://cdn.test', FIREBASE_PROJECT_ID: PROJECT, FIREBASE_STORAGE_BUCKET: 'bucket', GOOGLE_SERVICE_ACCOUNT_JSON: keys.serviceAccount };
+  const seedDoc = (p, data) => store.commit([{ kind: 'update', path: p, set: data, mustExist: false }]);
+  await seedDoc('moderators/mod', { grantedBy: 'console' });
+  await seedDoc('travelPosts/removedPost', { authorId: BOB, visibility: 'removed', images: [`https://cdn.test/post_photos/${BOB}/y.jpg`, `https://cdn.test/post_photos/${CAROL}/z.jpg`, 'https://elsewhere.test/x.jpg'] });
+  await seedDoc('travelPosts/livePost', { authorId: BOB, visibility: 'public', images: [`https://cdn.test/post_photos/${BOB}/keep.jpg`] });
+  const call = async (uid, body) => {
+    const resp = await workerIndex().fetch(new Request('https://worker.test/moderation/remove-media', {
+      method: 'POST', headers: { Authorization: `Bearer ${await idToken(keys, uid)}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    }), env);
+    return { status: resp.status, body: await resp.json() };
+  };
+  try {
+    assert.equal((await call(CAROL, { targetType: 'post', targetId: 'removedPost' })).status, 403, 'not a moderator');
+    assert.equal((await call('mod', { targetType: 'post', targetId: 'livePost' })).status, 409, 'must be removed first');
+    assert.equal((await call('mod', { targetType: 'post', targetId: '../x' })).status, 400);
+    const ok = await call('mod', { targetType: 'post', targetId: 'removedPost' });
+    assert.deepEqual([ok.status, ok.body.removed], [200, 1]);
+    assert.deepEqual([...bucket.objects].sort(), [`post_photos/${BOB}/keep.jpg`, `post_photos/${CAROL}/z.jpg`], "only the author's own prefix");
+    assert.deepEqual((await store.get('travelPosts/removedPost')).data.images, []);
+
+    // Suspended account: uploads refused before storing.
+    await seedDoc(`accountSuspensions/${CAROL}`, { suspendedBy: 'mod', reason: 'test' });
+    const puts = bucket.puts;
+    const up = await workerIndex().fetch(multipart(await idToken(keys, CAROL)), env);
+    assert.deepEqual([up.status, bucket.puts], [403, puts]);
+  } finally {
+    fakes.restore();
+  }
+}, 'emulator');
 
 (async () => {
   let passed = 0;

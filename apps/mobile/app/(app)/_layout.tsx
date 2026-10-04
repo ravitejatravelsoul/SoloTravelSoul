@@ -169,6 +169,7 @@ export default function AppLayout() {
       <Tabs.Screen name="profile/edit" options={{ href: null }} />
       <Tabs.Screen name="profile/privacy" options={{ href: null }} />
       <Tabs.Screen name="profile/safety" options={{ href: null }} />
+      <Tabs.Screen name="moderation/index" options={{ href: null }} />
       <Tabs.Screen name="profile/join-requests" options={{ href: null }} />
       <Tabs.Screen name="profile/blocked-users" options={{ href: null }} />
       <Tabs.Screen name="profile/followers" options={{ href: null }} />

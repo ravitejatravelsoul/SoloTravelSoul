@@ -6,7 +6,8 @@ service firebase.storage {
     // Account-deletion barrier (cross-service read of Firestore): once deletion
     // of an account starts, its tokens can no longer upload or overwrite files.
     function notDeleting() {
-      return !firestore.exists(/databases/(default)/documents/accountDeletions/$(request.auth.uid));
+      return !firestore.exists(/databases/(default)/documents/accountDeletions/$(request.auth.uid))
+        && !firestore.exists(/databases/(default)/documents/accountSuspensions/$(request.auth.uid));
     }
 
     // ── Default: deny everything ──────────────────────────────────────
