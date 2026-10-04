@@ -41,8 +41,8 @@ binding     = "R2_BUCKET"
 bucket_name = "solotravelsoul-images-staging"
 
 [env.staging.vars]
-FIREBASE_PROJECT_ID = "REPLACE_WITH_STAGING_PROJECT_ID"
-FIREBASE_STORAGE_BUCKET = "REPLACE_WITH_STAGING_PROJECT_ID.firebasestorage.app"
+FIREBASE_PROJECT_ID = "solotravelsoul-staging"
+FIREBASE_STORAGE_BUCKET = "solotravelsoul-staging.firebasestorage.app"
 
 [env.staging.triggers]
 crons = ["17 * * * *"]
