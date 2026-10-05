@@ -45,6 +45,7 @@ const deletion = worker('accountDeletion');
 const route = worker('accountRoute');
 const authMod = worker('auth');
 const DELETED = deletion.DELETED_NAME;
+const { d1Fake, kvFake } = require('./lib/fakes.cjs');
 
 // ── In-memory DocStore with Firestore commit semantics ───────────────────────
 
@@ -122,10 +123,13 @@ function fakeMedia(name, keys) {
   return {
     name, objects, failNext: 0,
     inaccessible: false,
+    bucketMissing: false,
+    async bucketExists(before) { await before?.(); this.gate(); return !this.bucketMissing; },
     gate() { if (this.inaccessible) throw new LegacyMediaInaccessible(name, 403); },
     async deletePrefixes(prefixes, beforePage) {
       await beforePage?.();
       this.gate();
+      if (this.bucketMissing) throw new LegacyMediaInaccessible(name, 404);
       if (this.failNext > 0) { this.failNext--; throw new Error(`${name} unavailable`); }
       let n = 0;
       for (const k of [...objects]) if (prefixes.some((p) => k.startsWith(p))) { objects.delete(k); n++; }
@@ -238,7 +242,9 @@ function harness(store) {
   } };
   let now = Date.now();
   let attempts = 0;
-  const deps = { store, r2, firebaseStorage: storage, deleteAuthUser: (uid) => auth.del(uid), now: () => now,
+  // KV media + D1 index are always bound: missing bindings block deletion (never proof of no media).
+  const media = { db: d1Fake(), kv: kvFake() };
+  const deps = { store, r2, firebaseStorage: storage, media, deleteAuthUser: (uid) => auth.del(uid), now: () => now,
     authUserExists: async (uid) => authUsers.has(uid),
     newAttemptId: () => `attempt-${++attempts}` };
   return { deps, r2, storage, authCalls, auth, advance: (ms) => { now += ms; }, now: () => now };
@@ -932,6 +938,12 @@ function fakeR2(keys = []) {
   };
 }
 
+/** KV media + D1 index bindings for Worker env objects (deletion requires them). */
+function mediaBindings() {
+  const kv = kvFake();
+  return { MEDIA_DB: d1Fake(), MEDIA_KV: { get: (k) => kv.get(k), put: (k, v) => kv.put(k, v), delete: (k) => kv.delete(k) } };
+}
+
 function multipart(token) {
   const form = new FormData();
   form.append('file', new File([new Uint8Array([1, 2, 3])], 'p.jpg', { type: 'image/jpeg' }));
@@ -941,7 +953,7 @@ function multipart(token) {
 test('entry point: uploads fail closed with 503 before storing when barrier credentials are missing or unusable', async () => {
   for (const secret of [undefined, '', '{"client_email":"x"}', 'not json']) {
     const bucket = fakeR2();
-    const env = { R2_BUCKET: bucket, PUBLIC_R2_BASE_URL: 'https://cdn.test', FIREBASE_PROJECT_ID: PROJECT, FIREBASE_STORAGE_BUCKET: 'b', GOOGLE_SERVICE_ACCOUNT_JSON: secret };
+    const env = { ...mediaBindings(), R2_BUCKET: bucket, PUBLIC_R2_BASE_URL: 'https://cdn.test', FIREBASE_PROJECT_ID: PROJECT, FIREBASE_STORAGE_BUCKET: 'b', GOOGLE_SERVICE_ACCOUNT_JSON: secret };
     for (const path of ['/upload/post-photo', '/upload/profile-photo']) {
       const resp = await workerIndex().fetch(new Request(`https://worker.test${path}`, { method: 'POST', headers: { Authorization: 'Bearer any' }, body: new FormData() }), env);
       assert.deepEqual([resp.status, (await resp.json()).code, bucket.puts], [503, 'uploads/unavailable', 0], `${path} secret=${secret}`);
@@ -976,7 +988,7 @@ async function idToken(keys, uid, authTime = Math.floor(Date.now() / 1000)) {
 }
 function installGoogleFakes(keys, { storageObjects, authUsers }) {
   const real = global.fetch;
-  const state = { failFinalWrite: false, authDeletes: [], fetches: 0 };
+  const state = { failFinalWrite: false, authDeletes: [], fetches: 0, bucketMissing: false, storageDenied: false, failListPrefix: null };
   global.fetch = async (input, init = {}) => {
     const url = typeof input === 'string' ? input : input.url;
     state.fetches++; // every outbound call is a Workers subrequest
@@ -990,6 +1002,13 @@ function installGoogleFakes(keys, { storageObjects, authUsers }) {
     }
     if (url.startsWith('https://storage.googleapis.com/storage/v1/b/')) {
       const u = new URL(url);
+      if (state.storageDenied) return new Response('{"error":{"code":403}}', { status: 403 });
+      if (state.bucketMissing) return new Response('{"error":{"code":404}}', { status: 404 });
+      if (!u.pathname.includes('/o')) return Response.json({ name: 'bucket' }); // bucket metadata
+      if (state.failListPrefix && u.searchParams.get('prefix') === state.failListPrefix) {
+        state.failListPrefix = null;
+        return new Response('{"error":{"code":503}}', { status: 503 });
+      }
       const objectName = u.pathname.includes('/o/') ? decodeURIComponent(u.pathname.split('/o/')[1]) : null;
       if (init.method === 'DELETE') return new Response(null, { status: storageObjects.delete(objectName) ? 204 : 404 });
       if (objectName !== null) return storageObjects.has(objectName) ? Response.json({ name: objectName }) : new Response(null, { status: 404 });
@@ -1014,7 +1033,7 @@ test('entry point: barrier read through Firestore REST blocks uploads; final-wri
   const storageObjects = new Set(h.storage.objects);
   const authUsers = new Set([ME, BOB]);
   const fakes = installGoogleFakes(keys, { storageObjects, authUsers });
-  const env = { R2_BUCKET: bucket, PUBLIC_R2_BASE_URL: 'https://cdn.test', FIREBASE_PROJECT_ID: PROJECT,
+  const env = { ...mediaBindings(), R2_BUCKET: bucket, PUBLIC_R2_BASE_URL: 'https://cdn.test', FIREBASE_PROJECT_ID: PROJECT,
     FIREBASE_STORAGE_BUCKET: 'bucket', GOOGLE_SERVICE_ACCOUNT_JSON: keys.serviceAccount };
   try {
     // Uploads: allowed without a barrier, refused (nothing stored) with one.
@@ -1032,12 +1051,13 @@ test('entry point: barrier read through Firestore REST blocks uploads; final-wri
     fakes.state.failFinalWrite = true;
     const token = await idToken(keys, ME);
     let slices = 0;
-    for (;;) {
+    for (; slices < 60;) {
       const before = fakes.state.fetches;
       resp = await workerIndex().fetch(new Request('https://worker.test/account/delete', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }), env);
       assert.ok(fakes.state.fetches - before <= 50, `invocation made ${fakes.state.fetches - before} subrequests`);
       slices++;
       if (resp.status !== 202) break;
+      assert.notEqual((await resp.clone().json()).status, 'blocked', 'deletion must not be blocked here');
       assert.equal(fakes.state.authDeletes.length, 0);
     }
     assert.deepEqual([resp.status, await resp.json()], [200, { status: 'deleted' }]);
@@ -1130,7 +1150,7 @@ test('entry point: operator deletion fulfils a web request with the full plan', 
   const storageObjects = new Set(h.storage.objects);
   const authUsers = new Set([ME, BOB]);
   const fakes = installGoogleFakes(keys, { storageObjects, authUsers });
-  const env = { R2_BUCKET: bucket, PUBLIC_R2_BASE_URL: 'https://cdn.test', FIREBASE_PROJECT_ID: PROJECT, FIREBASE_STORAGE_BUCKET: 'bucket',
+  const env = { ...mediaBindings(), R2_BUCKET: bucket, PUBLIC_R2_BASE_URL: 'https://cdn.test', FIREBASE_PROJECT_ID: PROJECT, FIREBASE_STORAGE_BUCKET: 'bucket',
     GOOGLE_SERVICE_ACCOUNT_JSON: keys.serviceAccount, ADMIN_DELETION_TOKEN: 'operator-secret' };
   try {
     let resp;
@@ -1296,7 +1316,7 @@ test('entry point: moderators delete the media of removed posts; others cannot; 
   const store = await newStore(); await seed(store);
   const bucket = fakeR2([`post_photos/${BOB}/y.jpg`, `post_photos/${CAROL}/z.jpg`, `post_photos/${BOB}/keep.jpg`]);
   const fakes = installGoogleFakes(keys, { storageObjects: new Set(), authUsers: new Set([ME, BOB, CAROL]) });
-  const env = { R2_BUCKET: bucket, PUBLIC_R2_BASE_URL: 'https://cdn.test', FIREBASE_PROJECT_ID: PROJECT, FIREBASE_STORAGE_BUCKET: 'bucket', GOOGLE_SERVICE_ACCOUNT_JSON: keys.serviceAccount };
+  const env = { ...mediaBindings(), R2_BUCKET: bucket, PUBLIC_R2_BASE_URL: 'https://cdn.test', FIREBASE_PROJECT_ID: PROJECT, FIREBASE_STORAGE_BUCKET: 'bucket', GOOGLE_SERVICE_ACCOUNT_JSON: keys.serviceAccount };
   const seedDoc = (p, data) => store.commit([{ kind: 'update', path: p, set: data, mustExist: false }]);
   await seedDoc('moderators/mod', { grantedBy: 'console' });
   await seedDoc('travelPosts/removedPost', { authorId: BOB, visibility: 'removed', images: [`https://cdn.test/post_photos/${BOB}/y.jpg`, `https://cdn.test/post_photos/${CAROL}/z.jpg`, 'https://elsewhere.test/x.jpg'] });
@@ -1535,7 +1555,6 @@ for (const [type, docPath, id] of removalTargets) {
 
 const budgetMod = worker('budget');
 const mediaMod = worker('media');
-const { d1Fake, kvFake } = require('./lib/fakes.cjs');
 const COLD_AUTH_CALLS = 2; // JWKS + service-account token on a cold isolate
 const STORE_METHODS = ['get', 'getMany', 'query', 'listDocumentIds', 'listCollectionIds', 'commit'];
 
@@ -1568,12 +1587,14 @@ function invocation(h, store, mediaStore) {
   const charge = (fn) => async (...a) => { budget.spend(); return fn(...a); };
   const fs = h.storage;
   const storage = { name: fs.name,
+    bucketExists: (before) => fs.bucketExists(async () => { await before?.(); budget.spend(); }),
     deletePrefixes: (p, before) => fs.deletePrefixes(p, async () => { await before?.(); budget.spend(); }),
     deleteObjects: (n, before) => fs.deleteObjects(n, async () => { await before?.(); budget.spend(); }),
     verifyAbsent: (p, n, before) => fs.verifyAbsent(p, n, async () => { await before?.(); budget.spend(); }) };
+  const m = mediaStore ?? h.deps.media;
   const deps = { ...h.deps, store: metered(store, budget), firebaseStorage: storage, budget,
     deleteAuthUser: charge(h.deps.deleteAuthUser), authUserExists: charge(h.deps.authUserExists),
-    media: mediaStore ? { db: mediaMod.meteredD1(mediaStore.db, queries), kv: mediaStore.kv, queries } : undefined };
+    media: m ? { db: mediaMod.meteredD1(m.db, queries), kv: m.kv, queries } : undefined };
   return { deps, budget, queries };
 }
 
@@ -1948,6 +1969,201 @@ test('real REST adapter: a 1,200-document dataset is deleted page by page under 
   await expectState(store, h);
   assert.equal(await countDocs(store, 'notifications', 'userId', ME), 0);
 }, 'emulator');
+
+
+// ── Free-only staging: no-legacy mode and binding guards ──────────────────────
+
+const indexMod = worker('index');
+
+test('missing media bindings block deletion (never proof of no media); restoring them lets it finish', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  const media = h.deps.media;
+  let r = await deletion.deleteAccount({ uid: ME, email: null }, { ...h.deps, media: undefined });
+  assert.deepEqual([r.status, r.step, r.reason], ['blocked', 'media', 'media-bindings-missing']);
+  assert.equal(h.authCalls.length, 0);
+  r = await deletion.deleteAccount({ uid: ME, email: null }, { ...h.deps, media });
+  assert.equal(r.status, 'deleted');
+  await expectState(store, h);
+}, 'memory');
+
+test('legacy media required (default): unbound R2 or a missing Storage bucket blocks deletion with Auth kept', async () => {
+  let store = await newStore(); await seed(store); let h = harness(store);
+  let r = await deletion.deleteAccount({ uid: ME, email: null }, { ...h.deps, r2: undefined });
+  assert.deepEqual([r.status, r.step, r.reason], ['blocked', 'r2Media', 'legacy-r2-unbound']);
+  store = await newStore(); await seed(store); h = harness(store);
+  h.storage.bucketMissing = true;
+  r = await deletion.deleteAccount({ uid: ME, email: null }, h.deps);
+  assert.deepEqual([r.status, r.step], ['blocked', 'firebaseMedia'], 'a 404 bucket is not proof of absence outside no-legacy mode');
+  assert.equal((await store.get(`legacyMediaCleanup/${ME}`)).data.reason, 'inaccessible (404)');
+  assert.equal(h.authCalls.length, 0);
+}, 'memory');
+
+test('staging no-legacy mode: completes only with proof the bucket was never provisioned; existing or denied buckets take the normal path', async () => {
+  // Never provisioned + no R2 binding: completes, proof recorded.
+  let store = await newStore(); await seed(store); let h = harness(store);
+  h.storage.bucketMissing = true;
+  let r = await deletion.deleteAccount({ uid: ME, email: null }, { ...h.deps, r2: undefined, legacyMode: 'none' });
+  assert.equal(r.status, 'deleted');
+  let rec = (await store.get(`legacyMediaCleanup/${ME}`)).data;
+  assert.deepEqual([rec.status, rec.proof], ['verified_absent', 'bucket-not-provisioned']);
+  assert.equal(h.authCalls.length, 1);
+  // Bucket exists: its objects are really deleted and verified, not bypassed.
+  store = await newStore(); await seed(store); h = harness(store);
+  r = await deletion.deleteAccount({ uid: ME, email: null }, { ...h.deps, r2: undefined, legacyMode: 'none' });
+  assert.equal(r.status, 'deleted');
+  assert.ok(!h.storage.objects.has(`profile_images/${ME}.jpg`) && h.storage.objects.has(`profile_images/${BOB}.jpg`));
+  rec = (await store.get(`legacyMediaCleanup/${ME}`)).data;
+  assert.deepEqual([rec.status, rec.proof], ['verified_absent', 'listing-and-lookup']);
+  // Access denied: blocked, Auth kept.
+  store = await newStore(); await seed(store); h = harness(store);
+  h.storage.inaccessible = true;
+  r = await deletion.deleteAccount({ uid: ME, email: null }, { ...h.deps, r2: undefined, legacyMode: 'none' });
+  assert.deepEqual([r.status, r.step], ['blocked', 'firebaseMedia']);
+  assert.equal(h.authCalls.length, 0);
+}, 'memory');
+
+test('no-legacy mode is refused for the production project and for unknown values', async () => {
+  const shared = fs.readFileSync(path.join(root, 'packages/shared/src/environment.ts'), 'utf8');
+  assert.ok(shared.includes(`PRODUCTION_FIREBASE_PROJECT_ID = '${indexMod.PRODUCTION_FIREBASE_PROJECT_ID}'`), 'Worker and app agree on the production project');
+  const prod = indexMod.PRODUCTION_FIREBASE_PROJECT_ID;
+  assert.equal(indexMod.legacyModeFor({ FIREBASE_PROJECT_ID: prod, LEGACY_MEDIA_MODE: 'none' }), null);
+  assert.equal(indexMod.legacyModeFor({ FIREBASE_PROJECT_ID: prod }), 'required');
+  assert.equal(indexMod.legacyModeFor({ FIREBASE_PROJECT_ID: 'solotravelsoul-staging', LEGACY_MEDIA_MODE: 'none' }), 'none');
+  assert.equal(indexMod.legacyModeFor({ FIREBASE_PROJECT_ID: 'solotravelsoul-staging', LEGACY_MEDIA_MODE: 'skip' }), null);
+  // Through the entry point: the operator endpoint refuses before touching anything.
+  const env = { FIREBASE_PROJECT_ID: prod, FIREBASE_STORAGE_BUCKET: `${prod}.firebasestorage.app`, LEGACY_MEDIA_MODE: 'none',
+    GOOGLE_SERVICE_ACCOUNT_JSON: (await rsaKeys()).serviceAccount, ADMIN_DELETION_TOKEN: 'ops' };
+  const real = global.fetch;
+  let fetched = 0;
+  global.fetch = async () => { fetched++; throw new Error('no network expected'); };
+  const errors = console.error;
+  console.error = () => {};
+  try {
+    const resp = await workerIndex().fetch(new Request('https://w/admin/account-deletion', { method: 'POST', headers: { Authorization: 'Bearer ops' }, body: JSON.stringify({ uid: ME }) }), env);
+    assert.deepEqual([resp.status, (await resp.json()).code], [503, 'deletion/unavailable']);
+    assert.equal(fetched, 0);
+  } finally {
+    global.fetch = real;
+    console.error = errors;
+  }
+}, 'memory');
+
+/** Staging-shaped Worker env: KV/D1 media, no R2 binding, optional no-legacy mode. */
+function stagingEnv(keys, mode) {
+  const kv = kvFake();
+  return { FIREBASE_PROJECT_ID: PROJECT, FIREBASE_STORAGE_BUCKET: `${PROJECT}.firebasestorage.app`, GOOGLE_SERVICE_ACCOUNT_JSON: keys.serviceAccount,
+    ADMIN_DELETION_TOKEN: 'ops', MEDIA_DB: d1Fake(), MEDIA_KV: { get: (k) => kv.get(k), put: (k, v) => kv.put(k, v), delete: (k) => kv.delete(k) },
+    MEDIA_PUBLIC_ORIGIN: 'https://staging.worker.test', ...(mode ? { LEGACY_MEDIA_MODE: mode } : {}) };
+}
+async function deleteThroughWorker(keys, env, uid = ME) {
+  const token = await idToken(keys, uid);
+  let resp;
+  for (let i = 0; i < 40; i++) {
+    resp = await workerIndex().fetch(new Request('https://w/account/delete', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }), env);
+    if (resp.status !== 202) break;
+    const body = await resp.clone().json();
+    if (body.status === 'blocked') break;
+  }
+  return { status: resp.status, body: await resp.json() };
+}
+
+test('staging end to end: a new account is deleted without Storage, R2 or Blaze (bucket never provisioned)', async () => {
+  const keys = await rsaKeys();
+  const store = await newStore(); await seed(store);
+  const storageObjects = new Set([`profile_images/${BOB}.jpg`, `trip_covers/${BOB}/t.jpg`]); // never reachable: bucket missing
+  const fakes = installGoogleFakes(keys, { storageObjects, authUsers: new Set([ME, BOB]) });
+  fakes.state.bucketMissing = true;
+  try {
+    const r = await deleteThroughWorker(keys, stagingEnv(keys, 'none'));
+    assert.deepEqual([r.status, r.body], [200, { status: 'deleted' }]);
+    assert.deepEqual(fakes.state.authDeletes, [ME]);
+    const rec = (await store.get(`legacyMediaCleanup/${ME}`)).data;
+    assert.deepEqual([rec.status, rec.proof], ['verified_absent', 'bucket-not-provisioned']);
+    await expectState(store, { r2: { objects: new Set([`post_photos/${BOB}/y.jpg`, `profile_photos/${BOB}/avatar.jpg`]) }, storage: { objects: storageObjects } });
+  } finally {
+    fakes.restore();
+  }
+}, 'emulator');
+
+test('entry point: without no-legacy mode a missing bucket or Storage 403 blocks deletion and keeps Auth', async () => {
+  const keys = await rsaKeys();
+  for (const [label, setup, mode] of [['missing bucket, mode required', (s) => { s.bucketMissing = true; }, undefined], ['403, no-legacy mode', (s) => { s.storageDenied = true; }, 'none']]) {
+    const store = await newStore(); await seed(store);
+    const fakes = installGoogleFakes(keys, { storageObjects: new Set(), authUsers: new Set([ME, BOB]) });
+    setup(fakes.state);
+    const env = stagingEnv(keys, mode);
+    if (!mode) Object.assign(env, { R2_BUCKET: fakeR2(), PUBLIC_R2_BASE_URL: 'https://cdn.test' });
+    try {
+      const r = await deleteThroughWorker(keys, env);
+      assert.deepEqual([r.status, r.body.status, r.body.step], [202, 'blocked', 'firebaseMedia'], label);
+      assert.deepEqual(fakes.state.authDeletes, [], label);
+      assert.equal((await store.get(`legacyMediaCleanup/${ME}`)).data.status, 'unresolved', label);
+    } finally {
+      fakes.restore();
+    }
+  }
+}, 'emulator');
+
+test('cron late-media sweep through the real REST adapter: pages, equal timestamps, budget stops, restarts and retried failures', async () => {
+  const keys = await rsaKeys();
+  const store = await newStore();
+  const base = Date.now() - 60_000;
+  const uids = Array.from({ length: 130 }, (_, i) => `sw${String(i).padStart(3, '0')}`);
+  const storageObjects = new Set();
+  for (let i = 0; i < uids.length; i += 25) {
+    await store.commit(uids.slice(i, i + 25).map((uid, j) => ({ kind: 'update', path: `accountDeletions/${uid}`, mustExist: false, set: {
+      uid, status: 'completed', pendingFinalization: false, mediaClearedAtMs: base + Math.floor((i + j) / 10), completedSteps: [] } })));
+  }
+  for (const uid of uids) storageObjects.add(`journals/${uid}/late.jpg`);
+  storageObjects.add(`journals/${BOB}/keep.jpg`); // not a deleted account
+  const fakes = installGoogleFakes(keys, { storageObjects, authUsers: new Set() });
+  fakes.state.failListPrefix = 'journals/sw007/'; // one job's cleanup fails once
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    let runs = 0;
+    let sawSavedTimestampCursor = false;
+    const remaining = () => uids.filter((u) => storageObjects.has(`journals/${u}/late.jpg`));
+    for (; runs < 60 && remaining().length; runs++) {
+      // Restart: a fresh adapter and budget each run; only Firestore carries the position.
+      const budget = new budgetMod.SubrequestBudget();
+      const f = budgetMod.budgetedFetch(budget);
+      const rest = new FirestoreRest({ projectId: PROJECT, token: async () => 'owner', emulatorHost: EMULATOR_HOST, fetch: f });
+      const deps = { store: rest, budget, legacyMode: 'required', media: undefined,
+        firebaseStorage: worker('objectStores').firebaseStorageDeleter({ bucket: 'bucket', token: async () => 'sa', fetch: f }),
+        deleteAuthUser: async () => {}, authUserExists: async () => false };
+      const before = remaining().length;
+      const result = await deletion.runScheduledMaintenance(deps);
+      assert.ok(budget.used <= 50, `run ${runs}: ${budget.used} subrequests`);
+      assert.ok(remaining().length < before || result.swept > 0 || runs > 0, `run ${runs} made no progress`);
+      const cron = (await store.get('deletionMaintenance/cron'))?.data;
+      if (cron?.cursors?.sweepAfter?.mediaClearedAtMs) sawSavedTimestampCursor = true;
+    }
+    assert.deepEqual(remaining(), [], 'every job in the window was reached, including after the failed one');
+    assert.ok(runs > 3, `expected several budget-limited runs, got ${runs}`);
+    assert.ok(sawSavedTimestampCursor, 'the (mediaClearedAtMs, path) cursor was saved between runs');
+    assert.ok(storageObjects.has(`journals/${BOB}/keep.jpg`), 'other accounts untouched');
+    assert.equal(fakes.state.failListPrefix, null, 'the injected failure happened and was retried on a later pass');
+  } finally {
+    console.warn = warn;
+    fakes.restore();
+  }
+}, 'emulator');
+
+
+test('counter audit dry run: expected tallies, legacy likes, never writes', async () => {
+  const src = fs.readFileSync(path.join(root, 'scripts/auditCounters.ts'), 'utf8');
+  const m = { exports: {} };
+  new Function('module', 'exports', 'require', transpile(path.join(root, 'scripts/auditCounters.ts')))(m, m.exports, require);
+  const a = m.exports;
+  const likes = [{ postId: 'p1', targetType: 'post' }, { postId: 'p1' }, { postId: 'j1' }, { postId: 'gone' }, { postId: 'j1', targetType: 'journal' }];
+  const t = a.likeTallies(likes, new Set(['p1']), new Set(['j1']));
+  assert.deepEqual([t.get('travelPosts/p1'), t.get('travelJournals/j1'), t.size], [2, 2, 2]);
+  const mism = a.compareCounters([{ path: 'travelPosts/p1', data: { likeCount: 2 } }, { path: 'travelPosts/p2', data: { likeCount: -1 } }], 'likeCount', t);
+  assert.deepEqual(mism, [{ path: 'travelPosts/p2', field: 'likeCount', stored: -1, expected: 0 }]);
+  assert.ok(!/\.(update|delete|create)\(|\.doc\([^)]*\)\.set\(|\.ref\.set\(|batch\(|runTransaction|bulkWriter/.test(src), 'the audit has no write path');
+  assert.ok(!/console\.log\([^)]*mismatches\b/.test(src), 'paths go only to the operator report file');
+}, 'memory');
 
 (async () => {
   let passed = 0;

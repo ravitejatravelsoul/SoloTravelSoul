@@ -17,6 +17,11 @@ export class LegacyMediaInaccessible extends Error {
 }
 
 export interface LegacyStorage extends PrefixDeleter {
+  /**
+   * Authenticated bucket lookup: true when the bucket exists, false only on a
+   * 404 for the bucket itself (never provisioned). 401/403 throw LegacyMediaInaccessible.
+   */
+  bucketExists(beforeCall?: () => Promise<void> | void): Promise<boolean>;
   /** Deletes single objects (e.g. profile_images/{uid}.jpg); 404 counts as already absent. */
   deleteObjects(names: string[], beforeCall?: () => Promise<void> | void): Promise<number>;
   /** True only when every prefix lists empty and every object returns 404 — proof of absence. */
@@ -64,7 +69,9 @@ export function firebaseStorageDeleter(opts: {
     const qs = `prefix=${encodeURIComponent(prefix)}&maxResults=100&fields=items(name),nextPageToken${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
     const resp = await f(`${objectsUrl}?${qs}`, { headers: await auth() });
     if (denied(resp.status)) throw new LegacyMediaInaccessible('firebase-storage', resp.status);
-    if (resp.status === 404) return { items: [], nextPageToken: '' }; // bucket does not exist
+    // A missing bucket is not proof that nothing was stored (wrong name, other
+    // project): only the staging no-legacy mode accepts it, via bucketExists().
+    if (resp.status === 404) throw new LegacyMediaInaccessible('firebase-storage', 404);
     if (!resp.ok) throw new Error(`Storage list failed: ${resp.status}`);
     const body = (await resp.json()) as { items?: { name: string }[]; nextPageToken?: string };
     return { items: body.items ?? [], nextPageToken: body.nextPageToken ?? '' };
@@ -81,6 +88,14 @@ export function firebaseStorageDeleter(opts: {
 
   return {
     name: 'firebase-storage',
+    async bucketExists(beforeCall) {
+      await beforeCall?.();
+      const resp = await f(`${base}/storage/v1/b/${encodeURIComponent(opts.bucket)}?fields=name`, { headers: await auth() });
+      if (denied(resp.status)) throw new LegacyMediaInaccessible('firebase-storage', resp.status);
+      if (resp.status === 404) return false;
+      if (!resp.ok) throw new Error(`Storage bucket lookup failed: ${resp.status}`);
+      return true;
+    },
     async deletePrefixes(prefixes, beforePage) {
       let deleted = 0;
       for (const prefix of prefixes) {

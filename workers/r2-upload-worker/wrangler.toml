@@ -27,18 +27,18 @@ FIREBASE_STORAGE_BUCKET = "solotravelsoul-57a9e.firebasestorage.app"
 crons = ["17 * * * *"]
 
 # ── Staging: wrangler deploy --env staging ──────────────────────────────────
-# Separate Worker, R2 bucket, Firebase project, secrets and cron. Nothing here
-# may name a production resource — `npm run check:staging` enforces this and
-# must pass before any staging deploy. Secrets are per environment:
+# Free-only staging: Workers Free + KV + D1, Firebase Spark. No R2 bucket and
+# no Firebase Storage bucket exist for staging (never provisioned), so the
+# staging Worker runs in no-legacy mode (LEGACY_MEDIA_MODE = "none"): deletion
+# accepts the unbound R2 store and proves Storage empty only by an
+# authenticated lookup showing the bucket does not exist. The Worker refuses
+# this mode for the production project. Nothing here may name a production
+# resource — `npm run check:staging` enforces this and must pass before any
+# staging deploy. Secrets are per environment:
 #   wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON --env staging   (staging service account only)
 #   wrangler secret put ADMIN_DELETION_TOKEN --env staging
-#   wrangler secret put PUBLIC_R2_BASE_URL --env staging            (public URL of the staging bucket)
 [env.staging]
 name = "solotravelsoul-r2-upload-staging"
-
-[[env.staging.r2_buckets]]
-binding     = "R2_BUCKET"
-bucket_name = "solotravelsoul-images-staging"
 
 # Media on Workers Free: bytes in KV, index in D1 (see migrations/).
 #   wrangler kv namespace create MEDIA_KV --env staging
@@ -59,6 +59,8 @@ FIREBASE_PROJECT_ID = "solotravelsoul-staging"
 FIREBASE_STORAGE_BUCKET = "solotravelsoul-staging.firebasestorage.app"
 # Canonical origin for media URLs (https://<staging worker host>); cron media cleanup needs it.
 MEDIA_PUBLIC_ORIGIN = "REPLACE_WITH_STAGING_WORKER_ORIGIN"
+# Staging never had legacy media (see above). Refused by the Worker for production.
+LEGACY_MEDIA_MODE = "none"
 
 [env.staging.triggers]
 crons = ["17 * * * *"]

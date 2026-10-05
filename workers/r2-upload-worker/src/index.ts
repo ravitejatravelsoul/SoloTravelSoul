@@ -14,7 +14,8 @@ import { budgetedFetch, D1_FREE_QUERIES, SliceExhausted, SubrequestBudget } from
 export interface Env {
   /** Legacy R2 bucket: cleanup/migration of earlier uploads only (optional). */
   R2_BUCKET?: R2Bucket;
-  PUBLIC_R2_BASE_URL: string;
+  /** Public base URL of the legacy R2 bucket (unset where no R2 bucket is bound). */
+  PUBLIC_R2_BASE_URL?: string;
   FIREBASE_PROJECT_ID: string;
   /** Firebase Storage bucket, e.g. "<project>.firebasestorage.app" (legacy cleanup only). */
   FIREBASE_STORAGE_BUCKET?: string;
@@ -27,6 +28,19 @@ export interface Env {
   MEDIA_DB?: D1Database;
   /** Canonical origin of media URLs (`<origin>/media/<id>`); required for cron media maintenance. */
   MEDIA_PUBLIC_ORIGIN?: string;
+  /** "none" = staging no-legacy mode (see DeletionDeps.legacyMode); refused for the production project. */
+  LEGACY_MEDIA_MODE?: string;
+}
+
+/** The production Firebase project; must match packages/shared PRODUCTION_FIREBASE_PROJECT_ID (tested). */
+export const PRODUCTION_FIREBASE_PROJECT_ID = 'solotravelsoul-57a9e';
+
+/** Legacy-media mode, or null when the configuration is invalid (deletion then answers 503). */
+export function legacyModeFor(env: Pick<Env, 'LEGACY_MEDIA_MODE' | 'FIREBASE_PROJECT_ID'>): 'required' | 'none' | null {
+  const mode = env.LEGACY_MEDIA_MODE ?? '';
+  if (mode === '' || mode === 'required') return 'required';
+  if (mode === 'none' && env.FIREBASE_PROJECT_ID !== PRODUCTION_FIREBASE_PROJECT_ID) return 'none';
+  return null;
 }
 
 const mediaOrigin = (env: Env, request?: Request) => (env.MEDIA_PUBLIC_ORIGIN || (request ? new URL(request.url).origin : '')).replace(/\/$/, '');
@@ -47,7 +61,13 @@ function services(env: Env, budget: SubrequestBudget) {
   const media = env.MEDIA_DB && env.MEDIA_KV ? { db: meteredD1(env.MEDIA_DB, queries), kv: env.MEDIA_KV, queries } : undefined;
   const deletion = (): DeletionDeps | null => {
     if (!token || !store || !env.FIREBASE_STORAGE_BUCKET) return null;
+    const legacyMode = legacyModeFor(env);
+    if (!legacyMode) {
+      console.error('[Worker] deletion refused: LEGACY_MEDIA_MODE is invalid for this project');
+      return null;
+    }
     return {
+      legacyMode,
       store,
       r2: env.R2_BUCKET ? r2Deleter(env.R2_BUCKET) : undefined,
       firebaseStorage: firebaseStorageDeleter({ bucket: env.FIREBASE_STORAGE_BUCKET, token, fetch: fetchFn }),
@@ -80,9 +100,10 @@ function err(message: string, status = 400): Response {
 async function legacyUpload(request: Request, env: Env, kind: UploadKind, svc: ReturnType<typeof services>): Promise<Response> {
   // Earlier app versions only. Fail closed without the barrier read or the bucket.
   const store = svc.store;
-  if (!store || !env.R2_BUCKET) {
+  if (!store || !env.R2_BUCKET || !env.PUBLIC_R2_BASE_URL) {
     return json({ error: 'Uploads are temporarily unavailable.', code: 'uploads/unavailable' }, 503);
   }
+  const publicBaseUrl = env.PUBLIC_R2_BASE_URL;
   return handlePhotoUpload(request, kind, {
     verify: svc.verify,
     isDeleting: async (uid) => {
@@ -90,7 +111,7 @@ async function legacyUpload(request: Request, env: Env, kind: UploadKind, svc: R
       return !!deleting || !!suspended;
     },
     bucket: env.R2_BUCKET,
-    publicBaseUrl: env.PUBLIC_R2_BASE_URL,
+    publicBaseUrl,
     json,
   });
 }
@@ -125,7 +146,7 @@ export default {
         verify: svc.verify,
         store: svc.store,
         bucket: env.R2_BUCKET,
-        publicBaseUrl: env.PUBLIC_R2_BASE_URL,
+        publicBaseUrl: env.PUBLIC_R2_BASE_URL ?? '',
         media: svc.media ? { db: svc.media.db, kv: svc.media.kv, baseUrl: mediaOrigin(env, request) } : undefined,
         json,
       });

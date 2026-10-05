@@ -102,8 +102,9 @@ test('checker: --eas-env with missing API key, Auth domain, app ID and sender ID
   assert.notEqual(r.code, 0, r.out);
 });
 
-function fixture({ project = 'sts-staging', workerVarsProject = project, stagingBucket = 'solotravelsoul-images-staging', previewEnv = 'staging',
-  kvId = 'staging-kv-namespace-id', d1Id = 'staging-d1-database-id', mediaOrigin = 'https://solotravelsoul-r2-upload-staging.x.workers.dev', migrations = true } = {}) {
+function fixture({ project = 'sts-staging', workerVarsProject = project, stagingBucket = null, previewEnv = 'staging',
+  kvId = 'staging-kv-namespace-id', d1Id = 'staging-d1-database-id', mediaOrigin = 'https://solotravelsoul-r2-upload-staging.x.workers.dev', migrations = true,
+  legacyMode = 'none', prodLegacyMode = null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-staging-'));
   fs.mkdirSync(path.join(dir, 'workers/r2-upload-worker'), { recursive: true });
   if (migrations) fs.mkdirSync(path.join(dir, 'workers/r2-upload-worker/migrations'));
@@ -111,11 +112,13 @@ function fixture({ project = 'sts-staging', workerVarsProject = project, staging
   fs.writeFileSync(path.join(dir, '.firebaserc'), JSON.stringify({ projects: { default: env.PRODUCTION_FIREBASE_PROJECT_ID, staging: project } }));
   fs.writeFileSync(path.join(dir, 'workers/r2-upload-worker/wrangler.toml'), [
     'name = "solotravelsoul-r2-upload"', '[[r2_buckets]]', 'binding = "R2_BUCKET"', 'bucket_name = "solotravelsoul-images"',
+    ...(prodLegacyMode ? ['[vars]', `LEGACY_MEDIA_MODE = "${prodLegacyMode}"`] : []),
     '[env.staging]', 'name = "solotravelsoul-r2-upload-staging"',
-    '[[env.staging.r2_buckets]]', 'binding = "R2_BUCKET"', `bucket_name = "${stagingBucket}"`,
+    ...(stagingBucket ? ['[[env.staging.r2_buckets]]', 'binding = "R2_BUCKET"', `bucket_name = "${stagingBucket}"`] : []),
     '[[env.staging.kv_namespaces]]', 'binding = "MEDIA_KV"', `id = "${kvId}"`,
     '[[env.staging.d1_databases]]', 'binding = "MEDIA_DB"', 'database_name = "solotravelsoul-media-staging"', `database_id = "${d1Id}"`, 'migrations_dir = "migrations"',
     '[env.staging.vars]', `FIREBASE_PROJECT_ID = "${workerVarsProject}"`, `FIREBASE_STORAGE_BUCKET = "${workerVarsProject}.firebasestorage.app"`, `MEDIA_PUBLIC_ORIGIN = "${mediaOrigin}"`,
+    ...(legacyMode !== null ? [`LEGACY_MEDIA_MODE = "${legacyMode}"`] : []),
     '[env.staging.triggers]', 'crons = ["17 * * * *"]',
   ].join('\n'));
   fs.writeFileSync(path.join(dir, 'apps/mobile/eas.json'), JSON.stringify({ build: { preview: { environment: 'preview', env: { EXPO_PUBLIC_APP_ENV: previewEnv } } } }));
@@ -129,10 +132,16 @@ function runChecker(dir, extra = []) {
 test('checker: isolated staging config passes; any production target fails; values never printed', () => {
   const ok = runChecker(fixture());
   assert.equal(ok.code, 0, ok.out);
+  // A separate (non-production) staging bucket with legacy cleanup stays allowed.
+  const withBucket = runChecker(fixture({ stagingBucket: 'solotravelsoul-images-staging', legacyMode: null }));
+  assert.equal(withBucket.code, 0, withBucket.out);
   for (const [label, opts] of [
     ['production project as staging', { project: env.PRODUCTION_FIREBASE_PROJECT_ID }],
     ['Worker vars on production project', { workerVarsProject: env.PRODUCTION_FIREBASE_PROJECT_ID }],
     ['production R2 bucket', { stagingBucket: env.PRODUCTION_R2_BUCKET }],
+    ['no R2 bucket and legacy media required', { legacyMode: null }],
+    ['unknown legacy mode', { legacyMode: 'skip' }],
+    ['production config sets no-legacy mode', { prodLegacyMode: 'none' }],
     ['placeholder project', { project: 'REPLACE_WITH_STAGING_PROJECT_ID', workerVarsProject: 'REPLACE_WITH_STAGING_PROJECT_ID' }],
     ['preview not marked staging', { previewEnv: 'production' }],
     ['media KV placeholder', { kvId: 'REPLACE_WITH_STAGING_KV_NAMESPACE_ID' }],
@@ -175,7 +184,8 @@ test('checker: isolated staging config passes; any production target fails; valu
 
 test('repo staging config names only staging resources (project ID still to be filled in)', () => {
   const r = runChecker(root);
-  for (const line of ['PASS staging Worker name differs from production', 'PASS staging R2 bucket differs from production',
+  for (const line of ['PASS staging Worker name differs from production', 'PASS staging binds no production R2 bucket',
+    'PASS staging without an R2 bucket runs in no-legacy mode (LEGACY_MEDIA_MODE = "none")', 'PASS production config does not set LEGACY_MEDIA_MODE',
     'PASS staging Worker has its own cron trigger', 'PASS EAS preview profile sets EXPO_PUBLIC_APP_ENV=staging',
     'PASS staging MEDIA_DB has the media migrations']) {
     assert.ok(r.out.includes(line), line);
@@ -187,8 +197,10 @@ test('repo staging config names only staging resources (project ID still to be f
   }
   // Production Worker config gains no media bindings in this change.
   const toml = fs.readFileSync(path.join(root, 'workers/r2-upload-worker/wrangler.toml'), 'utf8');
-  const prodPart = toml.split('[env.staging]')[0];
-  assert.ok(!/MEDIA_KV|MEDIA_DB|MEDIA_PUBLIC_ORIGIN/.test(prodPart), 'production section unchanged');
+  const prodPart = toml.split('[env.staging]')[0].split(/\r?\n/).filter((l) => !l.trim().startsWith('#')).join('\n'); // settings only
+  assert.ok(!/MEDIA_KV|MEDIA_DB|MEDIA_PUBLIC_ORIGIN|LEGACY_MEDIA_MODE/.test(prodPart), 'production section unchanged');
+  assert.ok(/\[\[r2_buckets\]\][\s\S]*bucket_name\s*=\s*"solotravelsoul-images"/.test(prodPart), 'production legacy R2 cleanup binding kept');
+  assert.ok(!/env\.staging\.r2_buckets/.test(toml), 'free-only staging binds no R2 bucket');
 });
 
 let passed = 0;

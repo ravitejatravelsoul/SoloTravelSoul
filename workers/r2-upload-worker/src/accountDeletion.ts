@@ -57,6 +57,13 @@ export interface DeletionDeps {
   media?: { db: D1Like; kv: KvLike; /** D1 query budget of this invocation (D1 Free: 50). */ queries?: SubrequestBudget };
   /** Invocation subrequest budget; without one the plan runs to completion in one call. */
   budget?: SubrequestBudget;
+  /**
+   * 'required' (default): legacy stores must be bound and verified empty.
+   * 'none': staging only (the Worker refuses it for the production project) —
+   * an unbound R2 store is accepted and Firebase Storage is accepted as empty
+   * only when an authenticated lookup shows its bucket was never provisioned.
+   */
+  legacyMode?: 'required' | 'none';
   /** Must treat an already-deleted user as success. */
   deleteAuthUser(uid: string): Promise<void>;
   authUserExists(uid: string): Promise<boolean>;
@@ -118,13 +125,14 @@ export class MediaCleanupPending extends Error {
 }
 
 /**
- * Legacy media cannot be deleted or verified absent (store inaccessible). The
- * step stays incomplete, Auth is kept, and later slices and cron runs retry it.
+ * A cleanup step cannot be completed or proven complete (store inaccessible,
+ * binding missing). The step stays incomplete, Auth is kept, and later slices
+ * and cron runs retry it.
  */
-export class LegacyMediaBlocked extends Error {
+export class DeletionBlocked extends Error {
   constructor(readonly reason: string) {
-    super(`legacy media cleanup blocked: ${reason}`);
-    this.name = 'LegacyMediaBlocked';
+    super(`deletion blocked: ${reason}`);
+    this.name = 'DeletionBlocked';
   }
 }
 
@@ -538,7 +546,8 @@ function mediaPurgeLimit(media: NonNullable<DeletionDeps['media']>): number {
 // KV media: revocation (D1 status 'removed') is immediate; bytes are deleted in
 // bounded batches. The step completes only when no queued KV delete remains.
 const deleteKvMedia: Step['run'] = async ({ uid, deps, work }) => {
-  if (!deps.media) return; // no media bindings configured: no KV media can exist
+  // Missing bindings are not proof that no media exists: the step waits for them.
+  if (!deps.media) throw new DeletionBlocked('media-bindings-missing');
   const limit = mediaPurgeLimit(deps.media);
   if (limit < 1) throw new SliceExhausted(); // D1 query budget used up in this invocation
   const now = (deps.now ?? Date.now)();
@@ -549,7 +558,10 @@ const deleteKvMedia: Step['run'] = async ({ uid, deps, work }) => {
 };
 
 const deleteR2Media: Step['run'] = async ({ uid, deps, heartbeat }) => {
-  if (!deps.r2) return;
+  if (!deps.r2) {
+    if (deps.legacyMode === 'none') return; // staging no-legacy mode: never had an R2 bucket
+    throw new DeletionBlocked('legacy-r2-unbound');
+  }
   await deps.r2.deletePrefixes(r2Prefixes(uid), heartbeat);
 };
 
@@ -573,6 +585,14 @@ const deleteFirebaseMedia: Step['run'] = async ({ uid, deps, store, work, flags 
         await store.commit([{ kind: 'update', path: `${LEGACY}/${uid}`, set: { ...set, updatedAtMs: (deps.now ?? Date.now)() } }]);
       });
   try {
+    // Staging no-legacy mode: proof of absence is an authenticated lookup
+    // showing the bucket itself was never provisioned. Anything else (bucket
+    // exists, access denied) takes the normal path below.
+    if (deps.legacyMode === 'none' && !(await fs.bucketExists(before))) {
+      await record({ status: 'verified_absent', store: fs.name, reason: null, proof: 'bucket-not-provisioned' });
+      flags.legacyMediaUnresolved = false;
+      return;
+    }
     await fs.deletePrefixes(prefixes, before);
     await fs.deleteObjects(objects, before);
     if (!(await fs.verifyAbsent(prefixes, objects, before))) throw new Error('legacy media still listed after delete');
@@ -580,9 +600,9 @@ const deleteFirebaseMedia: Step['run'] = async ({ uid, deps, store, work, flags 
     if (!(e instanceof LegacyMediaInaccessible)) throw e;
     await record({ status: 'unresolved', store: fs.name, reason: `inaccessible (${e.status})` });
     flags.legacyMediaUnresolved = true;
-    throw new LegacyMediaBlocked('legacy-media-inaccessible');
+    throw new DeletionBlocked('legacy-media-inaccessible');
   }
-  await record({ status: 'verified_absent', store: fs.name, reason: null });
+  await record({ status: 'verified_absent', store: fs.name, reason: null, proof: 'listing-and-lookup' });
   flags.legacyMediaUnresolved = false;
 };
 
@@ -783,7 +803,7 @@ export async function deleteAccount(identity: DeletionIdentity, deps: DeletionDe
       for (const key of Object.keys(cursors)) if (key.startsWith(`${step.id}:`)) delete cursors[key];
     } catch (e) {
       if (e instanceof SliceExhausted || e instanceof MediaCleanupPending) return pause(step.id);
-      if (e instanceof LegacyMediaBlocked) return pause(step.id, e.reason);
+      if (e instanceof DeletionBlocked) return pause(step.id, e.reason);
       await fail(step.id, e);
     }
   }
@@ -852,6 +872,12 @@ function nextCursor(page: StoredDoc[], visited: number): string | undefined {
  * Uploads that passed the barrier check before deletion began, but landed
  * after the media steps listed their prefixes, are cleaned up here. Keyed on
  * mediaClearedAtMs (written before Auth removal), not on job completion.
+ *
+ * One page per run, resumed from a cursor on (mediaClearedAtMs, path), so
+ * equal timestamps are ordered by path and later jobs are always reached. A
+ * job whose cleanup fails is skipped for this pass and retried when the
+ * cursor wraps (every job in the 24-hour window is revisited each pass); the
+ * budget running out stops the pass at the last finished job.
  */
 export async function sweepRecentlyDeletedMedia(deps: DeletionDeps, windowMs = SWEEP_WINDOW_MS, cursors: CronCursors = {}): Promise<number> {
   const now = deps.now ?? Date.now;
@@ -863,28 +889,34 @@ export async function sweepRecentlyDeletedMedia(deps: DeletionDeps, windowMs = S
     ...(after ? { startAfter: { path: after.path, data: { mediaClearedAtMs: after.mediaClearedAtMs } } } : {}),
   });
   let swept = 0;
-  const advance = () => {
-    const path = nextCursor(jobs, swept);
-    cursors.sweepAfter = path ? { path, mediaClearedAtMs: num(jobs[swept - 1].data.mediaClearedAtMs) } : undefined;
-  };
+  let visited = 0;
+  let failed = 0;
   try {
     for (const job of jobs) {
       const uid = lastSegment(job.path);
-      if (deps.media && mediaPurgeLimit(deps.media) >= 1) {
-        await revokeOwner(deps.media.db, uid, now());
-        await purgePending(deps.media.db, deps.media.kv, { owner: uid, limit: mediaPurgeLimit(deps.media) });
-      }
-      if (deps.r2) await deps.r2.deletePrefixes(r2Prefixes(uid));
       try {
-        await deps.firebaseStorage.deletePrefixes(storagePrefixes(uid), () => work(1));
-        await deps.firebaseStorage.deleteObjects(legacyStorageObjects(uid), () => work(1));
+        if (deps.media && mediaPurgeLimit(deps.media) >= 1) {
+          await revokeOwner(deps.media.db, uid, now());
+          await purgePending(deps.media.db, deps.media.kv, { owner: uid, limit: mediaPurgeLimit(deps.media) });
+        }
+        if (deps.r2) await deps.r2.deletePrefixes(r2Prefixes(uid));
+        try {
+          await deps.firebaseStorage.deletePrefixes(storagePrefixes(uid), () => work(1));
+          await deps.firebaseStorage.deleteObjects(legacyStorageObjects(uid), () => work(1));
+        } catch (e) {
+          if (!(e instanceof LegacyMediaInaccessible)) throw e; // such jobs never reach mediaClearedAtMs now
+        }
+        swept++;
       } catch (e) {
-        if (!(e instanceof LegacyMediaInaccessible)) throw e; // such jobs never reach mediaClearedAtMs now
+        if (e instanceof SliceExhausted) throw e; // resume at this job next run
+        failed++; // retried on the next pass
       }
-      swept++;
+      visited++;
     }
   } finally {
-    advance();
+    const path = nextCursor(jobs, visited);
+    cursors.sweepAfter = path ? { path, mediaClearedAtMs: num(jobs[visited - 1].data.mediaClearedAtMs) } : undefined;
+    if (failed) console.warn(JSON.stringify({ event: 'deletion_sweep_failed', count: failed }));
   }
   return swept;
 }

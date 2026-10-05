@@ -196,8 +196,8 @@ Tests: real-rules emulator tests for posts and journals (deletion outlasting its
 ### Staging runbook (run only when explicitly authorized)
 
 1. Create the staging Firebase project (Auth email/password, Firestore, Storage); put its ID in `.firebaserc` (`staging`) and `[env.staging.vars]` (`FIREBASE_PROJECT_ID`, `FIREBASE_STORAGE_BUCKET`).
-2. `wrangler r2 bucket create solotravelsoul-images-staging`; enable its public URL.
-3. Staging service account in the staging project only (Cloud Datastore User, Storage Object Admin, Firebase Authentication Admin): `wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON --env staging`, `wrangler secret put ADMIN_DELETION_TOKEN --env staging`, `wrangler secret put PUBLIC_R2_BASE_URL --env staging`.
+2. ~~`wrangler r2 bucket create solotravelsoul-images-staging`; enable its public URL.~~ *Superseded: free-only staging uses no R2 bucket (see "Free-only staging and release preparation").*
+3. Staging service account in the staging project only (Cloud Datastore User, Storage Object Admin, Firebase Authentication Admin): `wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON --env staging`, `wrangler secret put ADMIN_DELETION_TOKEN --env staging`. (*`PUBLIC_R2_BASE_URL` is no longer needed for free-only staging.*)
 4. EAS `preview` environment: all `EXPO_PUBLIC_FIREBASE_*` (staging web app), `EXPO_PUBLIC_STORAGE_PROVIDER=r2`, `EXPO_PUBLIC_R2_UPLOAD_WORKER_URL` (staging Worker), Mapbox/Foursquare keys, `MAPBOX_DOWNLOADS_TOKEN` (secret), staging `GOOGLE_SERVICES_JSON`/`GOOGLE_SERVICE_INFO_PLIST`.
 5. Configuration checks: `npm run check:staging`, then `eas env:pull --environment preview --path <tmp>` and `npm run check:staging -- --eas-env <tmp>` (exit 2 = configuration OK, ownership not yet verified).
    Ownership: `firebase apps:sdkconfig WEB <staging appId> --project staging --json > <tmp-meta>` and `npm run check:staging -- --eas-env <tmp> --firebase-metadata <tmp-meta>` must exit 0. Delete both temporary files afterwards; never commit or paste them.
@@ -319,3 +319,108 @@ The earlier statement that Cloudflare does not document D1 behaviour past the fr
 | Type checks | PASS: Worker `tsc`, `turbo type-check` |
 
 In the in-memory model, a user with 6,000 notifications, a 1,500-document subtree, 300 likes, 300 comments and 251 sent notifications finished in 122 user slices. Each slice stayed at or below 43 subrequests and released its lease, made durable progress, and released each counter exactly once. 80 consecutive cron runs over 5,250 jobs each stayed within budget and made durable progress; all 150 pending finalizations completed and jobs behind 100 held ones were reached. Workers CPU time remains unmeasured.
+
+## Free-only staging and release preparation (from 9e731df)
+
+Consolidated owner handoff (privacy drafts, deletion URL, placeholders, old clients, legacy media, counters): `docs/release-handoff.md`.
+
+### Changes
+
+- **Staging without R2:** `[env.staging]` no longer binds an R2 bucket and no longer needs a `PUBLIC_R2_BASE_URL` secret. The production `[[r2_buckets]]` binding (legacy cleanup) is unchanged. `check:staging` now requires that staging binds no *production* bucket (a separate staging bucket is still allowed). Without a bucket it requires `LEGACY_MEDIA_MODE = "none"`, and it rejects unknown values or that variable in the production config. Legacy uploads now fail closed (503) when the R2 public URL is missing.
+- **Staging no-legacy mode** (`LEGACY_MEDIA_MODE = "none"`, staging only):
+  - The Worker refuses this mode for the production project (`legacyModeFor`; deletion answers 503 and nothing runs). It also refuses unknown values.
+  - In this mode an unbound R2 store is accepted.
+  - Firebase Storage counts as empty **only** when an authenticated lookup of the configured bucket returns 404 (never provisioned). The proof is recorded as `legacyMediaCleanup/{uid}` = `verified_absent`, `proof: 'bucket-not-provisioned'`.
+  - If the bucket exists, its objects are deleted and verified normally (`proof: 'listing-and-lookup'`). A 401/403 still blocks.
+- **Binding guards (all modes):**
+  - Missing KV/D1 media bindings now block deletion (`media-bindings-missing`) instead of counting as "no media".
+  - Without no-legacy mode, an unbound R2 store blocks deletion (`legacy-r2-unbound`), and a Storage bucket answering 404 blocks it as unresolved (`inaccessible (404)`).
+  - Production Storage 403s still block.
+  - **Production consequence:** this Worker must not be deployed to production before production KV/D1 bindings exist; deletions would block until they do.
+- **Late-media sweep:** one page per run, resumed from the saved `(mediaClearedAtMs, path)` cursor. Equal timestamps are ordered by path. A job whose cleanup fails is skipped, logged (`deletion_sweep_failed`) and retried on the next pass; the cursor wraps within the 24-hour window. Budget exhaustion stops the pass at the last finished job.
+- **Counter audit:** `scripts/auditCounters.ts`, read-only (see handoff §7).
+
+### Live read-only evidence (this phase)
+
+| Check | Result |
+|---|---|
+| Firebase CLI | logged in; projects `solotravelsoul-57a9e` (#1027722856345) and `solotravelsoul-staging` (#927322372618) visible |
+| Staging project | Firestore `(default)` database exists (native mode); one web app `1:927322372618:web:9947970efca34c09ccbdf3`; **no Android/iOS apps registered** |
+| Staging Storage | `solotravelsoul-staging.firebasestorage.app` and `.appspot.com`: 404 (never provisioned) |
+| Production Storage | `solotravelsoul-57a9e.firebasestorage.app` readable by the owner account; 2 objects, both `profile_images/`; `.appspot.com` 404 |
+| EAS | logged in (`ravitejatravelsoul`); `preview` environment holds only `GOOGLE_SERVICES_JSON` and `GOOGLE_SERVICE_INFO_PLIST` (file variables, project not verified) and **no `EXPO_PUBLIC_*` variables** |
+| Proposed EAS preview values | built from `firebase apps:sdkconfig WEB … --project staging` into a temporary file (deleted). `check:staging -- --eas-env … --firebase-metadata …`: all six Firebase values match the staging project's SDK metadata (PASS). Overall still FAIL on exactly three items: KV ID, D1 ID, media origin (need Wrangler). |
+| Cloudflare | **Wrangler not logged in**: KV/D1/Worker state, workers.dev subdomain and legacy R2 inventory not visible |
+| Native tooling on this machine | no Android SDK/emulator/adb, no macOS/Xcode |
+
+### Staging approval packet (nothing below has been run)
+
+Targets are staging only: Firebase project `solotravelsoul-staging`, Worker `solotravelsoul-r2-upload-staging`, KV `MEDIA_KV` (staging), D1 `solotravelsoul-media-staging`, EAS environment `preview`.
+
+**Cost:** $0. Workers Free, KV Free, D1 Free, Firebase Spark and EAS Free build allowance only. No Blaze, no R2, no Workers Paid. If a free quota is exceeded, the services return errors and the Worker fails closed; nothing is billed.
+
+**Prerequisites from the owner:**
+- `wrangler login` (Cloudflare account owning the Worker).
+- Email/Password sign-in enabled in the staging project's Authentication settings (console).
+- A way to create a staging service account key. `gcloud` is not installed here; the Cloud Console works. Note that an organisation policy may forbid key creation.
+- Mapbox/Foursquare keys for the preview build.
+
+**Order** (rules before the cursor-skipping Worker):
+
+| # | Step | Command (run from the repo root unless noted) |
+|---|---|---|
+| A1 | Cloudflare login | `cd workers/r2-upload-worker && npx wrangler login` |
+| A2 | KV namespace | `npx wrangler kv namespace create MEDIA_KV --env staging` → put the id in `[[env.staging.kv_namespaces]]` |
+| A3 | D1 database | `npx wrangler d1 create solotravelsoul-media-staging` → put `database_id` in `[[env.staging.d1_databases]]` |
+| A4 | D1 schema | `npx wrangler d1 migrations apply solotravelsoul-media-staging --env staging --remote` |
+| A5 | Media origin | set `MEDIA_PUBLIC_ORIGIN = "https://solotravelsoul-r2-upload-staging.<subdomain>.workers.dev"` (subdomain from the Cloudflare dashboard); `npm run check:staging` must then pass every configuration item |
+| B1 | Staging service account (Cloud Console, project `solotravelsoul-staging` only) | create `sts-staging-deleter`; grant Cloud Datastore User, Firebase Authentication Admin, Storage Object Admin (only matters if a bucket is ever created); create a JSON key into a temporary file |
+| B2 | Worker secrets | `npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON --env staging < <tmp-key.json>`, then delete the file; `npx wrangler secret put ADMIN_DELETION_TOKEN --env staging` (a random 32-byte value kept in a password manager) |
+| C1 | Indexes | `npx firebase deploy --project staging --only firestore:indexes` (wait until built) |
+| C2 | Rules (closes the deletion barriers) | `npx firebase deploy --project staging --only firestore:rules`. Do **not** deploy `storage` (no bucket exists) |
+| C3 | Worker + cron | `cd workers/r2-upload-worker && npx wrangler deploy --env staging` (after C2) |
+| C4 | Smoke | `GET /account-deletion` 200; `GET /admin/deletion-status` 200 with the staging token, 403 otherwise; `POST /media/upload` without a token 401 |
+| D1 | EAS preview variables | `cd apps/mobile`; `npx eas env:create --environment preview --name <NAME> --value <value> --visibility plaintext` for `EXPO_PUBLIC_APP_ENV=staging`, the six `EXPO_PUBLIC_FIREBASE_*` values from `firebase apps:sdkconfig WEB 1:927322372618:web:9947970efca34c09ccbdf3 --project staging`, `EXPO_PUBLIC_R2_UPLOAD_WORKER_URL` (staging origin), Mapbox/Foursquare keys; `MAPBOX_DOWNLOADS_TOKEN` as a secret |
+| D2 | Native Firebase files | register staging Android/iOS apps (`npx firebase apps:create ANDROID|IOS … --project staging`) if push notifications are to be tested, and replace the `preview` `GOOGLE_SERVICES_JSON`/`GOOGLE_SERVICE_INFO_PLIST`, whose project is unverified |
+| D3 | Verify | `npx eas env:pull --environment preview --path <tmp>`; `firebase apps:sdkconfig … --json > <tmp-meta>`; `npm run check:staging -- --eas-env <tmp> --firebase-metadata <tmp-meta>` must exit 0; delete both files |
+| E1 | Build (separate approval) | `npx eas build --profile preview --platform android` (EAS Free allowance). An iOS device build needs a paid Apple Developer membership: blocked under the no-paid-plans constraint |
+
+**Rollback (staging only):**
+- `npx wrangler delete --env staging`
+- `npx wrangler kv namespace delete --namespace-id <id>`
+- `npx wrangler d1 delete solotravelsoul-media-staging`
+- Restore the previous staging rules from the console's rules history, or redeploy from the prior commit.
+- `npx eas env:delete --environment preview --variable-name <NAME>`
+- Delete the service-account key and the account.
+
+Production is not touched by any step.
+
+### Live and native verification checklist
+
+Run on two staging accounts (A, B) after the packet is executed. Status at commit time:
+
+| Check | Status |
+|---|---|
+| Authenticated image loading (own/public/private/under review/removed; profile photo replaced) | BLOCKED (no staging Worker, no device) |
+| Token refresh after 1 h and account switching (A → sign out → B: no cached private images shown) | BLOCKED |
+| Native caching: iOS URL cache honours `private, max-age=300` / `no-store`; Android image cache behaviour after revocation | BLOCKED |
+| Uploads (2 MB cap, type check, upload during deletion) | BLOCKED |
+| Group creation with more than 8 invitees; refused invitee dropped | BLOCKED (rules emulator only) |
+| Moderation queue, report auto-hide at 3 reports, moderator removal and media revocation | BLOCKED |
+| Suspension blocks writes and uploads; unsuspend | BLOCKED |
+| Deletion continuation (progress UI, 202 loop), blocked deletion message, recovery after access returns | BLOCKED |
+| Removal takeover after lease expiry; restore refused while in progress | BLOCKED (emulator only) |
+| Cron: finalization, recovery, late-media sweep on the deployed Worker | BLOCKED |
+| Workers Free CPU (10 ms) and subrequest/D1 counts per request and per cron run (`wrangler tail`, Workers analytics) | BLOCKED (not deployed) |
+| Quota failures | Simulated in tests (KV put/delete limits, D1 write limits, Firestore unavailable); never exhaust shared quotas live |
+
+### Verified results (this phase)
+
+| Check | Result |
+|---|---|
+| New regressions first | Against the previous Worker code the 4 new in-memory regressions failed (missing media bindings, unbound R2 / 404 bucket, no-legacy proof, production refusal). The emulator regressions (staging end to end, blocked 404/403 through the entry point, REST sweep) were written alongside and pass now. |
+| `npm run test:release` | PASS: queues 13, account deletion 62/62, media 15/15, app 6/6, staging 6/6 |
+| `npm run test:rules` | PASS: rules 82, account deletion 52/52 (incl. staging end to end through the Worker entry point and the REST sweep: 130 jobs, equal timestamps, budget-limited runs, restarts, one injected failure retried), media 11/11 |
+| Type checks | PASS: `turbo type-check`, Worker `tsc`, `scripts/auditCounters.ts` and `scripts/migrateLegacyMedia.ts` |
+| Lint | PASS: 0 errors (warnings unchanged: mobile 74, firebase 7) |
+| `expo export` iOS + Android | PASS (bundles only; not native UI proof) |

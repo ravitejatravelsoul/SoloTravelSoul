@@ -72,7 +72,12 @@ const staging = toml['env.staging'] ?? {};
 const stagingBucket = toml['env.staging.r2_buckets']?.bucket_name;
 const stagingVars = toml['env.staging.vars'] ?? {};
 check(staging.name && staging.name !== prodName && staging.name !== env.PRODUCTION_WORKER_NAME, 'staging Worker name differs from production');
-check(stagingBucket && stagingBucket !== prodBucket && stagingBucket !== env.PRODUCTION_R2_BUCKET, 'staging R2 bucket differs from production');
+// Free-only staging binds no R2 bucket; if one is ever bound it must not be production's.
+check(!stagingBucket || (stagingBucket !== prodBucket && stagingBucket !== env.PRODUCTION_R2_BUCKET), 'staging binds no production R2 bucket');
+const stagingLegacyMode = stagingVars.LEGACY_MEDIA_MODE ?? '';
+check(stagingBucket || stagingLegacyMode === 'none', 'staging without an R2 bucket runs in no-legacy mode (LEGACY_MEDIA_MODE = "none")');
+check(['', 'required', 'none'].includes(stagingLegacyMode), 'staging LEGACY_MEDIA_MODE is a known value');
+check(!(toml['vars'] ?? {}).LEGACY_MEDIA_MODE, 'production config does not set LEGACY_MEDIA_MODE');
 check(stagingVars.FIREBASE_PROJECT_ID === stagingProject && !String(stagingVars.FIREBASE_PROJECT_ID).startsWith('REPLACE_'),
   'staging Worker FIREBASE_PROJECT_ID matches the staging alias');
 check(String(stagingVars.FIREBASE_STORAGE_BUCKET ?? '').startsWith(`${stagingProject}.`) && stagingVars.FIREBASE_STORAGE_BUCKET !== env.PRODUCTION_STORAGE_BUCKET,
