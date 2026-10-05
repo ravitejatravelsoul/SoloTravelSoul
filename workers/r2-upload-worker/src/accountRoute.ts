@@ -6,6 +6,7 @@
 // is allowed only while that UID's own job exists and is not completed.
 
 import { isRecentAuth, type VerifiedToken } from './auth';
+import type { StoredDoc } from './firestoreRest';
 import { deleteAccount, DeletionAttemptLost, DeletionInProgress, DeletionStepFailed, listStalledDeletions, listUnresolvedLegacyMedia, type DeletionDeps, type DeletionResult } from './accountDeletion';
 
 export interface AccountRouteDeps {
@@ -42,8 +43,9 @@ export async function handleAccountDeletion(request: Request, deps: AccountRoute
   // Continuation of this UID's own started deletion needs no fresh login;
   // starting one does. Fails closed if the job cannot be read.
   let continuing: boolean;
+  let job: StoredDoc | null;
   try {
-    const job = await deletion.store.get(`accountDeletions/${identity.uid}`);
+    job = await deletion.store.get(`accountDeletions/${identity.uid}`);
     continuing = !!job;
   } catch {
     return deps.json({ error: 'Account deletion is temporarily unavailable.', code: 'deletion/unavailable' }, 503);
@@ -53,7 +55,7 @@ export async function handleAccountDeletion(request: Request, deps: AccountRoute
   }
 
   try {
-    const result: DeletionResult = await deleteAccount({ uid: identity.uid, email: identity.email }, deletion);
+    const result: DeletionResult = await deleteAccount({ uid: identity.uid, email: identity.email }, deletion, { job });
     return result.status === 'deleted' ? deps.json({ status: 'deleted' }) : deps.json(result, 202);
   } catch (e) {
     if (e instanceof DeletionInProgress) {

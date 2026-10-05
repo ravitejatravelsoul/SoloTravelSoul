@@ -9,8 +9,11 @@ function deletionError(code: string, message = 'Account deletion failed'): Error
 export type DeletionProgress = { completedSteps: number; totalSteps: number };
 /** 'blocked': a cleanup step waits on something outside the app (e.g. legacy photo storage); the server retries it. */
 export type DeletionOutcome = 'deleted' | 'in_progress' | 'blocked';
-/** Continuation requests per tap; the server's cron continues any remainder. */
-export const MAX_DELETION_SLICES = 30;
+/**
+ * Continuation requests per tap; the server's cron continues any remainder.
+ * Slices are small (Workers Free allows 10 ms CPU per request).
+ */
+export const MAX_DELETION_SLICES = 200;
 
 /**
  * Asks the server (Worker, which holds the Admin credentials) to delete the

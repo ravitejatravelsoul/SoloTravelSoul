@@ -107,6 +107,7 @@ class MemoryStore {
       for (const k of w.serverTime ?? []) { const [n, key] = at(k, true); n[key] = new Date().toISOString(); }
       this.docs.set(w.path, { data, updateTime: String(++this.clock) });
     }
+    return { updateTimes: writes.map((w) => (w.kind === 'delete' ? null : this.docs.get(w.path).updateTime)) };
   }
 }
 
@@ -941,7 +942,9 @@ function fakeR2(keys = []) {
 /** KV media + D1 index bindings for Worker env objects (deletion requires them). */
 function mediaBindings() {
   const kv = kvFake();
-  return { MEDIA_DB: d1Fake(), MEDIA_KV: { get: (k) => kv.get(k), put: (k, v) => kv.put(k, v), delete: (k) => kv.delete(k) } };
+  // Large CPU allowance: these entry-point tests are about correctness, not the 10 ms Free limit
+  // (CPU-sized slices are covered by the "CPU allowance" tests).
+  return { MEDIA_DB: d1Fake(), MEDIA_KV: { get: (k) => kv.get(k), put: (k, v) => kv.put(k, v), delete: (k) => kv.delete(k) }, SLICE_WORK_UNITS: '1000', CRON_WORK_UNITS: '1000' };
 }
 
 function multipart(token) {
@@ -1072,11 +1075,15 @@ test('entry point: barrier read through Firestore REST blocks uploads; final-wri
     bucket.objects.add(`post_photos/${ME}/late.jpg`);
     storageObjects.add(`journals/${ME}/t1/late.jpg`);
     fakes.state.failFinalWrite = false;
-    const waits = [];
-    const beforeCron = fakes.state.fetches;
-    await workerIndex().scheduled({}, env, { waitUntil: (p) => waits.push(p) });
-    await Promise.all(waits);
-    assert.ok(fakes.state.fetches - beforeCron <= 50, `cron made ${fakes.state.fetches - beforeCron} subrequests`);
+    // Cron rotates one phase per run (every 5 minutes): the finalize slot, then the sweep slot.
+    for (const slot of [1, 3]) {
+      const waits = [];
+      const beforeCron = fakes.state.fetches;
+      assert.equal(worker('index').cronPhase(slot * 300_000), slot === 1 ? 'finalize' : 'sweep');
+      await workerIndex().scheduled({ scheduledTime: slot * 300_000 }, env, { waitUntil: (p) => waits.push(p) });
+      await Promise.all(waits);
+      assert.ok(fakes.state.fetches - beforeCron <= 50, `cron made ${fakes.state.fetches - beforeCron} subrequests`);
+    }
     job = (await store.get(`accountDeletions/${ME}`)).data;
     assert.deepEqual([job.status, job.pendingFinalization, job.recoveredBy], ['completed', false, 'scheduled-finalization']);
     assert.deepEqual(fakes.state.authDeletes, [ME], 'Auth already gone; not deleted twice');
@@ -1580,8 +1587,8 @@ function metered(store, budget) {
 }
 
 /** One invocation's deps: fetch budget (store, Auth, Storage) and D1 query budget. */
-function invocation(h, store, mediaStore) {
-  const budget = new budgetMod.SubrequestBudget();
+function invocation(h, store, mediaStore, workUnits) {
+  const budget = new budgetMod.SubrequestBudget(budgetMod.WORKERS_FREE_SUBREQUESTS, workUnits);
   const queries = new budgetMod.SubrequestBudget(budgetMod.D1_FREE_QUERIES);
   budget.spend(COLD_AUTH_CALLS);
   const charge = (fn) => async (...a) => { budget.spend(); return fn(...a); };
@@ -1612,13 +1619,13 @@ function seedMedia(n, owner) {
 }
 
 const tokenFor = (uid, authTime = nowSec) => ({ uid, email: null, authTime });
-const callRoute = async (h, store, m, identity, body) => {
-  const inv = invocation(h, store, m);
+const callRoute = async (h, store, m, identity, body, workUnits) => {
+  const inv = invocation(h, store, m, workUnits);
   const resp = await route.handleAccountDeletion(
     new Request('https://worker.test/account/delete', { method: 'POST', headers: { Authorization: 'Bearer t' }, body: body ? JSON.stringify(body) : undefined }),
     { verify: async () => identity, deletion: () => inv.deps, json, nowSec: () => nowSec }
   );
-  return { status: resp.status, body: await resp.json(), used: inv.budget.used, queries: inv.queries.used };
+  return { status: resp.status, body: await resp.json(), used: inv.budget.used, queries: inv.queries.used, work: inv.budget.workUsed };
 };
 
 test('bounded slices: every invocation stays within 50 subrequests and 50 D1 queries; 202 until done; cursor persisted', async () => {
@@ -1715,6 +1722,7 @@ test('cron: discovery, finalization, recovery and sweep stay within 50 subreques
     const inv = invocation(h, store, m);
     const result = await deletion.runScheduledMaintenance(inv.deps);
     runs.push({ used: inv.budget.used, queries: inv.queries.used, result });
+    if (process.env.DEBUG_CRON) { const j = (await store.get(`accountDeletions/${ME}`)).data; console.log('run', i, JSON.stringify(result), inv.budget.used, j.status, j.currentStep, j.completedSteps.length, j.blockedOn ?? '', j.lastError ? j.lastError.step + ':' + j.lastError.message : ''); }
     assert.ok(inv.budget.used <= budgetMod.WORKERS_FREE_SUBREQUESTS, `cron run ${i}: ${inv.budget.used} subrequests`);
     assert.ok(inv.queries.used <= budgetMod.D1_FREE_QUERIES, `cron run ${i}: ${inv.queries.used} D1 queries`);
     const states = await Promise.all([ME, 'zed', 'yan'].map(async (u) => (await store.get(`accountDeletions/${u}`)).data.status));
@@ -2053,7 +2061,7 @@ function stagingEnv(keys, mode) {
   const kv = kvFake();
   return { FIREBASE_PROJECT_ID: PROJECT, FIREBASE_STORAGE_BUCKET: `${PROJECT}.firebasestorage.app`, GOOGLE_SERVICE_ACCOUNT_JSON: keys.serviceAccount,
     ADMIN_DELETION_TOKEN: 'ops', MEDIA_DB: d1Fake(), MEDIA_KV: { get: (k) => kv.get(k), put: (k, v) => kv.put(k, v), delete: (k) => kv.delete(k) },
-    MEDIA_PUBLIC_ORIGIN: 'https://staging.worker.test', ...(mode ? { LEGACY_MEDIA_MODE: mode } : {}) };
+    MEDIA_PUBLIC_ORIGIN: 'https://staging.worker.test', SLICE_WORK_UNITS: '1000', CRON_WORK_UNITS: '1000', ...(mode ? { LEGACY_MEDIA_MODE: mode } : {}) };
 }
 async function deleteThroughWorker(keys, env, uid = ME) {
   const token = await idToken(keys, uid);
@@ -2165,9 +2173,75 @@ test('counter audit dry run: expected tallies, legacy likes, never writes', asyn
   assert.ok(!/console\.log\([^)]*mismatches\b/.test(src), 'paths go only to the operator report file');
 }, 'memory');
 
+
+// ── Workers Free CPU allowance (10 ms): small slices, cron phase rotation ─────
+
+test('CPU allowance: Workers Free user slices finish the full fixture with 45 media rows; every slice within units and durably progressing', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  const m = seedMedia(45, ME);
+  const units = budgetMod.SLICE_WORK_UNITS;
+  let r; let slices = 0; let maxWork = 0; let maxUsed = 0;
+  for (; slices < 400; slices++) {
+    const before = await progressMark(store) + JSON.stringify(m.db.raw.prepare('SELECT COUNT(*) n FROM media WHERE kv_delete_pending = 0 AND status = ?').get('removed'));
+    r = await callRoute(h, store, m, tokenFor(ME, slices ? nowSec - 3600 : nowSec), undefined, units);
+    maxWork = Math.max(maxWork, r.work); maxUsed = Math.max(maxUsed, r.used);
+    // The allowance is enforced after the slice's first durable progress: overshoot ≤ one atomic unit.
+    assert.ok(r.work <= units + 8, `slice ${slices} used ${r.work} work units`);
+    if (r.status === 200) break;
+    assert.equal(r.status, 202, JSON.stringify(r.body));
+    const after = await progressMark(store) + JSON.stringify(m.db.raw.prepare('SELECT COUNT(*) n FROM media WHERE kv_delete_pending = 0 AND status = ?').get('removed'));
+    assert.notEqual(after, before, `slice ${slices} made no durable progress`);
+    assert.equal((await store.get(`accountDeletions/${ME}`)).data.leaseUntil, 0, 'paused lease released');
+  }
+  assert.deepEqual([r.status, r.body], [200, { status: 'deleted' }]);
+  await expectState(store, h);
+  assert.equal(m.db.raw.prepare(`SELECT COUNT(*) n FROM media WHERE owner_uid = ? AND (status != 'removed' OR kv_delete_pending = 1)`).get(ME).n, 0);
+  assert.equal(h.authCalls.length, 1);
+  console.log(`      slices=${slices + 1} max work units=${maxWork} max subrequests=${maxUsed}`);
+}, 'memory');
+
+test('CPU allowance: rotating 10-unit cron phases finish a paused job, a failed job and a pending finalization', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  const m = seedMedia(10, ME);
+  assert.equal((await callRoute(h, store, m, tokenFor(ME), undefined, budgetMod.SLICE_WORK_UNITS)).status, 202);
+  await store.commit([{ kind: 'update', path: 'accountDeletions/zed', set: { uid: 'zed', status: 'failed', attemptId: 'x', leaseUntil: 0, completedSteps: [], startedAtMs: h.now() }, mustExist: false }]);
+  await store.commit([{ kind: 'update', path: 'accountDeletions/yan', set: { uid: 'yan', status: 'in_progress', attemptId: 'y', leaseUntil: 0, pendingFinalization: true, mediaClearedAtMs: h.now(), completedSteps: [], startedAtMs: h.now() }, mustExist: false }]);
+  const indexMod = worker('index');
+  let runs = 0;
+  for (; runs < 400; runs++) {
+    const phase = indexMod.cronPhase(runs * 300_000);
+    const inv = invocation(h, store, m, budgetMod.CRON_WORK_UNITS);
+    if (phase !== 'media') await deletion.runScheduledMaintenance(inv.deps, [phase]);
+    if (process.env.DEBUG_CRON && inv.budget.workUsed > budgetMod.CRON_WORK_UNITS) { const jobs = await Promise.all([ME, 'zed', 'yan'].map(async (u) => { const d = (await store.get(`accountDeletions/${u}`)).data; return `${u}:${d.status}/${d.currentStep}`; })); console.log('run', runs, phase, inv.budget.workUsed, inv.budget.used, jobs.join(' ')); }
+    // Overshoot is bounded by one atomic unit (one swept job, one finalization, one step item).
+    assert.ok(inv.budget.workUsed <= budgetMod.CRON_WORK_UNITS + 10, `run ${runs}: ${inv.budget.workUsed} units`);
+    const states = await Promise.all([ME, 'zed', 'yan'].map(async (u) => (await store.get(`accountDeletions/${u}`)).data.status));
+    if (states.every((x) => x === 'completed')) break;
+  }
+  for (const u of [ME, 'zed', 'yan']) assert.equal((await store.get(`accountDeletions/${u}`)).data.status, 'completed', u);
+  await expectState(store, h);
+  console.log(`      cron runs=${runs + 1} (every 5 minutes ≈ ${Math.round(((runs + 1) * 5) / 60 * 10) / 10} h)`);
+}, 'memory');
+
+test('lease fast path: a foreign write between this attempt\'s writes is detected (no blind overwrite)', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  let injected = false;
+  const steal = async () => {
+    if (injected) return;
+    injected = true;
+    const job = await store.get(`accountDeletions/${ME}`);
+    await store.commit([{ kind: 'update', path: `accountDeletions/${ME}`, set: { attemptId: 'other-attempt', leaseUntil: h.now() + 60 * 60 * 1000 }, updateTime: job.updateTime }]);
+  };
+  const deps = { ...h.deps, firebaseStorage: { ...h.storage, deletePrefixes: async (p, b) => { await steal(); return h.storage.deletePrefixes(p, b); } } };
+  await assert.rejects(deletion.deleteAccount({ uid: ME, email: null }, deps), (e) => e instanceof deletion.DeletionAttemptLost || e instanceof deletion.DeletionStepFailed);
+  const job = (await store.get(`accountDeletions/${ME}`)).data;
+  assert.equal(job.attemptId, 'other-attempt', "the other attempt's ownership was not overwritten");
+  assert.equal(h.authCalls.length, 0);
+}, 'memory');
+
 (async () => {
   let passed = 0;
-  const only = tests.filter((t) => !t.only || t.only === (EMULATOR ? 'emulator' : 'memory'));
+  const only = tests.filter((t) => (!t.only || t.only === (EMULATOR ? 'emulator' : 'memory')) && (!process.env.TEST_FILTER || t.name.includes(process.env.TEST_FILTER)));
   for (const t of only) {
     try { await t.fn(); passed++; console.log(`PASS ${t.name}`); }
     catch (e) { console.error(`FAIL ${t.name}\n`, e); process.exitCode = 1; }

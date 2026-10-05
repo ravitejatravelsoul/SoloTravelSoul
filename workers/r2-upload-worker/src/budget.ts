@@ -29,9 +29,31 @@ export class SliceExhausted extends Error {
   }
 }
 
+/**
+ * Workers Free also limits CPU to 10 ms per invocation. Measured on the deployed
+ * staging Worker: each outbound call costs CPU (Firestore read/query ≈ 0.5 ms,
+ * commit ≈ 1.25 ms, D1 query ≈ 0.4 ms), so plan steps are also limited by
+ * work units (≈ 0.5 ms each: a read or query is 1, a commit 2). Bookkeeping
+ * (token check, lease, progress) is outside the allowance and sized into it.
+ */
+export const SLICE_WORK_UNITS = 3;
+export const CRON_WORK_UNITS = 10;
+
 export class SubrequestBudget {
   used = 0;
-  constructor(readonly limit = WORKERS_FREE_SUBREQUESTS) {}
+  /** Work units spent by plan steps in this invocation. */
+  workUsed = 0;
+  /**
+   * Set once this invocation made durable progress (a commit, an advanced page
+   * cursor, a completed step). Until then the work allowance is not enforced, so
+   * every slice completes at least one atomic unit and can never live-lock; the
+   * overshoot is bounded by one atomic unit.
+   */
+  progressed = false;
+  markProgress(): void {
+    this.progressed = true;
+  }
+  constructor(readonly limit = WORKERS_FREE_SUBREQUESTS, readonly workUnits = Number.POSITIVE_INFINITY) {}
   spend(n = 1): void {
     if (this.used + n > this.limit) throw new BudgetExceeded();
     this.used += n;
@@ -39,9 +61,22 @@ export class SubrequestBudget {
   remaining(): number {
     return this.limit - this.used;
   }
-  /** Throws SliceExhausted unless more than `reserve` + `need` calls remain. */
+  workRemaining(): number {
+    return this.workUnits - this.workUsed;
+  }
+  /**
+   * Charges `need` work units, or throws SliceExhausted when they would exceed
+   * the CPU allowance or leave fewer than `reserve` subrequests.
+   */
   ensureWork(need = 1, reserve = DEFAULT_RESERVE): void {
     if (this.remaining() - need < reserve) throw new SliceExhausted();
+    if (this.progressed && this.workUsed + need > this.workUnits) throw new SliceExhausted();
+    this.workUsed += need;
+  }
+  /** Charges CPU-only work (D1, KV): throws SliceExhausted beyond the allowance; subrequests untouched. */
+  useWork(units: number): void {
+    if (this.progressed && this.workUsed + units > this.workUnits) throw new SliceExhausted();
+    this.workUsed += units;
   }
 }
 

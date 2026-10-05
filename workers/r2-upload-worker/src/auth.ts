@@ -82,6 +82,9 @@ function decodeSegment<T>(segment: string): T {
  * Verify a Firebase ID token and return the uid on success.
  * Throws a descriptive Error on any failure (expired, wrong project, bad sig, etc.).
  */
+/** Imported verification keys, tied to the JWKS object they came from (refreshed with it). */
+const importedKeys = new WeakMap<object, Map<string, CryptoKey>>();
+
 export async function verifyFirebaseToken(
   token: string,
   projectId: string,
@@ -104,14 +107,14 @@ export async function verifyFirebaseToken(
   const jwk = jwks.keys.find((k) => k.kid === header.kid);
   if (!jwk) throw new Error(`Unknown kid: ${header.kid}`);
 
-  // Import the JWK as a CryptoKey for signature verification.
-  const cryptoKey = await crypto.subtle.importKey(
-    'jwk',
-    jwk,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['verify']
-  );
+  // Import the JWK as a CryptoKey once per key id while this JWKS is cached (CPU).
+  let cryptoKey = importedKeys.get(jwks)?.get(header.kid);
+  if (!cryptoKey) {
+    cryptoKey = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+    const forJwks = importedKeys.get(jwks) ?? new Map<string, CryptoKey>();
+    forJwks.set(header.kid, cryptoKey);
+    importedKeys.set(jwks, forJwks);
+  }
 
   // Verify the RS256 signature over "header.payload".
   const signedData = new TextEncoder().encode(`${headerSeg}.${payloadSeg}`);

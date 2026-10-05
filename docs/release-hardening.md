@@ -443,4 +443,75 @@ Authorization covered staging-only KV/D1, migrations, service-account setup, Wor
 | Staging Auth | Email/Password sign-in already enabled |
 | D1 EAS `preview` variables | set from live `firebase apps:sdkconfig` metadata: `EXPO_PUBLIC_APP_ENV`, all six `EXPO_PUBLIC_FIREBASE_*`. Verified as stored (pulled back, checked against metadata; file deleted): all Firebase items PASS. Full check still fails on the Worker URL, KV ID, D1 ID and media origin (Cloudflare) |
 | Native Firebase files in `preview` | `GOOGLE_SERVICES_JSON` / `GOOGLE_SERVICE_INFO_PLIST` **cannot belong to staging**: the staging project has no Android/iOS apps. Do not build with them; register staging native apps and replace both first (owner action, not in this authorization) |
-| Staging integration tests, CPU/operation counts, cron execution | **BLOCKED** (no deployed staging Worker) |
+| Staging integration tests, CPU/operation counts, cron execution | completed in the next phase (see below) |
+
+### Staging rollout completion and live verification (from d21fecf)
+
+| Step | Result |
+|---|---|
+| Wrangler login | done by the owner; Workers plan **Free**: a probe deploy with `limits.cpu_ms` was rejected by Cloudflare ("CPU limits are not supported for the Free plan", code 100328), so nothing changed |
+| KV / D1 | `staging-MEDIA_KV` and `solotravelsoul-media-staging` created; IDs in `[env.staging]` |
+| Schema | `0001_media.sql` applied remotely (`media` table and its 3 indexes) |
+| Secrets | fresh staging service-account key piped into `GOOGLE_SERVICE_ACCOUNT_JSON` (local copy deleted; the active IAM key stays while the Worker uses it); random `ADMIN_DELETION_TOKEN` (the owner should rotate it and keep it in a password manager) |
+| Indexes | deployed to `solotravelsoul-staging`; all 37 composite indexes READY before the rules |
+| Rules | Firestore rules released to staging (no Storage rules: no bucket) |
+| Worker / cron | `solotravelsoul-r2-upload-staging` deployed after the rules (`workers_dev` on, preview URLs off); cron now `*/5 * * * *` (one maintenance phase per run) |
+| Preview Worker URL | `EXPO_PUBLIC_R2_UPLOAD_WORKER_URL` set |
+| Full isolation check | `check:staging -- --eas-env <pulled preview> --firebase-metadata <live staging metadata>`: **26/26 PASS, exit 0** |
+| Smoke | `/account-deletion` 200; `/admin/deletion-status` 200 with the token, 403 otherwise; unauthenticated upload and view 401; legacy `/upload/*` 503 (no R2) |
+| Native Firebase files | not needed: the app uses the Firebase JS SDK only (no `googleServicesFile`, no `@react-native-firebase`, no push tokens). The local and `preview` `GOOGLE_SERVICES_JSON` / `GOOGLE_SERVICE_INFO_PLIST` belong to production (`solotravelsoul-57a9e`) and are not referenced by the build; removing the two unused `preview` file variables is part of the build approval |
+
+**Live integration results** (`tests/staging/live.cjs`, disposable accounts, app modules + client SDK + real rules):
+- **Upload and view:** no token 401; 2 MB + 1 byte 413; non-image 415; owner view 200 `private, no-store`; another user 404 while unattached; public post 200 `private, max-age=300`.
+- **Direct privacy change:** an update made through the client SDK revokes access on the next request (404), and restoring it brings access back (200).
+- **Report auto-hide:** 3 reports through the client hide the post (`under_review`): other users get 404; the moderator gets 200 `no-store`.
+- **Moderator removal:** `remove-media` revokes the media; the D1 row goes to `removed` with bytes deleted; the owner gets 404.
+- **Profile photo:** a replaced photo is revoked; the new one is shared.
+- **Account A:** deleted across slices. Auth is gone and 9 documents are absent. All 4 of A's media rows were removed and purged. Legacy Storage absence was proven by `bucket-not-provisioned`.
+- **What B retains:** B's post (likeCount 0, commentCount 1), A's comment as a tombstone, B's reply unchanged, the DM anonymized, and a group containing only B. No non-anonymized content from A remains.
+- **Large accounts L and L2:** each had 20 photo posts, 15 likes, 25 comments, follows, a 10-message DM and a group. They were deleted in 82 and 97 invocations, with 0 errors and exact counters on all 15 posts; all 20 media rows were purged.
+- **Missing media bindings:** a temporary deploy without KV/D1 left D's deletion `blocked` at step `media` (Auth kept). After restoring the deploy, D's own continuation finished.
+- **Permission failure:** with Firebase Authentication Admin removed from the service account, E's deletion failed at `auth` (500, retryable; data cleaned, Auth kept). After the role was restored, the **real cron** run at 03:06:01 UTC (finalize slot) reported `finalized: 1` (8 ms CPU, 7 subrequests). The job is completed, Auth is gone and the media purged. The first verification at 03:07:18 reported a failure whose detail was truncated; an immediate re-check passed.
+- **Bucket-lookup role removed:** C's deletion still completed. Cloud Storage answers 404 for a non-existent bucket to any authenticated caller, so the proof does not depend on that permission. The role only matters if a bucket appears, and is kept.
+
+### Workers Free CPU (10 ms per invocation): measured, **not met**
+
+Method: CPU comes from Cloudflare's `wrangler tail` `cpuTime` (CPU, not wall time; wall times were 0.3–4 s), and analytics `cpuTime` agrees (max 65,747 µs before the changes). Subrequest and D1 counts come from the Worker's own `LOG_BUDGET` line. Tail samples bursts, so sample counts are below the invocation counts. Every invocation's outcome was `ok` with 0 errors, but this does not show compliance.
+
+Per-operation CPU, profiled with a temporary admin-gated build that repeats one operation N times (never committed; removed):
+
+| Operation | CPU each |
+|---|---|
+| Firestore REST fetch, body not parsed | ≈ 0.5 ms |
+| Firestore get / query | ≈ 0.4–0.65 ms |
+| Firestore commit | ≈ 1.25 ms |
+| RSA sign (service-account token, cold isolate) | ≈ 1.15 ms |
+| D1 query | ≈ 0.4 ms |
+| KV get | ≈ 0.15 ms |
+
+**Bottleneck:** the number of outbound calls, plus a fixed cost for every authenticated, fenced slice. That fixed cost is ID-token verification, the job read, the lease commit and the progress commit, about 5–6 ms. Several ms of jitter and the cold-isolate cost (key import, token mint, startup) come on top.
+
+Changes made (staging-deployed, regression-tested):
+- **Cost-weighted work units** (`SLICE_WORK_UNITS = 3`, `CRON_WORK_UNITS = 10`; a read is 1, a commit 2, D1/KV charged separately). They are enforced only after a slice has made durable progress (a commit, an advanced page cursor or a completed step), so every slice completes at least one atomic unit and can never live-lock.
+- **No redundant bookkeeping calls:**
+  - The route's job read is reused by the lease.
+  - Lease and progress writes use the `updateTime` of the attempt's own last write as the precondition. A conflict falls back to the read-and-check path, so fencing is unchanged.
+  - Finalization claims with the listed document's `updateTime`.
+- **One atomic unit per comment tombstone** (the duplicate post read was removed). A public trip's two root deletes go in one commit, and the private-data roots in one commit.
+- **Cron** runs every 5 minutes with one phase per run (resume, finalize, resume, sweep, resume, media).
+- **Imported verification keys** are cached per key ID.
+- The app now sends up to 200 continuation requests.
+
+| Build | Route | Samples | Median | p95 | Max | ≥ 10 ms |
+|---|---|---|---|---|---|---|
+| before | deletion slice | 5 | 42 ms | 65 ms | 65 ms | 5 |
+| before | upload | 8 | 7 ms | 15 ms | 15 ms | 2 |
+| before | view | 12 | 4 ms | 9 ms | 9 ms | 0 |
+| before | remove-media | 1 | 16 ms | – | 16 ms | 1 |
+| 6 units | deletion slice (account L, cold first slice) | 43 | 9 ms | 12 ms | 26 ms | 15 |
+| 6 units | upload / view | 17 / 12 | 3 / 4 ms | 8 / 14 ms | 8 / 14 ms | 0 / 1 |
+| 3 units | deletion slice (account L2, cold first slice) | 89 | 7 ms | 12 ms | 19 ms | 15 |
+| 3 units | upload / view | 16 / 26 | 6 / 3 ms | 24 / 9 ms | 24 / 16 ms | 1 / 1 |
+| 3 units | cron run (hourly build + `*/5` rotation) | 6 | 6 ms | 13 ms | 13 ms | 1 |
+
+**Conclusion:** the changes cut deletion CPU from 42–65 ms to a median of 7 ms, but about 17% of slices still reach 10–19 ms. Even slices doing almost no work sit at 7–12 ms. Cold first invocations of uploads and views reach 16–24 ms. The existing free architecture (Firestore REST over `fetch`, fenced leases, ID-token checks) **cannot reliably stay under Workers Free's 10 ms with headroom**. This is a release blocker for relying on Workers Free; no readiness is claimed. The CPU allowance values, the cron rotation and the client continuation count are not the remaining problem; the per-call and fixed-slice costs are.

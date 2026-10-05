@@ -88,6 +88,7 @@ class MemoryStore {
       for (const k of w.serverTime ?? []) { const [n, key] = at(k, true); n[key] = new Date().toISOString(); }
       this.docs.set(w.path, { data, updateTime: String(++this.clock) });
     }
+    return { updateTimes: writes.map((w) => (w.kind === 'delete' ? null : this.docs.get(w.path).updateTime)) };
   }
   seed(p, data) { this.docs.set(p, { data: clone(data), updateTime: String(++this.clock) }); }
 }

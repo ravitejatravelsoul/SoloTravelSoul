@@ -58,8 +58,16 @@ export interface DocStore {
   /** Document IDs in a collection (sorted), including "missing" parents that only hold subcollections. */
   listDocumentIds(collectionPath: string, opts?: ListOptions): Promise<string[]>;
   listCollectionIds(docPath: string, opts?: ListOptions): Promise<string[]>;
-  /** Atomic multi-document commit. Throws StoreConflict when a precondition fails. */
-  commit(writes: StoreWrite[]): Promise<void>;
+  /**
+   * Atomic multi-document commit. Throws StoreConflict when a precondition fails.
+   * May report each write's new updateTime (null for deletes), which callers can
+   * use as the precondition of their next write instead of re-reading.
+   */
+  commit(writes: StoreWrite[]): Promise<CommitResult | void>;
+}
+
+export interface CommitResult {
+  updateTimes: (string | null)[];
 }
 
 export class StoreConflict extends Error {
@@ -275,7 +283,7 @@ export class FirestoreRest implements DocStore {
     return ids;
   }
 
-  async commit(writes: StoreWrite[]): Promise<void> {
+  async commit(writes: StoreWrite[]): Promise<CommitResult | void> {
     if (writes.length === 0) return;
     const restWrites = writes.map((w) => {
       const name = `${this.docsRoot}/${w.path}`;
@@ -297,6 +305,8 @@ export class FirestoreRest implements DocStore {
     });
     const resp = await this.call('POST', `${this.baseUrl}/${this.docsRoot}:commit`, { writes: restWrites });
     if (!resp.ok) return this.failure(resp, 'commit');
+    const body = (await resp.json()) as { writeResults?: { updateTime?: string }[] };
+    return { updateTimes: writes.map((w, i) => (w.kind === 'delete' ? null : body.writeResults?.[i]?.updateTime ?? null)) };
   }
 }
 

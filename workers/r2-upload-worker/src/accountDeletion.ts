@@ -33,7 +33,7 @@
 // contributions must remain inside someone else's space (chat messages, reply
 // threads, notifications) their name/photo is replaced with "Deleted User".
 
-import { StoreConflict, type DocStore, type QueryFilter, type QueryOptions, type StoredDoc, type StoreWrite } from './firestoreRest';
+import { StoreConflict, type CommitResult, type DocStore, type QueryFilter, type QueryOptions, type StoredDoc, type StoreWrite } from './firestoreRest';
 import { LegacyMediaInaccessible, type LegacyStorage, type PrefixDeleter } from './objectStores';
 import { SliceExhausted, type SubrequestBudget } from './budget';
 import { purgePending, revokeOwner, type D1Like, type KvLike } from './media';
@@ -182,7 +182,7 @@ async function eachPage(
   collectionId: string,
   filters: QueryFilter[],
   opts: Pick<QueryOptions, 'parent' | 'allDescendants'>,
-  handle: (docs: StoredDoc[]) => Promise<void>
+  handle: (docs: StoredDoc[]) => Promise<unknown>
 ): Promise<void> {
   const key = `${ctx.stepId}:${sub}`;
   for (;;) {
@@ -191,6 +191,7 @@ async function eachPage(
     if (docs.length) {
       await handle(docs);
       ctx.cursors[key] = docs[docs.length - 1].path;
+      ctx.deps.budget?.markProgress();
     }
     if (docs.length < PAGE) break;
   }
@@ -204,13 +205,14 @@ function eachMatch(
   collectionId: string,
   filters: QueryFilter[],
   opts: Pick<QueryOptions, 'parent' | 'allDescendants'>,
-  handle: (doc: StoredDoc) => Promise<void>
+  handle: (doc: StoredDoc) => Promise<unknown>
 ): Promise<void> {
   const key = `${ctx.stepId}:${sub}`;
   return eachPage(ctx, sub, collectionId, filters, opts, async (docs) => {
     for (const d of docs) {
       await handle(d);
       ctx.cursors[key] = d.path;
+      ctx.deps.budget?.markProgress();
     }
   });
 }
@@ -225,9 +227,9 @@ const deleteAll = (store: DocStore, docs: StoredDoc[]) =>
  * reserve before stopping; parents still lead the next slice to what remains.
  * Listing the first page again makes progress because handled documents are gone.
  */
-async function deleteTree(ctx: Ctx, docPath: string): Promise<void> {
-  await clearSubcollections(ctx, docPath);
-  await ctx.store.commit([{ kind: 'delete', path: docPath }]);
+async function deleteTree(ctx: Ctx, ...docPaths: string[]): Promise<void> {
+  for (const p of docPaths) await clearSubcollections(ctx, p);
+  await ctx.store.commit(docPaths.map((path): StoreWrite => ({ kind: 'delete', path })));
 }
 
 async function clearSubcollections(ctx: Ctx, docPath: string): Promise<void> {
@@ -334,16 +336,14 @@ const removeFollows: Step['run'] = async (ctx) => {
 // release their counters exactly once, guarded by the isDeleted transition.
 const removeComments: Step['run'] = (ctx) => {
   const { uid, store } = ctx;
-  return eachMatch(ctx, 'mine', 'postComments', [{ field: 'authorId', op: 'EQUAL', value: uid }], {}, async (c) => {
-    const postId = String(c.data.postId ?? '');
-    const post = postId ? await store.get(`travelPosts/${postId}`) : null;
-    if (!post || post.data.authorId === uid) {
-      await store.commit([{ kind: 'delete', path: c.path }]);
-      return;
-    }
-    await atomically(store, async () => {
-      const comment = await store.get(c.path);
+  // One atomic unit per comment (≤ 6 work units: comment, post, parent, commit), so it fits any fresh slice.
+  return eachMatch(ctx, 'mine', 'postComments', [{ field: 'authorId', op: 'EQUAL', value: uid }], {}, (c) =>
+    atomically(store, async () => {
+      const postId = String(c.data.postId ?? '');
+      const [comment, post] = await Promise.all([store.get(c.path), postId ? store.get(`travelPosts/${postId}`) : Promise.resolve(null)]);
       if (!comment) return null;
+      // Own comments on own (or missing) posts disappear with the post.
+      if (!post || post.data.authorId === uid) return [{ kind: 'delete', path: comment.path, updateTime: comment.updateTime }];
       const wasDeleted = comment.data.isDeleted === true;
       if (wasDeleted && comment.data.text === '' && comment.data.authorName === DELETED_NAME && comment.data.authorPhoto == null) {
         return null;
@@ -356,15 +356,14 @@ const removeComments: Step['run'] = (ctx) => {
         updateTime: comment.updateTime,
       }];
       if (!wasDeleted) {
-        writes.push(...decrement(await store.get(`travelPosts/${postId}`), 'commentCount'));
+        writes.push(...decrement(post, 'commentCount'));
         const parentId = comment.data.parentCommentId;
         if (typeof parentId === 'string' && parentId) {
           writes.push(...decrement(await store.get(`postComments/${parentId}`), 'replyCount'));
         }
       }
       return writes;
-    });
-  });
+    }));
 };
 
 const cancelPending = (ctx: Ctx, sub: string, collectionId: string) =>
@@ -375,8 +374,7 @@ const cancelPending = (ctx: Ctx, sub: string, collectionId: string) =>
 
 const removeOwnedPublicTrips: Step['run'] = async (ctx) => {
   await eachMatch(ctx, 'trips', 'publicTrips', [{ field: 'ownerUid', op: 'EQUAL', value: ctx.uid }], {}, async (trip) => {
-    await deleteTree(ctx, `trips/${lastSegment(trip.path)}`); // members subcollection
-    await deleteTree(ctx, trip.path);
+    await deleteTree(ctx, `trips/${lastSegment(trip.path)}`, trip.path); // members subcollection, then both roots in one commit
   });
   await cancelPending(ctx, 'requests', 'tripJoinRequests');
 };
@@ -526,9 +524,7 @@ const removeDirectory: Step['run'] = async (ctx) => {
 // Runs last among data steps so anything the client wrote during cleanup is caught.
 const deletePrivateData: Step['run'] = async (ctx) => {
   const { uid } = ctx;
-  for (const root of [`users/${uid}`, `blocks/${uid}`, `nearbyTravelers/${uid}`, `travelerReputation/${uid}`, `publicProfiles/${uid}`, `moderators/${uid}`]) {
-    await deleteTree(ctx, root);
-  }
+  await deleteTree(ctx, `users/${uid}`, `blocks/${uid}`, `nearbyTravelers/${uid}`, `travelerReputation/${uid}`, `publicProfiles/${uid}`, `moderators/${uid}`);
 };
 
 const r2Prefixes = (uid: string) => [`profile_photos/${uid}/`, `post_photos/${uid}/`];
@@ -538,22 +534,31 @@ export const legacyStorageObjects = (uid: string) => [`profile_images/${uid}.jpg
 const LEGACY = 'legacyMediaCleanup';
 /** Rows deleted from KV per slice (D1 Free allows 50 queries per invocation). */
 const MEDIA_PURGE_PER_SLICE = 20;
-/** Objects to purge now: revokeOwner (1) + purgePending (2 + n) must fit the D1 query budget with 2 to spare. */
-function mediaPurgeLimit(media: NonNullable<DeletionDeps['media']>): number {
-  return media.queries ? Math.min(MEDIA_PURGE_PER_SLICE, media.queries.remaining() - 5) : MEDIA_PURGE_PER_SLICE;
+/**
+ * Objects to purge now: revokeOwner (1) + purgePending (2 + n) must fit the D1
+ * query budget with 2 to spare, and the CPU allowance (3 units + 1.5 per object).
+ */
+function mediaPurgeLimit(media: NonNullable<DeletionDeps['media']>, budget?: SubrequestBudget): number {
+  const byQueries = media.queries ? media.queries.remaining() - 5 : MEDIA_PURGE_PER_SLICE;
+  // Before this slice made progress, always allow one object, so a small allowance cannot live-lock.
+  const byCpu = budget ? Math.max(budget.progressed ? 0 : 1, Math.floor((budget.workRemaining() - 3) / 1.5)) : MEDIA_PURGE_PER_SLICE;
+  return Math.min(MEDIA_PURGE_PER_SLICE, byQueries, byCpu);
 }
+const mediaUnits = (limit: number) => 3 + Math.ceil(limit * 1.5);
 
 // KV media: revocation (D1 status 'removed') is immediate; bytes are deleted in
 // bounded batches. The step completes only when no queued KV delete remains.
 const deleteKvMedia: Step['run'] = async ({ uid, deps, work }) => {
   // Missing bindings are not proof that no media exists: the step waits for them.
   if (!deps.media) throw new DeletionBlocked('media-bindings-missing');
-  const limit = mediaPurgeLimit(deps.media);
-  if (limit < 1) throw new SliceExhausted(); // D1 query budget used up in this invocation
+  const limit = mediaPurgeLimit(deps.media, deps.budget);
+  if (limit < 1) throw new SliceExhausted(); // D1 or CPU allowance used up in this invocation
+  deps.budget?.useWork(mediaUnits(limit));
   const now = (deps.now ?? Date.now)();
   await revokeOwner(deps.media.db, uid, now);
   work(0);
-  const { remaining } = await purgePending(deps.media.db, deps.media.kv, { owner: uid, limit });
+  const { deleted, remaining } = await purgePending(deps.media.db, deps.media.kv, { owner: uid, limit });
+  if (deleted > 0) deps.budget?.markProgress();
   if (remaining > 0) throw new MediaCleanupPending(remaining);
 };
 
@@ -644,7 +649,11 @@ export const DELETION_STEPS: readonly Step[] = [
 interface Attempt {
   id: string;
   leaseUntil: number;
+  /** updateTime of this attempt's own last job write: the precondition for the next one. */
+  updateTime?: string;
 }
+
+const firstUpdateTime = (r: CommitResult | void) => (r && r.updateTimes[0]) || undefined;
 
 interface Acquired {
   state: 'acquired' | 'completed';
@@ -653,10 +662,11 @@ interface Acquired {
   cursors: Record<string, string>;
 }
 
-async function acquireLease(store: DocStore, uid: string, now: number, attempt: Attempt): Promise<Acquired> {
+async function acquireLease(store: DocStore, uid: string, now: number, attempt: Attempt, prefetched?: StoredDoc | null): Promise<Acquired> {
   const path = `${JOBS}/${uid}`;
   for (let i = 0; i < MAX_CONFLICT_RETRIES; i++) {
-    const job = await store.get(path);
+    // The caller's fresh read of the job is reused once; the write is conditional on it.
+    const job = i === 0 && prefetched !== undefined ? prefetched : await store.get(path);
     if (job?.data.status === 'completed') return { state: 'completed', completedSteps: [], flags: {}, cursors: {} };
     if (job?.data.status === 'in_progress' && num(job.data.leaseUntil) > now) throw new DeletionInProgress();
     const leaseUntil = now + LEASE_MS;
@@ -665,7 +675,7 @@ async function acquireLease(store: DocStore, uid: string, now: number, attempt: 
       ? { kind: 'update', path, set, increment: { attempts: 1 }, serverTime: ['updatedAt'], updateTime: job.updateTime }
       : { kind: 'update', path, set: { ...set, attempts: 1, startedAtMs: now }, serverTime: ['startedAt', 'updatedAt'], mustExist: false };
     try {
-      await store.commit([write]);
+      attempt.updateTime = firstUpdateTime(await store.commit([write]));
       attempt.leaseUntil = leaseUntil;
       const completed = Array.isArray(job?.data.completedSteps) ? (job!.data.completedSteps as string[]) : [];
       const saved = job?.data.cursors;
@@ -697,17 +707,35 @@ async function updateOwnJob(
   release = false
 ): Promise<void> {
   const path = `${JOBS}/${uid}`;
+  const ending = release || (set.status !== undefined && set.status !== 'in_progress');
+  // Fast path: the job is unchanged since this attempt's own last write (which
+  // made it the owner with this lease), so that write's updateTime is a complete
+  // precondition. Any other write in between fails it and falls back to the
+  // read-and-check path below.
+  if (attempt.updateTime) {
+    if (now() > attempt.leaseUntil) throw new DeletionAttemptLost('expired');
+    const leaseUntil = ending ? 0 : now() + LEASE_MS;
+    try {
+      const r = await store.commit([{ kind: 'update', path, set: { ...set, leaseUntil }, serverTime: ['updatedAt'], updateTime: attempt.updateTime }]);
+      attempt.leaseUntil = leaseUntil;
+      attempt.updateTime = firstUpdateTime(r);
+      return;
+    } catch (e) {
+      if (!(e instanceof StoreConflict)) throw e;
+      attempt.updateTime = undefined;
+    }
+  }
   for (let i = 0; i < MAX_CONFLICT_RETRIES; i++) {
     const job = await store.get(path);
     if (!job || job.data.attemptId !== attempt.id || job.data.status !== 'in_progress') {
       throw new DeletionAttemptLost('superseded');
     }
     if (now() > num(job.data.leaseUntil)) throw new DeletionAttemptLost('expired');
-    const ending = release || (set.status !== undefined && set.status !== 'in_progress');
     const leaseUntil = ending ? 0 : now() + LEASE_MS;
     try {
-      await store.commit([{ kind: 'update', path, set: { ...set, leaseUntil }, serverTime: ['updatedAt'], updateTime: job.updateTime }]);
+      const r = await store.commit([{ kind: 'update', path, set: { ...set, leaseUntil }, serverTime: ['updatedAt'], updateTime: job.updateTime }]);
       attempt.leaseUntil = leaseUntil;
+      attempt.updateTime = firstUpdateTime(r);
       return;
     } catch (e) {
       if (!(e instanceof StoreConflict)) throw e;
@@ -717,15 +745,15 @@ async function updateOwnJob(
 }
 
 /** Lease-guarded and (with a budget) metered view of the store for plan steps. */
-function guarded(store: DocStore, heartbeat: () => Promise<void>, work: (need?: number) => void): DocStore {
-  const before = async () => { work(1); await heartbeat(); };
+function guarded(store: DocStore, heartbeat: () => Promise<void>, work: (need?: number) => void, progress: () => void = () => {}): DocStore {
+  const before = async (units = 1) => { work(units); await heartbeat(); };
   return {
     get: async (p) => { await before(); return store.get(p); },
     getMany: async (ps) => { await before(); return store.getMany(ps); },
     query: async (c, f, o) => { await before(); return store.query(c, f, o); },
     listDocumentIds: async (c, o) => { await before(); return store.listDocumentIds(c, o); },
     listCollectionIds: async (d, o) => { await before(); return store.listCollectionIds(d, o); },
-    commit: async (w) => { await before(); return store.commit(w); },
+    commit: async (w) => { await before(2); const r = await store.commit(w); progress(); return r; },
   };
 }
 
@@ -735,6 +763,8 @@ function safeMessage(e: unknown): string {
 
 /** Calls needed to finish: pre-auth marker (2), Auth removal (1), completion (2), plus conflict retries. */
 const AUTH_PHASE_CALLS = 7;
+/** CPU allowance the Auth phase needs: marker commit (2), Auth removal (1), completion commit (2). */
+const AUTH_PHASE_UNITS = 5;
 
 export type DeletionResult =
   | { status: 'deleted' }
@@ -749,7 +779,7 @@ export type DeletionResult =
  * when another attempt holds the lease, DeletionAttemptLost when this attempt
  * lost its lease, or DeletionStepFailed (Auth untouched, barrier in place, safe to retry).
  */
-export async function deleteAccount(identity: DeletionIdentity, deps: DeletionDeps): Promise<DeletionResult> {
+export async function deleteAccount(identity: DeletionIdentity, deps: DeletionDeps, opts: { job?: StoredDoc | null } = {}): Promise<DeletionResult> {
   const now = deps.now ?? Date.now;
   const { uid } = identity;
   const { store, budget } = deps;
@@ -757,7 +787,7 @@ export async function deleteAccount(identity: DeletionIdentity, deps: DeletionDe
   const work = (need = 1) => { budget?.ensureWork(need); };
 
   // Creating/claiming the job document also raises the persistent barrier.
-  const acquired = await acquireLease(store, uid, now(), attempt);
+  const acquired = await acquireLease(store, uid, now(), attempt, opts.job);
   if (acquired.state === 'completed') {
     await deps.deleteAuthUser(uid); // idempotent; covers a lost response after completion
     return { status: 'deleted' };
@@ -769,7 +799,7 @@ export async function deleteAccount(identity: DeletionIdentity, deps: DeletionDe
   };
   const flags: Record<string, unknown> = { ...acquired.flags };
   const cursors = acquired.cursors;
-  const ctx: Ctx = { uid, email: identity.email, store: guarded(store, heartbeat, work), rawStore: store, deps, heartbeat, work, flags, stepId: '', cursors };
+  const ctx: Ctx = { uid, email: identity.email, store: guarded(store, heartbeat, work, () => budget?.markProgress()), rawStore: store, deps, heartbeat, work, flags, stepId: '', cursors };
   const done = new Set(acquired.completedSteps.filter((id) => DELETION_STEPS.some((s) => s.id === id)));
   // An earlier version marked the legacy step done while its media was unresolved: redo it.
   if (flags.legacyMediaUnresolved === true) done.delete('firebaseMedia');
@@ -800,6 +830,7 @@ export async function deleteAccount(identity: DeletionIdentity, deps: DeletionDe
     try {
       await step.run(ctx);
       done.add(step.id);
+      budget?.markProgress();
       for (const key of Object.keys(cursors)) if (key.startsWith(`${step.id}:`)) delete cursors[key];
     } catch (e) {
       if (e instanceof SliceExhausted || e instanceof MediaCleanupPending) return pause(step.id);
@@ -809,7 +840,7 @@ export async function deleteAccount(identity: DeletionIdentity, deps: DeletionDe
   }
 
   // Only start the Auth phase if it can finish in this invocation.
-  if (budget && budget.remaining() < AUTH_PHASE_CALLS + 2) return pause('auth');
+  if (budget && (budget.remaining() < AUTH_PHASE_CALLS + 2 || (budget.progressed && budget.workRemaining() < AUTH_PHASE_UNITS))) return pause('auth');
 
   try {
     // Re-verifies ownership and renews the lease immediately before Auth removal.
@@ -895,9 +926,12 @@ export async function sweepRecentlyDeletedMedia(deps: DeletionDeps, windowMs = S
     for (const job of jobs) {
       const uid = lastSegment(job.path);
       try {
-        if (deps.media && mediaPurgeLimit(deps.media) >= 1) {
+        // Late uploads are rare: a small batch per job keeps each job one small atomic unit.
+        const limit = deps.media ? Math.min(5, mediaPurgeLimit(deps.media, deps.budget)) : 0;
+        if (deps.media && limit >= 1) {
+          deps.budget?.useWork(mediaUnits(limit));
           await revokeOwner(deps.media.db, uid, now());
-          await purgePending(deps.media.db, deps.media.kv, { owner: uid, limit: mediaPurgeLimit(deps.media) });
+          await purgePending(deps.media.db, deps.media.kv, { owner: uid, limit });
         }
         if (deps.r2) await deps.r2.deletePrefixes(r2Prefixes(uid));
         try {
@@ -907,6 +941,7 @@ export async function sweepRecentlyDeletedMedia(deps: DeletionDeps, windowMs = S
           if (!(e instanceof LegacyMediaInaccessible)) throw e; // such jobs never reach mediaClearedAtMs now
         }
         swept++;
+        deps.budget?.markProgress();
       } catch (e) {
         if (e instanceof SliceExhausted) throw e; // resume at this job next run
         failed++; // retried on the next pass
@@ -927,21 +962,22 @@ export async function sweepRecentlyDeletedMedia(deps: DeletionDeps, windowMs = S
  * when the job is completed, no longer pending, held by a live attempt, or has
  * unresolved legacy media (the plan must verify it first).
  */
-async function claimForRecovery(store: DocStore, uid: string, now: () => number, attempt: Attempt): Promise<boolean> {
+async function claimForRecovery(store: DocStore, uid: string, now: () => number, attempt: Attempt, listed?: StoredDoc): Promise<boolean> {
   const path = `${JOBS}/${uid}`;
-  const job = await store.get(path);
+  // The listing is fresh: claiming is conditional on its updateTime, so a stale view simply loses.
+  const job = listed ?? (await store.get(path));
   if (!job || job.data.pendingFinalization !== true || job.data.status === 'completed') return false;
   if (job.data.legacyMediaUnresolved === true) return false;
   if (job.data.status === 'in_progress' && num(job.data.leaseUntil) > now()) return false;
   const leaseUntil = now() + LEASE_MS;
   try {
-    await store.commit([{
+    attempt.updateTime = firstUpdateTime(await store.commit([{
       kind: 'update',
       path,
       set: { status: 'in_progress', attemptId: attempt.id, leaseUntil, currentStep: 'finalization', lastError: null },
       serverTime: ['updatedAt'],
       updateTime: job.updateTime,
-    }]);
+    }]));
     attempt.leaseUntil = leaseUntil;
     return true;
   } catch (e) {
@@ -952,6 +988,8 @@ async function claimForRecovery(store: DocStore, uid: string, now: () => number,
 
 /** Calls one recovery needs: claim (2), lookup (1), fence (2), delete (1), completion (2). */
 const FINALIZE_CALLS = 8;
+/** CPU units one recovery needs: claim commit (2), lookup (1), fence commit (2), delete (1), completion commit (2). */
+const FINALIZE_UNITS = 8;
 
 /**
  * Completes jobs that reached Auth removal but whose final bookkeeping never
@@ -975,12 +1013,13 @@ export async function finalizePendingDeletions(deps: DeletionDeps, cursors: Cron
   let finalized = 0;
   let visited = 0;
   for (const listed of pending) {
-    if (budget && budget.remaining() < FINALIZE_CALLS + 2) break; // next cron run continues here
+    if (budget && (budget.remaining() < FINALIZE_CALLS + 2 || budget.workRemaining() < FINALIZE_UNITS)) break; // next cron run continues here
+    budget?.useWork(FINALIZE_UNITS);
     visited++;
     if (listed.data.legacyMediaUnresolved === true) continue; // resumeIncompleteDeletions retries the legacy step
     const uid = lastSegment(listed.path);
     const attempt: Attempt = { id: `recovery-${deps.newAttemptId?.() ?? crypto.randomUUID()}`, leaseUntil: 0 };
-    if (!(await claimForRecovery(store, uid, now, attempt))) continue;
+    if (!(await claimForRecovery(store, uid, now, attempt, listed))) continue;
     try {
       if (await deps.authUserExists(uid)) {
         // Fence: still the owner with a live lease right before the destructive call.
@@ -1043,7 +1082,7 @@ export async function resumeIncompleteDeletions(
       const skip = (job.data.pendingFinalization === true && job.data.legacyMediaUnresolved !== true)
         || (job.data.status === 'in_progress' && num(job.data.leaseUntil) > now());
       if (!skip) {
-        if (deps.budget && deps.budget.remaining() < 12) { stopped = true; break; } // not enough for a useful slice
+        if (deps.budget && (deps.budget.remaining() < 12 || deps.budget.workRemaining() < 3)) { stopped = true; break; } // not enough for a useful slice
         try {
           const r = await deleteAccount({ uid: lastSegment(job.path), email: null }, deps);
           if (r.status === 'deleted') resumed++;
@@ -1129,7 +1168,9 @@ export interface MaintenanceResult {
  * With a budget every phase stops at the reserve; the discovery cursors are
  * saved (from the reserve) so the next run picks up behind this one.
  */
-export async function runScheduledMaintenance(deps: DeletionDeps): Promise<MaintenanceResult> {
+export type MaintenancePhase = 'finalize' | 'resume' | 'sweep';
+
+export async function runScheduledMaintenance(deps: DeletionDeps, phases: readonly MaintenancePhase[] = ['finalize', 'resume', 'sweep']): Promise<MaintenanceResult> {
   const result: MaintenanceResult = { finalized: 0, resumed: 0, swept: 0, stalled: 0, budgetLimited: false };
   const phase = async (run: () => Promise<void>) => {
     try { await run(); } catch (e) {
@@ -1142,13 +1183,15 @@ export async function runScheduledMaintenance(deps: DeletionDeps): Promise<Maint
   const initial = JSON.stringify(cursors);
   let seen: StoredDoc[] = [];
   try {
-    await phase(async () => { result.finalized = await finalizePendingDeletions(deps, cursors); });
-    await phase(async () => {
-      const pages = await incompleteJobPages(deps, cursors);
-      seen = [...pages.inProgress, ...pages.failed];
-      result.resumed = await resumeIncompleteDeletions(deps, pages, cursors);
-    });
-    await phase(async () => { result.swept = await sweepRecentlyDeletedMedia(deps, SWEEP_WINDOW_MS, cursors); });
+    if (phases.includes('finalize')) await phase(async () => { result.finalized = await finalizePendingDeletions(deps, cursors); });
+    if (phases.includes('resume')) {
+      await phase(async () => {
+        const pages = await incompleteJobPages(deps, cursors);
+        seen = [...pages.inProgress, ...pages.failed];
+        result.resumed = await resumeIncompleteDeletions(deps, pages, cursors);
+      });
+    }
+    if (phases.includes('sweep')) await phase(async () => { result.swept = await sweepRecentlyDeletedMedia(deps, SWEEP_WINDOW_MS, cursors); });
   } finally {
     if (JSON.stringify(cursors) !== initial) {
       const clean = Object.fromEntries(Object.entries(cursors).filter(([, v]) => v !== undefined));

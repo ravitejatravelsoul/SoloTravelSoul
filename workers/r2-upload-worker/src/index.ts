@@ -9,7 +9,7 @@ import { getAccessToken, identityToolkitUserDeleter, identityToolkitUserExists, 
 import { handlePhotoUpload, POST_PHOTO, PROFILE_PHOTO, type UploadKind } from './uploads';
 import { handleMediaUpload, handleMediaView, maintenanceLimits, meteredD1, runMediaMaintenance, type MediaDeps } from './media';
 import { handleAdminMedia } from './adminMedia';
-import { budgetedFetch, D1_FREE_QUERIES, SliceExhausted, SubrequestBudget } from './budget';
+import { budgetedFetch, CRON_WORK_UNITS, D1_FREE_QUERIES, SLICE_WORK_UNITS, SliceExhausted, SubrequestBudget, WORKERS_FREE_SUBREQUESTS } from './budget';
 
 export interface Env {
   /** Legacy R2 bucket: cleanup/migration of earlier uploads only (optional). */
@@ -30,6 +30,32 @@ export interface Env {
   MEDIA_PUBLIC_ORIGIN?: string;
   /** "none" = staging no-legacy mode (see DeletionDeps.legacyMode); refused for the production project. */
   LEGACY_MEDIA_MODE?: string;
+  /** "1" = log each invocation's subrequest and D1 query counts (staging measurement; no IDs or tokens). */
+  LOG_BUDGET?: string;
+  /** Work units per deletion slice / cron run (CPU allowance; defaults sized for Workers Free's 10 ms). */
+  SLICE_WORK_UNITS?: string;
+  CRON_WORK_UNITS?: string;
+}
+
+const units = (value: string | undefined, fallback: number) => {
+  const n = Number(value);
+  return value && Number.isFinite(n) && n > 0 ? n : fallback;
+};
+
+/**
+ * Cron runs every 5 minutes; under the 10 ms CPU limit each run does one phase.
+ * Resuming started deletions gets half of the runs.
+ */
+const CRON_PHASES = ['resume', 'finalize', 'resume', 'sweep', 'resume', 'media'] as const;
+export function cronPhase(scheduledTime: number): (typeof CRON_PHASES)[number] {
+  return CRON_PHASES[Math.floor(scheduledTime / 300_000) % CRON_PHASES.length];
+}
+
+/** Route label for budget logs: media IDs are replaced so no identifiers are logged. */
+const routeLabel = (method: string, pathname: string) => `${method} ${pathname.replace(/^\/media\/(?!upload$)[^/]+$/, '/media/:id')}`;
+function logBudget(env: Env, label: string, budget: SubrequestBudget, queries: SubrequestBudget, extra: Record<string, unknown> = {}): void {
+  if (env.LOG_BUDGET !== '1') return;
+  console.log(JSON.stringify({ event: 'budget', route: label, subrequests: budget.used, d1Queries: queries.used, ...extra }));
 }
 
 /** The production Firebase project; must match packages/shared PRODUCTION_FIREBASE_PROJECT_ID (tested). */
@@ -77,7 +103,7 @@ function services(env: Env, budget: SubrequestBudget) {
       authUserExists: identityToolkitUserExists({ projectId: env.FIREBASE_PROJECT_ID, token, fetch: fetchFn }),
     };
   };
-  return { store, verify, media, deletion };
+  return { store, verify, media, deletion, queries };
 }
 
 const CORS_HEADERS = {
@@ -121,11 +147,9 @@ function mediaDeps(request: Request, env: Env, svc: ReturnType<typeof services>)
   return { db: svc.media.db, kv: svc.media.kv, store: svc.store, verify: svc.verify, publicBaseUrl: mediaOrigin(env, request), json };
 }
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+async function route(request: Request, env: Env, svc: ReturnType<typeof services>): Promise<Response> {
     if (request.method === 'OPTIONS') return new Response(null, { headers: CORS_HEADERS });
     const { pathname } = new URL(request.url);
-    const svc = services(env, new SubrequestBudget());
 
     if (request.method === 'GET' && pathname === '/account-deletion') return accountDeletionPage();
 
@@ -169,31 +193,51 @@ export default {
       return handleAccountDeletion(request, { verify: svc.verify, deletion: svc.deletion, json });
     }
     return err('Not found', 404);
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const budget = new SubrequestBudget(WORKERS_FREE_SUBREQUESTS, units(env.SLICE_WORK_UNITS, SLICE_WORK_UNITS));
+    const svc = services(env, budget);
+    const response = await route(request, env, svc);
+    logBudget(env, routeLabel(request.method, new URL(request.url).pathname), budget, svc.queries, { status: response.status });
+    return response;
   },
 
   // Cron (wrangler.toml): one budgeted invocation finishes stranded jobs,
   // advances one paused/failed deletion by a slice, sweeps late media, then
   // spends what is left on media maintenance. Everything resumes next run.
-  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    const budget = new SubrequestBudget();
+  async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    const budget = new SubrequestBudget(WORKERS_FREE_SUBREQUESTS, units(env.CRON_WORK_UNITS, CRON_WORK_UNITS));
     const svc = services(env, budget);
+    const phase = cronPhase(event.scheduledTime);
     const deletion = svc.deletion();
     if (!deletion) {
       console.error('[Worker] deletion maintenance skipped: deletion is not configured');
       return;
     }
     ctx.waitUntil((async () => {
-      await runScheduledMaintenance(deletion);
-      if (svc.media && svc.store && env.MEDIA_PUBLIC_ORIGIN && budget.remaining() > 12) {
+      let result: unknown = null;
+      let media: unknown = null;
+      if (phase !== 'media') {
         try {
-          await runMediaMaintenance(
+          result = await runScheduledMaintenance(deletion, [phase]);
+        } catch (e) {
+          console.error('[Worker] deletion maintenance failed:', (e as Error).message);
+        }
+      }
+      if (phase === 'media' && svc.media && svc.store && env.MEDIA_PUBLIC_ORIGIN && budget.remaining() > 12) {
+        try {
+          // D1 queries ≈ 0.4 ms CPU each: at most 14 per run.
+          media = await runMediaMaintenance(
             { ...svc.media, store: svc.store, publicBaseUrl: mediaOrigin(env) },
-            maintenanceLimits(budget.remaining(), svc.media.queries.remaining())
+            maintenanceLimits(Math.min(budget.remaining(), 16), Math.min(svc.media.queries.remaining(), 14))
           );
         } catch (e) {
           if (!(e instanceof SliceExhausted)) console.error('[Worker] media maintenance failed:', (e as Error).message);
         }
       }
+      logBudget(env, `cron:${phase}`, budget, svc.queries, { maintenance: result, media, workUnits: budget.workUsed });
     })());
   },
 };

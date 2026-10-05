@@ -190,11 +190,12 @@ test('repo staging config names only staging resources (project ID still to be f
     'PASS staging MEDIA_DB has the media migrations']) {
     assert.ok(r.out.includes(line), line);
   }
-  // Staging media resources are not created yet (no deployments in this change): reported, not hidden.
-  for (const line of ['FAIL staging MEDIA_KV namespace is set and not production', 'FAIL staging MEDIA_DB database is set and not production',
-    'FAIL staging MEDIA_PUBLIC_ORIGIN is an https origin that is not the production Worker']) {
+  // Staging media resources exist (created in the authorized staging rollout).
+  for (const line of ['PASS staging MEDIA_KV namespace is set and not production', 'PASS staging MEDIA_DB database is set and not production',
+    'PASS staging MEDIA_PUBLIC_ORIGIN is an https origin that is not the production Worker']) {
     assert.ok(r.out.includes(line), line);
   }
+  assert.equal(r.code, 0, 'repo staging configuration passes every check');
   // Production Worker config gains no media bindings in this change.
   const toml = fs.readFileSync(path.join(root, 'workers/r2-upload-worker/wrangler.toml'), 'utf8');
   const prodPart = toml.split('[env.staging]')[0].split(/\r?\n/).filter((l) => !l.trim().startsWith('#')).join('\n'); // settings only
