@@ -374,7 +374,7 @@ Targets are staging only: Firebase project `solotravelsoul-staging`, Worker `sol
 | A3 | D1 database | `npx wrangler d1 create solotravelsoul-media-staging` → put `database_id` in `[[env.staging.d1_databases]]` |
 | A4 | D1 schema | `npx wrangler d1 migrations apply solotravelsoul-media-staging --env staging --remote` |
 | A5 | Media origin | set `MEDIA_PUBLIC_ORIGIN = "https://solotravelsoul-r2-upload-staging.<subdomain>.workers.dev"` (subdomain from the Cloudflare dashboard); `npm run check:staging` must then pass every configuration item |
-| B1 | Staging service account (Cloud Console, project `solotravelsoul-staging` only) | create `sts-staging-deleter`; grant Cloud Datastore User, Firebase Authentication Admin, Storage Object Admin (only matters if a bucket is ever created); create a JSON key into a temporary file |
+| B1 | Staging service account (Cloud Console, project `solotravelsoul-staging` only) | create `sts-staging-deleter`; grant Cloud Datastore User, Firebase Authentication Admin and a custom role `stsStagingBucketLookup` with only `storage.buckets.get` (needed by the no-legacy bucket lookup; no Owner/Editor, no object permissions: if a bucket ever appears, listing is refused and deletion blocks); create a JSON key into a temporary file |
 | B2 | Worker secrets | `npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON --env staging < <tmp-key.json>`, then delete the file; `npx wrangler secret put ADMIN_DELETION_TOKEN --env staging` (a random 32-byte value kept in a password manager) |
 | C1 | Indexes | `npx firebase deploy --project staging --only firestore:indexes` (wait until built) |
 | C2 | Rules (closes the deletion barriers) | `npx firebase deploy --project staging --only firestore:rules`. Do **not** deploy `storage` (no bucket exists) |
@@ -424,3 +424,23 @@ Run on two staging accounts (A, B) after the packet is executed. Status at commi
 | Type checks | PASS: `turbo type-check`, Worker `tsc`, `scripts/auditCounters.ts` and `scripts/migrateLegacyMedia.ts` |
 | Lint | PASS: 0 errors (warnings unchanged: mobile 74, firebase 7) |
 | `expo export` iOS + Android | PASS (bundles only; not native UI proof) |
+
+### Staging rollout log (authorized phase, from d04a9d5)
+
+Authorization covered staging-only KV/D1, migrations, service-account setup, Worker secrets, Firebase indexes/rules, Worker/cron deployment and EAS `preview` variables (no builds).
+
+| Step | Result |
+|---|---|
+| Billing check before writes | `solotravelsoul-staging` and `solotravelsoul-57a9e`: no billing account linked (`billingEnabled=false`), i.e. Spark. Workers plan could not be read: **Cloudflare not logged in** |
+| Cloudflare login (`wrangler login`) | **BLOCKED**: two browser authorizations timed out without approval |
+| A2–A5 KV, D1, schema, media origin | not run (needs Cloudflare) |
+| IAM API on staging | enabled (`iam.googleapis.com`; no billing required) |
+| B1 service account | `sts-staging-deleter@solotravelsoul-staging.iam.gserviceaccount.com` created. Roles: `roles/datastore.user`, `roles/firebaseauth.admin`, custom `projects/solotravelsoul-staging/roles/stsStagingBucketLookup` (`storage.buckets.get` only). Project has no organization. |
+| SA verification through the Worker's own `google.ts` / `objectStores.ts` | staging bucket lookup → `bucketExists = false` (404, never provisioned); production bucket lookup refused (403); staging Firestore read 404 (allowed, document absent); production Firestore 403; staging Identity Toolkit lookup works |
+| SA key | a test key was created, used for the verification above, then deleted in IAM and locally (no user-managed keys remain); a fresh key is created when the Worker secret can be set |
+| B2 Worker secrets | not run (needs Cloudflare) |
+| C1–C4 indexes, rules, Worker/cron | not run: the required order puts them after KV/D1 and secrets |
+| Staging Auth | Email/Password sign-in already enabled |
+| D1 EAS `preview` variables | set from live `firebase apps:sdkconfig` metadata: `EXPO_PUBLIC_APP_ENV`, all six `EXPO_PUBLIC_FIREBASE_*`. Verified as stored (pulled back, checked against metadata; file deleted): all Firebase items PASS. Full check still fails on the Worker URL, KV ID, D1 ID and media origin (Cloudflare) |
+| Native Firebase files in `preview` | `GOOGLE_SERVICES_JSON` / `GOOGLE_SERVICE_INFO_PLIST` **cannot belong to staging**: the staging project has no Android/iOS apps. Do not build with them; register staging native apps and replace both first (owner action, not in this authorization) |
+| Staging integration tests, CPU/operation counts, cron execution | **BLOCKED** (no deployed staging Worker) |
