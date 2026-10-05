@@ -113,14 +113,23 @@ test('deletion client: continues on 202 with the same token, reports progress, s
   assert.equal(await m.requestAccountDeletion(), 'in_progress', 'server cron finishes the rest');
   assert.equal(seen.length, m.MAX_DELETION_SLICES);
 
+  // Blocked (legacy media unverifiable): stop continuing at once and report it truthfully.
+  seen.length = 0;
+  responses.push(reply(202, { status: 'in_progress', completedSteps: 20, totalSteps: 24 }), reply(202, { status: 'blocked', step: 'firebaseMedia', reason: 'legacy-media-inaccessible', completedSteps: 23, totalSteps: 24 }), reply(200, { status: 'deleted' }));
+  assert.equal(await m.requestAccountDeletion(), 'blocked');
+  assert.equal(seen.length, 2, 'no further continuation requests while blocked');
+  responses.length = 0;
+
   responses.push(reply(401, { code: 'auth/requires-recent-login', error: 'x' }));
   await assert.rejects(m.requestAccountDeletion(), (e) => e.code === 'auth/requires-recent-login');
 });
 
 test('in-progress deletion keeps the user informed and the account locked (no local wipe claimed)', () => {
   const src = fs.readFileSync(path.join(root, 'apps/mobile/hooks/useAuth.ts'), 'utf8');
-  assert.match(src, /in_progress/);
   assert.match(src, /continues automatically/);
+  assert.match(src, /outcome === 'blocked'/, 'blocked deletions are reported as such');
+  assert.match(src, /stays locked and is removed automatically once they are deleted/);
+  assert.ok(!/blocked'[\s\S]{0,40}'Your account has been deleted/.test(src), 'a blocked deletion is never announced as deleted');
 });
 
 (async () => {

@@ -31,15 +31,33 @@ export type StoreWrite =
       updateTime?: string;
     };
 
+export interface QueryOptions {
+  /** '' = database root. */
+  parent?: string;
+  /** Collection-group query. */
+  allDescendants?: boolean;
+  /**
+   * One page only (one subrequest): at most `limit` results. Without it every
+   * page is fetched, which callers under a subrequest budget must not do.
+   */
+  limit?: number;
+  /** Resume after this document (results are ordered by the inequality field, if any, then by path). */
+  startAfter?: { path: string; data?: Record<string, unknown> };
+}
+
+export interface ListOptions {
+  /** One page only (one subrequest): the first `limit` IDs. */
+  limit?: number;
+}
+
 export interface DocStore {
   get(path: string): Promise<StoredDoc | null>;
   /** Several documents in one round trip (one subrequest); missing documents are null, in input order. */
   getMany(paths: string[]): Promise<(StoredDoc | null)[]>;
-  /** parent '' = database root. allDescendants = collection-group query. */
-  query(collectionId: string, filters: QueryFilter[], opts?: { parent?: string; allDescendants?: boolean }): Promise<StoredDoc[]>;
-  /** Document IDs in a collection, including "missing" parents that only hold subcollections. */
-  listDocumentIds(collectionPath: string): Promise<string[]>;
-  listCollectionIds(docPath: string): Promise<string[]>;
+  query(collectionId: string, filters: QueryFilter[], opts?: QueryOptions): Promise<StoredDoc[]>;
+  /** Document IDs in a collection (sorted), including "missing" parents that only hold subcollections. */
+  listDocumentIds(collectionPath: string, opts?: ListOptions): Promise<string[]>;
+  listCollectionIds(docPath: string, opts?: ListOptions): Promise<string[]>;
   /** Atomic multi-document commit. Throws StoreConflict when a precondition fails. */
   commit(writes: StoreWrite[]): Promise<void>;
 }
@@ -183,11 +201,7 @@ export class FirestoreRest implements DocStore {
     return paths.map((p) => byName.get(`${this.docsRoot}/${p}`) ?? null);
   }
 
-  async query(
-    collectionId: string,
-    filters: QueryFilter[],
-    opts: { parent?: string; allDescendants?: boolean } = {}
-  ): Promise<StoredDoc[]> {
+  async query(collectionId: string, filters: QueryFilter[], opts: QueryOptions = {}): Promise<StoredDoc[]> {
     const parent = opts.parent ? `${this.docsRoot}/${encodePath(opts.parent)}` : this.docsRoot;
     const fieldFilters = filters.map((f) => ({
       fieldFilter: { field: { fieldPath: fieldPath(f.field) }, op: f.op, value: encodeValue(f.value) },
@@ -199,14 +213,24 @@ export class FirestoreRest implements DocStore {
       { field: { fieldPath: '__name__' }, direction: 'ASCENDING' },
     ];
     const results: StoredDoc[] = [];
-    const pageSize = 100; // small pages bound per-response CPU (Workers Free: 10 ms/invocation)
+    const pageSize = opts.limit ?? 100; // small pages bound per-response CPU (Workers Free: 10 ms/invocation)
     let offset = 0;
-    // Paged by offset; the deletion flow only queries one user's documents.
+    const startAt = opts.startAfter
+      ? {
+          values: [
+            ...(inequality ? [encodeValue(opts.startAfter.data?.[inequality.field] as string | number | boolean)] : []),
+            { referenceValue: `${this.docsRoot}/${opts.startAfter.path}` },
+          ],
+          before: false,
+        }
+      : undefined;
+    // One page when `limit` is set; otherwise paged by offset until a short page.
     for (;;) {
       const structuredQuery: Record<string, unknown> = {
         from: [{ collectionId, allDescendants: !!opts.allDescendants }],
         orderBy,
-        offset,
+        ...(startAt ? { startAt } : {}),
+        ...(offset ? { offset } : {}),
         limit: pageSize,
       };
       if (fieldFilters.length === 1) structuredQuery.where = fieldFilters[0];
@@ -216,37 +240,37 @@ export class FirestoreRest implements DocStore {
       const rows = (await resp.json()) as { document?: { name: string; fields?: Record<string, FsValue>; updateTime: string } }[];
       const docs = rows.filter((r) => r.document).map((r) => r.document!);
       for (const d of docs) results.push({ path: this.relPath(d.name), data: decodeFields(d.fields ?? {}), updateTime: d.updateTime });
-      if (docs.length < pageSize) return results;
+      if (opts.limit || docs.length < pageSize) return results;
       offset += pageSize;
     }
   }
 
-  async listDocumentIds(collectionPath: string): Promise<string[]> {
+  async listDocumentIds(collectionPath: string, opts: ListOptions = {}): Promise<string[]> {
     const ids: string[] = [];
     let pageToken = '';
     do {
-      const qs = `pageSize=100&showMissing=true&mask.fieldPaths=__name__${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
+      const qs = `pageSize=${opts.limit ?? 100}&showMissing=true&mask.fieldPaths=__name__${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
       const resp = await this.call('GET', `${this.baseUrl}/${this.docsRoot}/${encodePath(collectionPath)}?${qs}`);
       if (!resp.ok) return this.failure(resp, 'list');
       const body = (await resp.json()) as { documents?: { name: string }[]; nextPageToken?: string };
       for (const d of body.documents ?? []) ids.push(d.name.split('/').pop()!);
-      pageToken = body.nextPageToken ?? '';
+      pageToken = opts.limit ? '' : body.nextPageToken ?? '';
     } while (pageToken);
     return ids;
   }
 
-  async listCollectionIds(docPath: string): Promise<string[]> {
+  async listCollectionIds(docPath: string, opts: ListOptions = {}): Promise<string[]> {
     const ids: string[] = [];
     let pageToken = '';
     do {
       const resp = await this.call('POST', `${this.baseUrl}/${this.docsRoot}/${encodePath(docPath)}:listCollectionIds`, {
-        pageSize: 100,
+        pageSize: opts.limit ?? 100,
         ...(pageToken ? { pageToken } : {}),
       });
       if (!resp.ok) return this.failure(resp, 'listCollectionIds');
       const body = (await resp.json()) as { collectionIds?: string[]; nextPageToken?: string };
       ids.push(...(body.collectionIds ?? []));
-      pageToken = body.nextPageToken ?? '';
+      pageToken = opts.limit ? '' : body.nextPageToken ?? '';
     } while (pageToken);
     return ids;
   }

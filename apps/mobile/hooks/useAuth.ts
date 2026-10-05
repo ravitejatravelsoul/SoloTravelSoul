@@ -14,7 +14,7 @@ import { getUserInitials } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { setSyncPaused } from '@/hooks/useSyncEngine';
-import { requestAccountDeletion, clearLocalUserData, type DeletionProgress } from '@/utils/accountDeletion';
+import { requestAccountDeletion, clearLocalUserData, type DeletionOutcome, type DeletionProgress } from '@/utils/accountDeletion';
 
 function deletionErrorMessage(code: string): string {
   switch (code) {
@@ -142,7 +142,7 @@ export function useAuth() {
       if (!uid) return false;
       setLoading(true);
       setSyncPaused(uid, true);
-      let outcome: 'deleted' | 'in_progress' = 'deleted';
+      let outcome: DeletionOutcome = 'deleted';
       try {
         await reauthenticate(password);
         outcome = await requestAccountDeletion(onProgress);
@@ -163,8 +163,10 @@ export function useAuth() {
       addToast(
         outcome === 'deleted'
           ? 'Your account has been deleted.'
-          : 'Account deletion has started and continues automatically. Your account is locked meanwhile; contact privacy@solotravelsoul.app if it is not removed.',
-        'success'
+          : outcome === 'blocked'
+            ? 'Your data has been deleted except older photos stored with a provider we cannot reach right now. Your account stays locked and is removed automatically once they are deleted; contact privacy@solotravelsoul.app with questions.'
+            : 'Account deletion has started and continues automatically. Your account is locked meanwhile; contact privacy@solotravelsoul.app if it is not removed.',
+        outcome === 'deleted' ? 'success' : 'info'
       );
       router.replace('/(auth)/login');
       return true;

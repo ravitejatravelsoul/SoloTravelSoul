@@ -33,7 +33,7 @@
 // contributions must remain inside someone else's space (chat messages, reply
 // threads, notifications) their name/photo is replaced with "Deleted User".
 
-import { StoreConflict, type DocStore, type StoredDoc, type StoreWrite } from './firestoreRest';
+import { StoreConflict, type DocStore, type QueryFilter, type QueryOptions, type StoredDoc, type StoreWrite } from './firestoreRest';
 import { LegacyMediaInaccessible, type LegacyStorage, type PrefixDeleter } from './objectStores';
 import { SliceExhausted, type SubrequestBudget } from './budget';
 import { purgePending, revokeOwner, type D1Like, type KvLike } from './media';
@@ -45,7 +45,6 @@ export const LEASE_MS = 5 * 60 * 1000;
 const RENEW_WHEN_REMAINING_MS = LEASE_MS / 2;
 /** Media sweeps after completion catch uploads that were already in flight. */
 export const SWEEP_WINDOW_MS = 24 * 60 * 60 * 1000;
-const COMMIT_CHUNK = 400;
 const MAX_CONFLICT_RETRIES = 5;
 
 export interface DeletionDeps {
@@ -104,6 +103,10 @@ interface Ctx {
   /** Throws SliceExhausted unless `need` more calls fit before the reserve. */
   work: (need?: number) => void;
   flags: Record<string, unknown>;
+  /** Id of the running step; prefixes its cursor keys. */
+  stepId: string;
+  /** Resume positions (last fully handled document path), saved on the job when a slice ends. */
+  cursors: Record<string, string>;
 }
 
 /** Media cleanup still has queued deletes (e.g. KV daily quota): resume in a later slice. */
@@ -114,12 +117,25 @@ export class MediaCleanupPending extends Error {
   }
 }
 
+/**
+ * Legacy media cannot be deleted or verified absent (store inaccessible). The
+ * step stays incomplete, Auth is kept, and later slices and cron runs retry it.
+ */
+export class LegacyMediaBlocked extends Error {
+  constructor(readonly reason: string) {
+    super(`legacy media cleanup blocked: ${reason}`);
+    this.name = 'LegacyMediaBlocked';
+  }
+}
+
 type Step = { id: string; run: (ctx: Ctx) => Promise<void> };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const lastSegment = (path: string) => path.split('/').pop()!;
 const num = (v: unknown) => (typeof v === 'number' ? v : 0);
+/** Results per query/listing call: one subrequest each. */
+const PAGE = 100;
 
 /** Build writes from fresh reads and commit; rebuild on precondition conflicts. null = nothing to do. */
 async function atomically(store: DocStore, build: () => Promise<StoreWrite[] | null>): Promise<void> {
@@ -142,40 +158,94 @@ function decrement(target: StoredDoc | null, field: string): StoreWrite[] {
   return [{ kind: 'update', path: target.path, increment: { [field]: -1 }, updateTime: target.updateTime }];
 }
 
-async function commitChunked(store: DocStore, writes: StoreWrite[]): Promise<void> {
-  for (let i = 0; i < writes.length; i += COMMIT_CHUNK) {
-    await store.commit(writes.slice(i, i + COMMIT_CHUNK));
+/**
+ * Visits every match one page (one subrequest) at a time. `handle` gets a page
+ * and returns how many of its documents are fully handled (all of them unless
+ * it stops early); the cursor then moves past them, so a later slice resumes
+ * after the last handled document instead of re-reading from the start. This
+ * matters for documents a step changes but does not remove from the query
+ * (tombstoned comments, anonymized messages). Steps stay idempotent, so
+ * re-handling a partly handled document is safe. The cursor is cleared when
+ * the iteration ends.
+ */
+async function eachPage(
+  ctx: Ctx,
+  sub: string,
+  collectionId: string,
+  filters: QueryFilter[],
+  opts: Pick<QueryOptions, 'parent' | 'allDescendants'>,
+  handle: (docs: StoredDoc[]) => Promise<void>
+): Promise<void> {
+  const key = `${ctx.stepId}:${sub}`;
+  for (;;) {
+    const after = ctx.cursors[key];
+    const docs = await ctx.store.query(collectionId, filters, { ...opts, limit: PAGE, ...(after ? { startAfter: { path: after } } : {}) });
+    if (docs.length) {
+      await handle(docs);
+      ctx.cursors[key] = docs[docs.length - 1].path;
+    }
+    if (docs.length < PAGE) break;
   }
+  delete ctx.cursors[key];
 }
 
-/** All document paths in the subtree rooted at docPath, post-order (descendants first). */
-async function collectTree(store: DocStore, docPath: string, out: string[] = []): Promise<string[]> {
-  for (const collectionId of await store.listCollectionIds(docPath)) {
-    for (const id of await store.listDocumentIds(`${docPath}/${collectionId}`)) {
-      await collectTree(store, `${docPath}/${collectionId}/${id}`, out);
+/** eachPage, one document at a time: the cursor advances after each handled document. */
+function eachMatch(
+  ctx: Ctx,
+  sub: string,
+  collectionId: string,
+  filters: QueryFilter[],
+  opts: Pick<QueryOptions, 'parent' | 'allDescendants'>,
+  handle: (doc: StoredDoc) => Promise<void>
+): Promise<void> {
+  const key = `${ctx.stepId}:${sub}`;
+  return eachPage(ctx, sub, collectionId, filters, opts, async (docs) => {
+    for (const d of docs) {
+      await handle(d);
+      ctx.cursors[key] = d.path;
     }
-  }
-  out.push(docPath);
-  return out;
+  });
 }
+
+const deleteAll = (store: DocStore, docs: StoredDoc[]) =>
+  docs.length ? store.commit(docs.map((d): StoreWrite => ({ kind: 'delete', path: d.path }))) : Promise.resolve();
 
 /**
- * Deletes a subtree. If the slice runs out mid-walk, the documents collected so
- * far are deleted before stopping: in post-order every collected document's
- * descendants were collected before it, so parents left behind still lead the
- * next slice to whatever remains.
+ * Deletes a subtree one listing page at a time, children first. Each page of
+ * documents is deleted in one commit once their own subtrees are empty. If the
+ * slice ends mid-page, the documents already emptied are committed from the
+ * reserve before stopping; parents still lead the next slice to what remains.
+ * Listing the first page again makes progress because handled documents are gone.
  */
-async function deleteTree(store: DocStore, docPath: string, rawStore: DocStore = store): Promise<void> {
-  const collected: string[] = [];
-  try {
-    await collectTree(store, docPath, collected);
-  } catch (e) {
-    if (e instanceof SliceExhausted && collected.length) {
-      await commitChunked(rawStore, collected.map((path) => ({ kind: 'delete', path })));
-    }
-    throw e;
+async function deleteTree(ctx: Ctx, docPath: string): Promise<void> {
+  await clearSubcollections(ctx, docPath);
+  await ctx.store.commit([{ kind: 'delete', path: docPath }]);
+}
+
+async function clearSubcollections(ctx: Ctx, docPath: string): Promise<void> {
+  for (;;) {
+    const collections = await ctx.store.listCollectionIds(docPath, { limit: PAGE });
+    if (!collections.length) return;
+    for (const c of collections) await clearCollection(ctx, `${docPath}/${c}`); // emptied collections stop being listed
   }
-  await commitChunked(store, collected.map((path) => ({ kind: 'delete', path })));
+}
+
+async function clearCollection(ctx: Ctx, collectionPath: string): Promise<void> {
+  for (;;) {
+    const ids = await ctx.store.listDocumentIds(collectionPath, { limit: PAGE });
+    if (!ids.length) return;
+    const emptied: StoreWrite[] = [];
+    try {
+      for (const id of ids) {
+        await clearSubcollections(ctx, `${collectionPath}/${id}`);
+        emptied.push({ kind: 'delete', path: `${collectionPath}/${id}` });
+      }
+    } catch (e) {
+      if (e instanceof SliceExhausted && emptied.length) await ctx.rawStore.commit(emptied);
+      throw e;
+    }
+    await ctx.store.commit(emptied);
+  }
 }
 
 /** Remove a relationship document together with the counters it backs. */
@@ -199,10 +269,7 @@ async function removeEdge(
 }
 
 function deleteOwned(collectionId: string, ownerField: string): Step['run'] {
-  return async ({ uid, store, rawStore }) => {
-    const docs = await store.query(collectionId, [{ field: ownerField, op: 'EQUAL', value: uid }]);
-    for (const d of docs) await deleteTree(store, d.path, rawStore);
-  };
+  return (ctx) => eachMatch(ctx, 'owned', collectionId, [{ field: ownerField, op: 'EQUAL', value: ctx.uid }], {}, (d) => deleteTree(ctx, d.path));
 }
 
 // ── Steps ─────────────────────────────────────────────────────────────────────
@@ -212,21 +279,21 @@ function deleteOwned(collectionId: string, ownerField: string): Step['run'] {
 // retry can still discover them through the author's remaining documents.
 function deleteOwnedContent(collectionId: 'travelPosts' | 'travelJournals'): Step['run'] {
   const kind = collectionId === 'travelPosts' ? 'post' : 'journal';
-  return async ({ uid, store, rawStore }) => {
-    for (const item of await store.query(collectionId, [{ field: 'authorId', op: 'EQUAL', value: uid }])) {
-      const id = lastSegment(item.path);
-      const likes = (await store.query('postLikes', [{ field: 'postId', op: 'EQUAL', value: id }]))
-        .filter((l) => (l.data.targetType ?? kind) === kind); // legacy likes carry no targetType
-      const saves = kind === 'post' ? await store.query('savedPosts', [{ field: 'postId', op: 'EQUAL', value: id }]) : [];
-      await commitChunked(store, [...likes, ...saves].map((d): StoreWrite => ({ kind: 'delete', path: d.path })));
-      await deleteTree(store, item.path, rawStore);
+  return (ctx) => eachMatch(ctx, 'items', collectionId, [{ field: 'authorId', op: 'EQUAL', value: ctx.uid }], {}, async (item) => {
+    const id = lastSegment(item.path);
+    await eachPage(ctx, `likes:${id}`, 'postLikes', [{ field: 'postId', op: 'EQUAL', value: id }], {}, (likes) =>
+      deleteAll(ctx.store, likes.filter((l) => (l.data.targetType ?? kind) === kind))); // legacy likes carry no targetType
+    if (kind === 'post') {
+      await eachPage(ctx, `saves:${id}`, 'savedPosts', [{ field: 'postId', op: 'EQUAL', value: id }], {}, (saves) => deleteAll(ctx.store, saves));
     }
-  };
+    await deleteTree(ctx, item.path);
+  });
 }
 
-const removeLikes: Step['run'] = async ({ uid, store }) => {
-  for (const like of await store.query('postLikes', [{ field: 'userId', op: 'EQUAL', value: uid }])) {
-    await removeEdge(store, like.path, async (edge) => {
+const removeLikes: Step['run'] = (ctx) => {
+  const { store } = ctx;
+  return eachMatch(ctx, 'mine', 'postLikes', [{ field: 'userId', op: 'EQUAL', value: ctx.uid }], {}, (like) =>
+    removeEdge(store, like.path, async (edge) => {
       const targetId = String(edge.data.postId ?? '');
       if (!targetId) return [];
       let kind = edge.data.targetType as string | undefined;
@@ -234,41 +301,37 @@ const removeLikes: Step['run'] = async ({ uid, store }) => {
         kind = (await store.get(`travelPosts/${targetId}`)) ? 'post' : 'journal';
       }
       return [{ path: `${kind === 'post' ? 'travelPosts' : 'travelJournals'}/${targetId}`, field: 'likeCount' }];
-    });
-  }
+    }));
 };
 
-const removeSaves: Step['run'] = async ({ uid, store }) => {
-  for (const saved of await store.query('savedPosts', [{ field: 'userId', op: 'EQUAL', value: uid }])) {
-    await removeEdge(store, saved.path, async (edge) =>
+const removeSaves: Step['run'] = (ctx) =>
+  eachMatch(ctx, 'mine', 'savedPosts', [{ field: 'userId', op: 'EQUAL', value: ctx.uid }], {}, (saved) =>
+    removeEdge(ctx.store, saved.path, async (edge) =>
       edge.data.postId ? [{ path: `travelPosts/${edge.data.postId}`, field: 'saveCount' }] : []
-    );
-  }
-};
+    ));
 
-const removeFollows: Step['run'] = async ({ uid, store }) => {
-  for (const f of await store.query('follows', [{ field: 'followerId', op: 'EQUAL', value: uid }])) {
-    await removeEdge(store, f.path, async (edge) =>
+const removeFollows: Step['run'] = async (ctx) => {
+  await eachMatch(ctx, 'out', 'follows', [{ field: 'followerId', op: 'EQUAL', value: ctx.uid }], {}, (f) =>
+    removeEdge(ctx.store, f.path, async (edge) =>
       edge.data.followingId ? [{ path: `publicProfiles/${edge.data.followingId}`, field: 'followersCount' }] : []
-    );
-  }
-  for (const f of await store.query('follows', [{ field: 'followingId', op: 'EQUAL', value: uid }])) {
-    await removeEdge(store, f.path, async (edge) =>
+    ));
+  await eachMatch(ctx, 'in', 'follows', [{ field: 'followingId', op: 'EQUAL', value: ctx.uid }], {}, (f) =>
+    removeEdge(ctx.store, f.path, async (edge) =>
       edge.data.followerId ? [{ path: `publicProfiles/${edge.data.followerId}`, field: 'followingCount' }] : []
-    );
-  }
+    ));
 };
 
 // Own comments on own posts disappear with the post. Own comments on other
 // users' posts become anonymous tombstones (preserving replies by others) and
 // release their counters exactly once, guarded by the isDeleted transition.
-const removeComments: Step['run'] = async ({ uid, store }) => {
-  for (const c of await store.query('postComments', [{ field: 'authorId', op: 'EQUAL', value: uid }])) {
+const removeComments: Step['run'] = (ctx) => {
+  const { uid, store } = ctx;
+  return eachMatch(ctx, 'mine', 'postComments', [{ field: 'authorId', op: 'EQUAL', value: uid }], {}, async (c) => {
     const postId = String(c.data.postId ?? '');
     const post = postId ? await store.get(`travelPosts/${postId}`) : null;
     if (!post || post.data.authorId === uid) {
       await store.commit([{ kind: 'delete', path: c.path }]);
-      continue;
+      return;
     }
     await atomically(store, async () => {
       const comment = await store.get(c.path);
@@ -293,89 +356,79 @@ const removeComments: Step['run'] = async ({ uid, store }) => {
       }
       return writes;
     });
-  }
+  });
 };
 
-const removeOwnedPublicTrips: Step['run'] = async ({ uid, store, rawStore }) => {
-  for (const trip of await store.query('publicTrips', [{ field: 'ownerUid', op: 'EQUAL', value: uid }])) {
-    await deleteTree(store, `trips/${lastSegment(trip.path)}`, rawStore); // members subcollection
-    await deleteTree(store, trip.path, rawStore);
-  }
-  const pending = await store.query('tripJoinRequests', [
-    { field: 'ownerUid', op: 'EQUAL', value: uid },
+const cancelPending = (ctx: Ctx, sub: string, collectionId: string) =>
+  eachPage(ctx, sub, collectionId, [
+    { field: 'ownerUid', op: 'EQUAL', value: ctx.uid },
     { field: 'status', op: 'EQUAL', value: 'pending' },
-  ]);
-  await commitChunked(store, pending.map((r) => ({ kind: 'update', path: r.path, set: { status: 'cancelled' }, serverTime: ['updatedAt'] })));
+  ], {}, (pending) => ctx.store.commit(pending.map((r): StoreWrite => ({ kind: 'update', path: r.path, set: { status: 'cancelled' }, serverTime: ['updatedAt'] }))));
+
+const removeOwnedPublicTrips: Step['run'] = async (ctx) => {
+  await eachMatch(ctx, 'trips', 'publicTrips', [{ field: 'ownerUid', op: 'EQUAL', value: ctx.uid }], {}, async (trip) => {
+    await deleteTree(ctx, `trips/${lastSegment(trip.path)}`); // members subcollection
+    await deleteTree(ctx, trip.path);
+  });
+  await cancelPending(ctx, 'requests', 'tripJoinRequests');
 };
 
-const removeOwnedTravelGroups: Step['run'] = async ({ uid, store, rawStore }) => {
-  for (const group of await store.query('travelGroups', [{ field: 'ownerUid', op: 'EQUAL', value: uid }])) {
-    await deleteTree(store, group.path, rawStore);
-  }
-  const pending = await store.query('groupJoinRequests', [
-    { field: 'ownerUid', op: 'EQUAL', value: uid },
-    { field: 'status', op: 'EQUAL', value: 'pending' },
-  ]);
-  await commitChunked(store, pending.map((r) => ({ kind: 'update', path: r.path, set: { status: 'cancelled' }, serverTime: ['updatedAt'] })));
+const removeOwnedTravelGroups: Step['run'] = async (ctx) => {
+  await eachMatch(ctx, 'groups', 'travelGroups', [{ field: 'ownerUid', op: 'EQUAL', value: ctx.uid }], {}, (group) => deleteTree(ctx, group.path));
+  await cancelPending(ctx, 'requests', 'groupJoinRequests');
 };
 
 // Membership in other users' public trips (trips/{id}/members) and community
 // groups (travelGroups/{id}/members); each removal releases one memberCount.
-const removeMemberships: Step['run'] = async ({ uid, store }) => {
-  const members = await store.query('members', [{ field: 'uid', op: 'EQUAL', value: uid }], { allDescendants: true });
-  for (const m of members) {
+const removeMemberships: Step['run'] = (ctx) =>
+  eachMatch(ctx, 'members', 'members', [{ field: 'uid', op: 'EQUAL', value: ctx.uid }], { allDescendants: true }, async (m) => {
     const [root, parentId] = m.path.split('/');
     const counterPath = root === 'trips' ? `publicTrips/${parentId}` : root === 'travelGroups' ? `travelGroups/${parentId}` : null;
-    if (!counterPath) continue;
-    await removeEdge(store, m.path, async () => [{ path: counterPath, field: 'memberCount' }]);
-  }
-};
+    if (!counterPath) return;
+    await removeEdge(ctx.store, m.path, async () => [{ path: counterPath, field: 'memberCount' }]);
+  });
 
-const removeJoinRequests: Step['run'] = async ({ uid, store }) => {
+const removeJoinRequests: Step['run'] = async (ctx) => {
   for (const col of ['tripJoinRequests', 'groupJoinRequests']) {
-    const requests = await store.query(col, [{ field: 'requestorUid', op: 'EQUAL', value: uid }]);
-    await commitChunked(store, requests.map((r) => ({ kind: 'delete', path: r.path })));
+    await eachPage(ctx, col, col, [{ field: 'requestorUid', op: 'EQUAL', value: ctx.uid }], {}, (requests) => deleteAll(ctx.store, requests));
   }
 };
 
-const removeNotifications: Step['run'] = async ({ uid, store }) => {
-  const own = await store.query('notifications', [{ field: 'userId', op: 'EQUAL', value: uid }]);
-  await commitChunked(store, own.map((n) => ({ kind: 'delete', path: n.path })));
+const removeNotifications: Step['run'] = async (ctx) => {
+  await eachPage(ctx, 'own', 'notifications', [{ field: 'userId', op: 'EQUAL', value: ctx.uid }], {}, (own) => deleteAll(ctx.store, own));
   // Notifications delivered to other users stay, without this user's identity.
-  const sent = await store.query('notifications', [{ field: 'actorId', op: 'EQUAL', value: uid }]);
-  await commitChunked(
-    store,
-    sent
+  await eachPage(ctx, 'sent', 'notifications', [{ field: 'actorId', op: 'EQUAL', value: ctx.uid }], {}, async (sent) => {
+    const writes = sent
       .filter((n) => n.data.actorName !== DELETED_NAME || n.data.actorPhoto != null)
-      .map((n) => ({ kind: 'update', path: n.path, set: { actorName: DELETED_NAME, actorPhoto: null } }))
-  );
+      .map((n): StoreWrite => ({ kind: 'update', path: n.path, set: { actorName: DELETED_NAME, actorPhoto: null } }));
+    if (writes.length) await ctx.store.commit(writes);
+  });
 };
 
-const removeStoryViews: Step['run'] = async ({ uid, store }) => {
-  for (const story of await store.query('travelStories', [{ field: 'viewerIds', op: 'ARRAY_CONTAINS', value: uid }])) {
-    await atomically(store, async () => {
+const removeStoryViews: Step['run'] = (ctx) => {
+  const { uid, store } = ctx;
+  return eachMatch(ctx, 'viewed', 'travelStories', [{ field: 'viewerIds', op: 'ARRAY_CONTAINS', value: uid }], {}, (story) =>
+    atomically(store, async () => {
       const current = await store.get(story.path);
       const viewers = (current?.data.viewerIds as unknown[] | undefined) ?? [];
       if (!current || !viewers.includes(uid)) return null;
       return [{ kind: 'update', path: current.path, set: { viewerIds: viewers.filter((v) => v !== uid) }, updateTime: current.updateTime }];
-    });
-  }
+    }));
 };
 
 // Messages this user sent stay visible to the other participants (documented
 // in the privacy policy) but no longer carry the user's name.
-const anonymizeSentMessages: Step['run'] = async ({ uid, store }) => {
-  const sent = await store.query('messages', [{ field: 'senderId', op: 'EQUAL', value: uid }], { allDescendants: true });
-  await commitChunked(
-    store,
-    sent
+const anonymizeSentMessages: Step['run'] = (ctx) =>
+  eachPage(ctx, 'sent', 'messages', [{ field: 'senderId', op: 'EQUAL', value: ctx.uid }], { allDescendants: true }, async (sent) => {
+    const writes = sent
       .filter((m) => m.path.startsWith('groups/') && typeof m.data.senderName === 'string' && m.data.senderName !== DELETED_NAME)
-      .map((m) => ({ kind: 'update', path: m.path, set: { senderName: DELETED_NAME } }))
-  );
-};
+      .map((m): StoreWrite => ({ kind: 'update', path: m.path, set: { senderName: DELETED_NAME } }));
+    if (writes.length) await ctx.store.commit(writes);
+  });
 
-const leaveGroupChats: Step['run'] = async ({ uid, store, rawStore }) => {
-  for (const group of await store.query('groups', [{ field: 'members', op: 'ARRAY_CONTAINS', value: uid }])) {
+const leaveGroupChats: Step['run'] = (ctx) => {
+  const { uid, store } = ctx;
+  return eachMatch(ctx, 'groups', 'groups', [{ field: 'members', op: 'ARRAY_CONTAINS', value: uid }], {}, async (group) => {
     let emptied = false;
     await atomically(store, async () => {
       const current = await store.get(group.path);
@@ -395,17 +448,18 @@ const leaveGroupChats: Step['run'] = async ({ uid, store, rawStore }) => {
         updateTime: current.updateTime,
       }];
     });
-    if (emptied) await deleteTree(store, group.path, rawStore);
-  }
+    if (emptied) await deleteTree(ctx, group.path);
+  });
 };
 
 // Groups another user is still creating can list this user as a pending
 // member (with name and unread entry). Remove the UID and its identity fields;
 // the group, its creator and other members are untouched. Conditional on the
 // group's updateTime, so a concurrent resume by the creator is re-read, never lost.
-const leavePendingGroups: Step['run'] = async ({ uid, store }) => {
-  for (const group of await store.query('groups', [{ field: 'pendingMembers', op: 'ARRAY_CONTAINS', value: uid }])) {
-    await atomically(store, async () => {
+const leavePendingGroups: Step['run'] = (ctx) => {
+  const { uid, store } = ctx;
+  return eachMatch(ctx, 'groups', 'groups', [{ field: 'pendingMembers', op: 'ARRAY_CONTAINS', value: uid }], {}, (group) =>
+    atomically(store, async () => {
       const current = await store.get(group.path);
       if (!current) return null;
       const pending = (current.data.pendingMembers as unknown[] | undefined) ?? [];
@@ -419,15 +473,15 @@ const leavePendingGroups: Step['run'] = async ({ uid, store }) => {
         remove: [`memberInfo.${uid}`, `unreadCounts.${uid}`],
         updateTime: current.updateTime,
       }];
-    });
-  }
+    }));
 };
 
-const anonymizeDirectChats: Step['run'] = async ({ uid, store }) => {
-  for (const chat of await store.query('direct_chats', [{ field: 'participants', op: 'ARRAY_CONTAINS', value: uid }])) {
+const anonymizeDirectChats: Step['run'] = (ctx) => {
+  const { uid, store } = ctx;
+  return eachMatch(ctx, 'chats', 'direct_chats', [{ field: 'participants', op: 'ARRAY_CONTAINS', value: uid }], {}, async (chat) => {
     const info = (chat.data.participantInfo as Record<string, Record<string, unknown>> | undefined)?.[uid];
     const unread = (chat.data.unreadCounts as Record<string, unknown> | undefined)?.[uid];
-    if (info?.name === DELETED_NAME && unread === undefined) continue;
+    if (info?.name === DELETED_NAME && unread === undefined) return;
     // participants keeps the UID so the other user's read access is unchanged.
     await store.commit([{
       kind: 'update',
@@ -435,35 +489,37 @@ const anonymizeDirectChats: Step['run'] = async ({ uid, store }) => {
       set: { [`participantInfo.${uid}`]: { name: DELETED_NAME, initials: '?' } },
       remove: [`unreadCounts.${uid}`],
     }]);
-  }
+  });
 };
 
 const emailAliasId = (email: string) => email.trim().toLowerCase().replace(/%/g, '%25').replace(/\//g, '%2F');
 
-const removeDirectory: Step['run'] = async ({ uid, email, store }) => {
-  const [lookup, profile] = await Promise.all([store.get(`userLookup/${uid}`), store.get(`users/${uid}`)]);
-  const emails = new Set<string>();
-  for (const e of [email, lookup?.data.email, profile?.data.email]) {
-    if (typeof e === 'string' && e.trim()) emails.add(emailAliasId(e));
-  }
-  // Recovery runs without the user's token email, and stored emails may be
-  // stale, so also discover every alias this UID still owns.
-  const owned = await store.query('userLookupByEmail', [{ field: 'uid', op: 'EQUAL', value: uid }]);
-  for (const doc of owned) emails.add(lastSegment(doc.path));
-  for (const alias of emails) {
+const removeDirectory: Step['run'] = async (ctx) => {
+  const { uid, email, store } = ctx;
+  const removeAlias = async (alias: string) => {
     const aliasDoc = await store.get(`userLookupByEmail/${alias}`);
     // Never remove an alias another account has since claimed.
     if (aliasDoc && aliasDoc.data.uid === uid) {
       await store.commit([{ kind: 'delete', path: aliasDoc.path, updateTime: aliasDoc.updateTime }]);
     }
+  };
+  const [lookup, profile] = await Promise.all([store.get(`userLookup/${uid}`), store.get(`users/${uid}`)]);
+  const emails = new Set<string>();
+  for (const e of [email, lookup?.data.email, profile?.data.email]) {
+    if (typeof e === 'string' && e.trim()) emails.add(emailAliasId(e));
   }
+  for (const alias of emails) await removeAlias(alias);
+  // Recovery runs without the user's token email, and stored emails may be
+  // stale, so also remove every alias this UID still owns.
+  await eachMatch(ctx, 'aliases', 'userLookupByEmail', [{ field: 'uid', op: 'EQUAL', value: uid }], {}, (doc) => removeAlias(lastSegment(doc.path)));
   await store.commit([{ kind: 'delete', path: `userLookup/${uid}` }]);
 };
 
 // Runs last among data steps so anything the client wrote during cleanup is caught.
-const deletePrivateData: Step['run'] = async ({ uid, store, rawStore }) => {
+const deletePrivateData: Step['run'] = async (ctx) => {
+  const { uid } = ctx;
   for (const root of [`users/${uid}`, `blocks/${uid}`, `nearbyTravelers/${uid}`, `travelerReputation/${uid}`, `publicProfiles/${uid}`, `moderators/${uid}`]) {
-    await deleteTree(store, root, rawStore);
+    await deleteTree(ctx, root);
   }
 };
 
@@ -498,10 +554,12 @@ const deleteR2Media: Step['run'] = async ({ uid, deps, heartbeat }) => {
 };
 
 /**
- * Legacy Firebase Storage. Deletion is only recorded as done when a fresh
- * listing/lookup proves absence. If Storage is inaccessible (Spark projects
- * lost access in 2026) the objects are recorded as UNRESOLVED — that record is
- * not evidence of deletion and stays an open item for operators.
+ * Legacy Firebase Storage. The step completes only when a fresh listing and
+ * object lookup prove absence (recorded as `verified_absent`). If Storage is
+ * inaccessible (Spark projects lost access in 2026) the objects are recorded
+ * as UNRESOLVED for operators and the step stays incomplete (LegacyMediaBlocked):
+ * Auth is kept and every later slice or cron run retries, so the deletion
+ * finishes once access returns. An `unresolved` record is never evidence of deletion.
  */
 const deleteFirebaseMedia: Step['run'] = async ({ uid, deps, store, work, flags }) => {
   const fs = deps.firebaseStorage;
@@ -518,12 +576,14 @@ const deleteFirebaseMedia: Step['run'] = async ({ uid, deps, store, work, flags 
     await fs.deletePrefixes(prefixes, before);
     await fs.deleteObjects(objects, before);
     if (!(await fs.verifyAbsent(prefixes, objects, before))) throw new Error('legacy media still listed after delete');
-    await record({ status: 'verified_absent', store: fs.name, reason: null });
   } catch (e) {
     if (!(e instanceof LegacyMediaInaccessible)) throw e;
     await record({ status: 'unresolved', store: fs.name, reason: `inaccessible (${e.status})` });
     flags.legacyMediaUnresolved = true;
+    throw new LegacyMediaBlocked('legacy-media-inaccessible');
   }
+  await record({ status: 'verified_absent', store: fs.name, reason: null });
+  flags.legacyMediaUnresolved = false;
 };
 
 export const DELETION_STEPS: readonly Step[] = [
@@ -570,13 +630,14 @@ interface Acquired {
   state: 'acquired' | 'completed';
   completedSteps: string[];
   flags: Record<string, unknown>;
+  cursors: Record<string, string>;
 }
 
 async function acquireLease(store: DocStore, uid: string, now: number, attempt: Attempt): Promise<Acquired> {
   const path = `${JOBS}/${uid}`;
   for (let i = 0; i < MAX_CONFLICT_RETRIES; i++) {
     const job = await store.get(path);
-    if (job?.data.status === 'completed') return { state: 'completed', completedSteps: [], flags: {} };
+    if (job?.data.status === 'completed') return { state: 'completed', completedSteps: [], flags: {}, cursors: {} };
     if (job?.data.status === 'in_progress' && num(job.data.leaseUntil) > now) throw new DeletionInProgress();
     const leaseUntil = now + LEASE_MS;
     const set = { uid, status: 'in_progress', attemptId: attempt.id, leaseUntil, currentStep: null, lastError: null };
@@ -587,7 +648,13 @@ async function acquireLease(store: DocStore, uid: string, now: number, attempt: 
       await store.commit([write]);
       attempt.leaseUntil = leaseUntil;
       const completed = Array.isArray(job?.data.completedSteps) ? (job!.data.completedSteps as string[]) : [];
-      return { state: 'acquired', completedSteps: completed, flags: job?.data.legacyMediaUnresolved ? { legacyMediaUnresolved: true } : {} };
+      const saved = job?.data.cursors;
+      return {
+        state: 'acquired',
+        completedSteps: completed,
+        flags: job?.data.legacyMediaUnresolved === true ? { legacyMediaUnresolved: true } : {},
+        cursors: saved && typeof saved === 'object' ? { ...(saved as Record<string, string>) } : {},
+      };
     } catch (e) {
       if (!(e instanceof StoreConflict)) throw e;
     }
@@ -636,8 +703,8 @@ function guarded(store: DocStore, heartbeat: () => Promise<void>, work: (need?: 
     get: async (p) => { await before(); return store.get(p); },
     getMany: async (ps) => { await before(); return store.getMany(ps); },
     query: async (c, f, o) => { await before(); return store.query(c, f, o); },
-    listDocumentIds: async (c) => { await before(); return store.listDocumentIds(c); },
-    listCollectionIds: async (d) => { await before(); return store.listCollectionIds(d); },
+    listDocumentIds: async (c, o) => { await before(); return store.listDocumentIds(c, o); },
+    listCollectionIds: async (d, o) => { await before(); return store.listCollectionIds(d, o); },
     commit: async (w) => { await before(); return store.commit(w); },
   };
 }
@@ -649,13 +716,18 @@ function safeMessage(e: unknown): string {
 /** Calls needed to finish: pre-auth marker (2), Auth removal (1), completion (2), plus conflict retries. */
 const AUTH_PHASE_CALLS = 7;
 
-export type DeletionResult = { status: 'deleted' } | { status: 'in_progress'; completedSteps: number; totalSteps: number };
+export type DeletionResult =
+  | { status: 'deleted' }
+  | { status: 'in_progress'; completedSteps: number; totalSteps: number }
+  /** A step cannot finish until something outside the Worker changes (e.g. Storage access); retried automatically. */
+  | { status: 'blocked'; step: string; reason: string; completedSteps: number; totalSteps: number };
 
 /**
  * Runs the deletion plan — the whole plan without a budget, or one bounded
- * slice with one. Throws DeletionInProgress when another attempt holds the
- * lease, DeletionAttemptLost when this attempt lost its lease, or
- * DeletionStepFailed (Auth untouched, barrier in place, safe to retry).
+ * slice with one. Returns 'blocked' (Auth kept, retried by later slices and
+ * cron) when legacy media cannot be verified absent. Throws DeletionInProgress
+ * when another attempt holds the lease, DeletionAttemptLost when this attempt
+ * lost its lease, or DeletionStepFailed (Auth untouched, barrier in place, safe to retry).
  */
 export async function deleteAccount(identity: DeletionIdentity, deps: DeletionDeps): Promise<DeletionResult> {
   const now = deps.now ?? Date.now;
@@ -676,12 +748,18 @@ export async function deleteAccount(identity: DeletionIdentity, deps: DeletionDe
     if (attempt.leaseUntil - now() < RENEW_WHEN_REMAINING_MS) await updateOwnJob(store, uid, attempt, now, {});
   };
   const flags: Record<string, unknown> = { ...acquired.flags };
-  const ctx: Ctx = { uid, email: identity.email, store: guarded(store, heartbeat, work), rawStore: store, deps, heartbeat, work, flags };
+  const cursors = acquired.cursors;
+  const ctx: Ctx = { uid, email: identity.email, store: guarded(store, heartbeat, work), rawStore: store, deps, heartbeat, work, flags, stepId: '', cursors };
   const done = new Set(acquired.completedSteps.filter((id) => DELETION_STEPS.some((s) => s.id === id)));
+  // An earlier version marked the legacy step done while its media was unresolved: redo it.
+  if (flags.legacyMediaUnresolved === true) done.delete('firebaseMedia');
   const progress = () => DELETION_STEPS.filter((s) => done.has(s.id)).map((s) => s.id);
-  const pause = async (current: string | null): Promise<DeletionResult> => {
-    await updateOwnJob(store, uid, attempt, now, { completedSteps: progress(), currentStep: current, ...flags }, true);
-    return { status: 'in_progress', completedSteps: done.size, totalSteps: DELETION_STEPS.length };
+  const pause = async (current: string | null, blocked?: string): Promise<DeletionResult> => {
+    await updateOwnJob(store, uid, attempt, now, {
+      completedSteps: progress(), currentStep: current, cursors, blockedOn: blocked ? current : null, ...flags,
+    }, true);
+    const counts = { completedSteps: done.size, totalSteps: DELETION_STEPS.length };
+    return blocked && current ? { status: 'blocked', step: current, reason: blocked, ...counts } : { status: 'in_progress', ...counts };
   };
   const fail = async (step: string, e: unknown): Promise<never> => {
     if (e instanceof DeletionAttemptLost) throw e;
@@ -689,6 +767,7 @@ export async function deleteAccount(identity: DeletionIdentity, deps: DeletionDe
     await updateOwnJob(store, uid, attempt, now, {
       status: 'failed',
       completedSteps: progress(),
+      cursors,
       lastError: { step, message: safeMessage(e) },
       ...flags,
     }).catch(() => {});
@@ -697,11 +776,14 @@ export async function deleteAccount(identity: DeletionIdentity, deps: DeletionDe
 
   for (const step of DELETION_STEPS) {
     if (done.has(step.id)) continue; // persisted cursor: completed in an earlier slice
+    ctx.stepId = step.id;
     try {
       await step.run(ctx);
       done.add(step.id);
+      for (const key of Object.keys(cursors)) if (key.startsWith(`${step.id}:`)) delete cursors[key];
     } catch (e) {
       if (e instanceof SliceExhausted || e instanceof MediaCleanupPending) return pause(step.id);
+      if (e instanceof LegacyMediaBlocked) return pause(step.id, e.reason);
       await fail(step.id, e);
     }
   }
@@ -717,6 +799,8 @@ export async function deleteAccount(identity: DeletionIdentity, deps: DeletionDe
     await updateOwnJob(store, uid, attempt, now, {
       currentStep: 'auth',
       completedSteps: progress(),
+      cursors: {},
+      blockedOn: null,
       mediaClearedAtMs: now(),
       pendingFinalization: true,
       ...flags,
@@ -738,32 +822,69 @@ export async function deleteAccount(identity: DeletionIdentity, deps: DeletionDe
   return { status: 'deleted' };
 }
 
+// ── Scheduled maintenance ─────────────────────────────────────────────────────
+//
+// Discovery reads one page per query (one subrequest each) and rotates through
+// the jobs with cursors kept in CRON_STATE, so a long list cannot exhaust a run
+// before any work and jobs that cannot progress (held by a live attempt,
+// blocked) do not starve the ones behind them.
+
+const CRON_STATE = 'deletionMaintenance/cron';
+/** Jobs read per discovery query. */
+const JOB_PAGE = 50;
+
+interface CronCursors {
+  finalizeAfter?: string;
+  inProgressAfter?: string;
+  failedAfter?: string;
+  sweepAfter?: { path: string; mediaClearedAtMs: number };
+}
+
+/** Next cursor: the last job visited, or back to the start once a short page was read to its end. */
+function nextCursor(page: StoredDoc[], visited: number): string | undefined {
+  if (visited === 0) return undefined;
+  if (visited >= page.length && page.length < JOB_PAGE) return undefined; // wrapped
+  return page[visited - 1].path;
+}
+
 /**
  * Removes media for accounts whose deletion cleared media within the window.
  * Uploads that passed the barrier check before deletion began, but landed
  * after the media steps listed their prefixes, are cleaned up here. Keyed on
  * mediaClearedAtMs (written before Auth removal), not on job completion.
  */
-export async function sweepRecentlyDeletedMedia(deps: DeletionDeps, windowMs = SWEEP_WINDOW_MS): Promise<number> {
+export async function sweepRecentlyDeletedMedia(deps: DeletionDeps, windowMs = SWEEP_WINDOW_MS, cursors: CronCursors = {}): Promise<number> {
   const now = deps.now ?? Date.now;
   const work = (need = 1) => { deps.budget?.ensureWork(need); };
   work(1);
-  const jobs = await deps.store.query(JOBS, [{ field: 'mediaClearedAtMs', op: 'GREATER_THAN', value: now() - windowMs }]);
+  const after = cursors.sweepAfter;
+  const jobs = await deps.store.query(JOBS, [{ field: 'mediaClearedAtMs', op: 'GREATER_THAN', value: now() - windowMs }], {
+    limit: JOB_PAGE,
+    ...(after ? { startAfter: { path: after.path, data: { mediaClearedAtMs: after.mediaClearedAtMs } } } : {}),
+  });
   let swept = 0;
-  for (const job of jobs) {
-    const uid = lastSegment(job.path);
-    if (deps.media && mediaPurgeLimit(deps.media) >= 1) {
-      await revokeOwner(deps.media.db, uid, now());
-      await purgePending(deps.media.db, deps.media.kv, { owner: uid, limit: mediaPurgeLimit(deps.media) });
+  const advance = () => {
+    const path = nextCursor(jobs, swept);
+    cursors.sweepAfter = path ? { path, mediaClearedAtMs: num(jobs[swept - 1].data.mediaClearedAtMs) } : undefined;
+  };
+  try {
+    for (const job of jobs) {
+      const uid = lastSegment(job.path);
+      if (deps.media && mediaPurgeLimit(deps.media) >= 1) {
+        await revokeOwner(deps.media.db, uid, now());
+        await purgePending(deps.media.db, deps.media.kv, { owner: uid, limit: mediaPurgeLimit(deps.media) });
+      }
+      if (deps.r2) await deps.r2.deletePrefixes(r2Prefixes(uid));
+      try {
+        await deps.firebaseStorage.deletePrefixes(storagePrefixes(uid), () => work(1));
+        await deps.firebaseStorage.deleteObjects(legacyStorageObjects(uid), () => work(1));
+      } catch (e) {
+        if (!(e instanceof LegacyMediaInaccessible)) throw e; // such jobs never reach mediaClearedAtMs now
+      }
+      swept++;
     }
-    if (deps.r2) await deps.r2.deletePrefixes(r2Prefixes(uid));
-    try {
-      await deps.firebaseStorage.deletePrefixes(storagePrefixes(uid), () => work(1));
-      await deps.firebaseStorage.deleteObjects(legacyStorageObjects(uid), () => work(1));
-    } catch (e) {
-      if (!(e instanceof LegacyMediaInaccessible)) throw e; // recorded as unresolved by the deletion step
-    }
-    swept++;
+  } finally {
+    advance();
   }
   return swept;
 }
@@ -771,12 +892,14 @@ export async function sweepRecentlyDeletedMedia(deps: DeletionDeps, windowMs = S
 /**
  * Claims a job pending finalization for this recovery run: a conditional write
  * on fresh state that takes the lease exactly like a user retry would. Refuses
- * when the job is completed, no longer pending, or held by a live attempt.
+ * when the job is completed, no longer pending, held by a live attempt, or has
+ * unresolved legacy media (the plan must verify it first).
  */
 async function claimForRecovery(store: DocStore, uid: string, now: () => number, attempt: Attempt): Promise<boolean> {
   const path = `${JOBS}/${uid}`;
   const job = await store.get(path);
   if (!job || job.data.pendingFinalization !== true || job.data.status === 'completed') return false;
+  if (job.data.legacyMediaUnresolved === true) return false;
   if (job.data.status === 'in_progress' && num(job.data.leaseUntil) > now()) return false;
   const leaseUntil = now() + LEASE_MS;
   try {
@@ -806,16 +929,23 @@ const FINALIZE_CALLS = 8;
  * Fencing: the run first claims the job lease (claimForRecovery), so user
  * retries and other cron runs are refused while it works; it then re-verifies
  * ownership with a conditional lease renewal immediately before removing Auth,
- * and stops if the lease was lost. Jobs held by a live attempt are skipped.
+ * and stops if the lease was lost. Jobs held by a live attempt are skipped, as
+ * are jobs with unresolved legacy media (Auth is kept until it is verified absent).
  */
-export async function finalizePendingDeletions(deps: DeletionDeps): Promise<number> {
+export async function finalizePendingDeletions(deps: DeletionDeps, cursors: CronCursors = {}): Promise<number> {
   const now = deps.now ?? Date.now;
   const { store, budget } = deps;
   budget?.ensureWork(1);
-  const pending = await store.query(JOBS, [{ field: 'pendingFinalization', op: 'EQUAL', value: true }]);
+  const after = cursors.finalizeAfter;
+  const pending = await store.query(JOBS, [{ field: 'pendingFinalization', op: 'EQUAL', value: true }], {
+    limit: JOB_PAGE, ...(after ? { startAfter: { path: after } } : {}),
+  });
   let finalized = 0;
+  let visited = 0;
   for (const listed of pending) {
-    if (budget && budget.remaining() < FINALIZE_CALLS + 2) break; // next cron run continues
+    if (budget && budget.remaining() < FINALIZE_CALLS + 2) break; // next cron run continues here
+    visited++;
+    if (listed.data.legacyMediaUnresolved === true) continue; // resumeIncompleteDeletions retries the legacy step
     const uid = lastSegment(listed.path);
     const attempt: Attempt = { id: `recovery-${deps.newAttemptId?.() ?? crypto.randomUUID()}`, leaseUntil: 0 };
     if (!(await claimForRecovery(store, uid, now, attempt))) continue;
@@ -842,40 +972,59 @@ export async function finalizePendingDeletions(deps: DeletionDeps): Promise<numb
       }).catch(() => {});
     }
   }
+  cursors.finalizeAfter = nextCursor(pending, visited);
   return finalized;
 }
 
-async function incompleteJobs(deps: DeletionDeps): Promise<StoredDoc[]> {
+/** One page of paused/in-progress jobs, then one page of failed jobs (one subrequest each). */
+async function incompleteJobPages(deps: DeletionDeps, cursors: CronCursors = {}): Promise<{ inProgress: StoredDoc[]; failed: StoredDoc[] }> {
   deps.budget?.ensureWork(2);
-  return [
-    ...(await deps.store.query(JOBS, [{ field: 'status', op: 'EQUAL', value: 'failed' }])),
-    ...(await deps.store.query(JOBS, [{ field: 'status', op: 'EQUAL', value: 'in_progress' }])),
-  ];
+  const page = (status: string, after?: string) => deps.store.query(JOBS, [{ field: 'status', op: 'EQUAL', value: status }], {
+    limit: JOB_PAGE, ...(after ? { startAfter: { path: after } } : {}),
+  });
+  return { inProgress: await page('in_progress', cursors.inProgressAfter), failed: await page('failed', cursors.failedAfter) };
 }
 
 /**
  * Continues deletions that stopped before reaching Auth removal (a failed
- * step, a lost lease, a paused slice, or a Worker request that ran out of
- * subrequests), so a started deletion completes without the user retrying.
- * Runs the normal plan through deleteAccount, whose lease acquisition fences
- * it against retries and other cron runs; jobs held by a live attempt are
- * skipped. With a budget, at most one slice per job and stops at the reserve.
+ * step, a lost lease, a paused or blocked slice, or a Worker request that ran
+ * out of subrequests), so a started deletion completes without the user
+ * retrying. Paused jobs come before failed ones so a started job is finished
+ * before new ones are taken up. Runs the normal plan through deleteAccount,
+ * whose lease acquisition fences it against retries and other cron runs; jobs
+ * held by a live attempt are skipped. With a budget, at most one slice per job
+ * and stops at the reserve; the cursors let the next run continue behind it.
  */
-export async function resumeIncompleteDeletions(deps: DeletionDeps, jobs?: StoredDoc[]): Promise<number> {
+export async function resumeIncompleteDeletions(
+  deps: DeletionDeps,
+  pages?: { inProgress: StoredDoc[]; failed: StoredDoc[] },
+  cursors: CronCursors = {}
+): Promise<number> {
   const now = deps.now ?? Date.now;
-  const candidates = jobs ?? (await incompleteJobs(deps));
+  const { inProgress, failed } = pages ?? (await incompleteJobPages(deps, cursors));
   let resumed = 0;
-  for (const job of candidates) {
-    if (job.data.pendingFinalization === true) continue; // finalizePendingDeletions owns these
-    if (job.data.status === 'in_progress' && num(job.data.leaseUntil) > now()) continue;
-    if (deps.budget && deps.budget.remaining() < 12) break; // not enough for a useful slice
-    try {
-      const r = await deleteAccount({ uid: lastSegment(job.path), email: null }, deps);
-      if (r.status === 'deleted') resumed++;
-    } catch {
-      // Recorded on the job (or another party holds it); the next run continues.
+  const visit = async (jobs: StoredDoc[], key: 'inProgressAfter' | 'failedAfter'): Promise<boolean> => {
+    let visited = 0;
+    let stopped = false;
+    for (const job of jobs) {
+      // finalizePendingDeletions owns these, except when legacy media must still be verified.
+      const skip = (job.data.pendingFinalization === true && job.data.legacyMediaUnresolved !== true)
+        || (job.data.status === 'in_progress' && num(job.data.leaseUntil) > now());
+      if (!skip) {
+        if (deps.budget && deps.budget.remaining() < 12) { stopped = true; break; } // not enough for a useful slice
+        try {
+          const r = await deleteAccount({ uid: lastSegment(job.path), email: null }, deps);
+          if (r.status === 'deleted') resumed++;
+        } catch {
+          // Recorded on the job (or another party holds it); the next run continues.
+        }
+      }
+      visited++;
     }
-  }
+    cursors[key] = nextCursor(jobs, visited);
+    return !stopped;
+  };
+  if (await visit(inProgress, 'inProgressAfter')) await visit(failed, 'failedAfter');
   return resumed;
 }
 
@@ -914,19 +1063,21 @@ function stalledFrom(jobs: StoredDoc[], now: number, stalledAfterMs: number): St
 
 /**
  * Deletions that started more than `stalledAfterMs` ago and are still not
- * complete (persistent outage, missing credentials, a plan step that keeps
- * failing). Retries alone cannot guarantee completion; these need an operator
- * (see docs/release-hardening.md, "Stalled deletion runbook"). UIDs only — no
- * email or profile data.
+ * complete (persistent outage, missing credentials, blocked legacy media, a
+ * plan step that keeps failing). Retries alone cannot guarantee completion;
+ * these need an operator (see docs/release-hardening.md, "Stalled deletion
+ * runbook"). UIDs only — no email or profile data. Reads the first page of
+ * each status (at most 50 jobs each) to stay within one invocation's budget.
  */
 export async function listStalledDeletions(deps: DeletionDeps, stalledAfterMs = STALLED_AFTER_MS): Promise<StalledDeletion[]> {
-  return stalledFrom(await incompleteJobs(deps), (deps.now ?? Date.now)(), stalledAfterMs);
+  const { inProgress, failed } = await incompleteJobPages(deps);
+  return stalledFrom([...failed, ...inProgress], (deps.now ?? Date.now)(), stalledAfterMs);
 }
 
-/** Legacy media recorded as unresolved (inaccessible store): open items, not deletions. */
+/** Legacy media recorded as unresolved (inaccessible store): open items, not deletions. First 100. */
 export async function listUnresolvedLegacyMedia(deps: DeletionDeps): Promise<{ uid: string; store: string; reason: string }[]> {
   deps.budget?.ensureWork(1);
-  const rows = await deps.store.query(LEGACY, [{ field: 'status', op: 'EQUAL', value: 'unresolved' }]);
+  const rows = await deps.store.query(LEGACY, [{ field: 'status', op: 'EQUAL', value: 'unresolved' }], { limit: PAGE });
   return rows.map((r) => ({ uid: lastSegment(r.path), store: String(r.data.store), reason: String(r.data.reason) }));
 }
 
@@ -941,9 +1092,10 @@ export interface MaintenanceResult {
 
 /**
  * Cron entry: finish stranded jobs, continue stalled deletions (one bounded
- * slice), sweep late media, then report deletions that are still stuck as a
- * structured warning (`account_deletion_stalled`) for log-based alerting. With
- * a budget every phase stops at the reserve and the next run picks up.
+ * slice each), sweep late media, then report deletions that are still stuck as
+ * a structured warning (`account_deletion_stalled`) for log-based alerting.
+ * With a budget every phase stops at the reserve; the discovery cursors are
+ * saved (from the reserve) so the next run picks up behind this one.
  */
 export async function runScheduledMaintenance(deps: DeletionDeps): Promise<MaintenanceResult> {
   const result: MaintenanceResult = { finalized: 0, resumed: 0, swept: 0, stalled: 0, budgetLimited: false };
@@ -953,14 +1105,28 @@ export async function runScheduledMaintenance(deps: DeletionDeps): Promise<Maint
       throw e;
     }
   };
-  let jobs: StoredDoc[] = [];
-  await phase(async () => { result.finalized = await finalizePendingDeletions(deps); });
-  await phase(async () => {
-    jobs = await incompleteJobs(deps);
-    result.resumed = await resumeIncompleteDeletions(deps, jobs);
-  });
-  await phase(async () => { result.swept = await sweepRecentlyDeletedMedia(deps); });
-  const stalledJobs = stalledFrom(jobs, (deps.now ?? Date.now)(), STALLED_AFTER_MS);
+  const state = await deps.store.get(CRON_STATE);
+  const cursors: CronCursors = { ...((state?.data.cursors as CronCursors | undefined) ?? {}) };
+  const initial = JSON.stringify(cursors);
+  let seen: StoredDoc[] = [];
+  try {
+    await phase(async () => { result.finalized = await finalizePendingDeletions(deps, cursors); });
+    await phase(async () => {
+      const pages = await incompleteJobPages(deps, cursors);
+      seen = [...pages.inProgress, ...pages.failed];
+      result.resumed = await resumeIncompleteDeletions(deps, pages, cursors);
+    });
+    await phase(async () => { result.swept = await sweepRecentlyDeletedMedia(deps, SWEEP_WINDOW_MS, cursors); });
+  } finally {
+    if (JSON.stringify(cursors) !== initial) {
+      const clean = Object.fromEntries(Object.entries(cursors).filter(([, v]) => v !== undefined));
+      const set = { cursors: clean, updatedAtMs: (deps.now ?? Date.now)() };
+      // Positions are hints: if another run saved first, its positions are kept.
+      await deps.store.commit([state ? { kind: 'update', path: CRON_STATE, set, updateTime: state.updateTime } : { kind: 'update', path: CRON_STATE, set, mustExist: false }])
+        .catch((e) => { if (!(e instanceof StoreConflict)) throw e; });
+    }
+  }
+  const stalledJobs = stalledFrom(seen, (deps.now ?? Date.now)(), STALLED_AFTER_MS);
   result.stalled = stalledJobs.length;
   if (stalledJobs.length) {
     console.warn(JSON.stringify({ event: 'account_deletion_stalled', count: stalledJobs.length, jobs: stalledJobs }));

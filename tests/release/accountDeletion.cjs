@@ -65,17 +65,25 @@ class MemoryStore {
         : Array.isArray(d.data[f.field]) && d.data[f.field].includes(f.value));
       if (ok) out.push({ path: p, data: clone(d.data), updateTime: d.updateTime });
     }
-    return out.sort((a, b) => a.path.localeCompare(b.path));
+    const ineq = filters.find((f) => f.op === 'GREATER_THAN');
+    const key = (doc) => [ineq ? doc.data[ineq.field] : 0, doc.path];
+    const cmp = (a, b) => { const [x, y] = [key(a), key(b)]; return x[0] !== y[0] ? (x[0] < y[0] ? -1 : 1) : x[1].localeCompare(y[1]); };
+    out.sort(cmp);
+    const after = opts.startAfter ? { path: opts.startAfter.path, data: opts.startAfter.data ?? {} } : null;
+    const rest = after ? out.filter((d) => cmp(d, after) > 0) : out;
+    return opts.limit ? rest.slice(0, opts.limit) : rest;
   }
-  async listDocumentIds(col) {
+  async listDocumentIds(col, opts = {}) {
     const ids = new Set();
     for (const p of this.docs.keys()) if (p.startsWith(col + '/')) ids.add(p.slice(col.length + 1).split('/')[0]);
-    return [...ids];
+    const sorted = [...ids].sort();
+    return opts.limit ? sorted.slice(0, opts.limit) : sorted;
   }
-  async listCollectionIds(docPath) {
+  async listCollectionIds(docPath, opts = {}) {
     const ids = new Set();
     for (const p of this.docs.keys()) if (p.startsWith(docPath + '/')) ids.add(p.slice(docPath.length + 1).split('/')[0]);
-    return [...ids];
+    const sorted = [...ids].sort();
+    return opts.limit ? sorted.slice(0, opts.limit) : sorted;
   }
   async commit(writes) {
     for (const w of writes) {
@@ -1531,13 +1539,23 @@ const { d1Fake, kvFake } = require('./lib/fakes.cjs');
 const COLD_AUTH_CALLS = 2; // JWKS + service-account token on a cold isolate
 const STORE_METHODS = ['get', 'getMany', 'query', 'listDocumentIds', 'listCollectionIds', 'commit'];
 
-/** Charges every store call (one Firestore REST fetch each) to `budget`, as the real adapter does. */
+/**
+ * Charges store calls to `budget` as the REST adapter fetches them: one per call,
+ * except that an unpaged query or listing fetches every 100-result page.
+ */
+const PAGED_OPTS = { query: 2, listDocumentIds: 1, listCollectionIds: 1 };
 function metered(store, budget) {
   return new Proxy(store, {
     get(t, k) {
       const v = t[k];
       if (typeof v !== 'function') return v;
-      return STORE_METHODS.includes(k) ? (...a) => { budget.spend(); return v.apply(t, a); } : v.bind(t);
+      if (!STORE_METHODS.includes(k)) return v.bind(t);
+      return async (...a) => {
+        if (!(k in PAGED_OPTS) || a[PAGED_OPTS[k]]?.limit) { budget.spend(); return v.apply(t, a); }
+        const result = await v.apply(t, a);
+        budget.spend(Math.floor(result.length / 100) + 1); // pages fetched until a short page
+        return result;
+      };
     },
   });
 }
@@ -1719,10 +1737,12 @@ test('legacy profile_images/{uid}.jpg: deleted and verified absent when accessib
   assert.equal(await store.get(`legacyMediaCleanup/${ME}`), null);
   assert.equal(h.authCalls.length, 0);
 
-  // Inaccessible (Spark project; Storage needs Blaze): recorded as unresolved and listed for operators.
+  // Inaccessible (Spark project; Storage needs Blaze): recorded as unresolved and listed for operators; blocked, not deleted.
   store = await newStore(); await seed(store); h = harness(store);
   h.storage.inaccessible = true;
-  await deletion.deleteAccount({ uid: ME, email: null }, h.deps);
+  const blocked = await deletion.deleteAccount({ uid: ME, email: null }, h.deps);
+  assert.deepEqual([blocked.status, blocked.step], ['blocked', 'firebaseMedia']);
+  assert.equal(h.authCalls.length, 0);
   assert.ok(h.storage.objects.has(`profile_images/${ME}.jpg`), 'nothing was deleted');
   rec = (await store.get(`legacyMediaCleanup/${ME}`)).data;
   assert.deepEqual([rec.status, rec.reason], ['unresolved', 'inaccessible (403)']);
@@ -1751,6 +1771,183 @@ test('legacy media migration tooling: dry run by default, ownership gate, resuma
   assert.ok(!/\.delete\(\)|deleteFiles|bucket\.delete/.test(src), 'never deletes source objects');
   assert.ok(/process\.env\.ADMIN_DELETION_TOKEN/.test(src) && !/console\.log\([^)]*token/i.test(src), 'token from env, never printed');
 }, 'memory');
+
+// ── Regressions: inaccessible legacy media; multi-page datasets beyond one invocation ─
+
+async function bulk(store, entries) {
+  for (let i = 0; i < entries.length; i += 400) {
+    await store.commit(entries.slice(i, i + 400).map(([p, data]) => ({ kind: 'update', path: p, set: data, mustExist: false })));
+  }
+}
+const countDocs = async (store, col, field, value) => (await store.query(col, [{ field, op: 'EQUAL', value }])).length;
+
+test('legacy Storage inaccessible: deletion is blocked (Auth kept, step incomplete) and finishes only after verified absence', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  h.storage.inaccessible = true;
+  // User start + continuation.
+  let r = await callRoute(h, store, null, tokenFor(ME));
+  for (let i = 0; i < 40 && r.status === 202 && r.body.status === 'in_progress'; i++) r = await callRoute(h, store, null, tokenFor(ME, nowSec - 3600));
+  assert.equal(r.status, 202, JSON.stringify(r.body));
+  assert.deepEqual([r.body.status, r.body.step, r.body.reason], ['blocked', 'firebaseMedia', 'legacy-media-inaccessible']);
+  assert.equal(h.authCalls.length, 0, 'Auth is preserved while legacy media cannot be verified');
+  assert.ok(h.storage.objects.has(`profile_images/${ME}.jpg`));
+  let job = (await store.get(`accountDeletions/${ME}`)).data;
+  assert.deepEqual([job.status, job.leaseUntil, job.blockedOn, job.legacyMediaUnresolved, job.pendingFinalization ?? false], ['in_progress', 0, 'firebaseMedia', true, false]);
+  assert.ok(!job.completedSteps.includes('firebaseMedia'), 'step stays incomplete');
+  assert.equal((await store.get(`legacyMediaCleanup/${ME}`)).data.status, 'unresolved', 'operator record kept');
+  // Repeated continuation: still blocked, still truthful.
+  r = await callRoute(h, store, null, tokenFor(ME, nowSec - 3600));
+  assert.deepEqual([r.status, r.body.status], [202, 'blocked']);
+  // Cron (finalization + recovery) never removes Auth while blocked.
+  for (let i = 0; i < 3; i++) await deletion.runScheduledMaintenance(invocation(h, store, null).deps);
+  assert.equal(h.authCalls.length, 0);
+  assert.equal(await h.deps.authUserExists(ME), true);
+  job = (await store.get(`accountDeletions/${ME}`)).data;
+  assert.equal(job.status, 'in_progress');
+  // Admin status lists it as unresolved.
+  const status = await route.handleAdminDeletionStatus(new Request('https://w/admin/deletion-status', { headers: { Authorization: 'Bearer ops' } }), { adminToken: 'ops', deletion: () => h.deps, json });
+  assert.deepEqual((await status.json()).legacyMediaUnresolved.map((u) => u.uid), [ME]);
+  // Access returns: the next cron run retries, proves absence and completes.
+  h.storage.inaccessible = false;
+  await deletion.runScheduledMaintenance(invocation(h, store, null).deps);
+  job = (await store.get(`accountDeletions/${ME}`)).data;
+  assert.deepEqual([job.status, job.legacyMediaUnresolved, job.blockedOn ?? null], ['completed', false, null]);
+  assert.equal((await store.get(`legacyMediaCleanup/${ME}`)).data.status, 'verified_absent');
+  assert.ok(!h.storage.objects.has(`profile_images/${ME}.jpg`));
+  assert.equal(h.authCalls.length, 1);
+  await expectState(store, h);
+  const after = await route.handleAdminDeletionStatus(new Request('https://w/admin/deletion-status', { headers: { Authorization: 'Bearer ops' } }), { adminToken: 'ops', deletion: () => h.deps, json });
+  assert.deepEqual((await after.json()).legacyMediaUnresolved, []);
+}, 'memory');
+
+test('legacy Storage inaccessible: a job recorded by the earlier code as finished but unresolved is not finalized; it is retried', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  h.storage.inaccessible = true;
+  // State the previous version could leave: every step "done", unresolved flag, pending finalization, Auth still present.
+  await store.commit([{ kind: 'update', path: `accountDeletions/${ME}`, mustExist: false, set: {
+    uid: ME, status: 'failed', attemptId: 'old', leaseUntil: 0, legacyMediaUnresolved: true, pendingFinalization: true,
+    mediaClearedAtMs: h.now(), completedSteps: deletion.DELETION_STEPS.map((s) => s.id), startedAtMs: h.now() } }]);
+  await store.commit([{ kind: 'update', path: `legacyMediaCleanup/${ME}`, mustExist: false, set: { uid: ME, status: 'unresolved', store: 'firebase-storage', reason: 'inaccessible (403)' } }]);
+  await deletion.runScheduledMaintenance(invocation(h, store, null).deps);
+  assert.equal(h.authCalls.length, 0, 'finalization refuses while legacy media is unresolved');
+  assert.equal((await store.get(`accountDeletions/${ME}`)).data.blockedOn, 'firebaseMedia');
+  h.storage.inaccessible = false;
+  for (let i = 0; i < 5 && (await store.get(`accountDeletions/${ME}`)).data.status !== 'completed'; i++) {
+    await deletion.runScheduledMaintenance(invocation(h, store, null).deps);
+  }
+  assert.equal((await store.get(`accountDeletions/${ME}`)).data.status, 'completed');
+  assert.equal((await store.get(`legacyMediaCleanup/${ME}`)).data.status, 'verified_absent');
+  assert.equal(h.authCalls.length, 1);
+}, 'memory');
+
+/** A durable-progress fingerprint: documents left, completed steps and cursors on the job. */
+async function progressMark(store) {
+  const job = (await store.get(`accountDeletions/${ME}`))?.data ?? {};
+  return JSON.stringify([store.docs.size, job.completedSteps, job.cursors ?? null, job.status]);
+}
+
+test('multi-page datasets: 6,000 notifications, a 1,500-document subtree, 300 likes, 300 comments and 250 sent notifications finish across bounded slices', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  const extra = [];
+  for (let i = 0; i < 6000; i++) extra.push([`notifications/n${String(i).padStart(5, '0')}`, { userId: ME, title: 'x' }]);
+  for (let i = 0; i < 1500; i++) extra.push([`users/${ME}/trips/t1/checklist/c${String(i).padStart(5, '0')}`, { title: 'item' }]);
+  for (let i = 0; i < 300; i++) {
+    const id = `bp${String(i).padStart(4, '0')}`;
+    extra.push([`travelPosts/${id}`, { authorId: BOB, likeCount: 1, saveCount: 0, commentCount: 0 }]);
+    extra.push([`postLikes/${id}___${ME}`, { postId: id, userId: ME, targetType: 'post' }]);
+    extra.push([`postComments/ac${String(i).padStart(4, '0')}`, { authorId: ME, authorName: 'Alice', authorPhoto: null, postId: 'bobPost', parentCommentId: null, text: 'hi', isDeleted: false, replyCount: 0 }]);
+  }
+  for (let i = 0; i < 250; i++) extra.push([`notifications/s${String(i).padStart(4, '0')}`, { userId: BOB, actorId: ME, actorName: 'Alice', actorPhoto: 'https://r2/a.jpg', title: 'Alice liked' }]);
+  await bulk(store, extra);
+  await store.commit([{ kind: 'update', path: 'travelPosts/bobPost', set: { commentCount: 303 } }]);
+
+  let r; let slices = 0; let maxUsed = 0;
+  for (; slices < 1500; slices++) {
+    const before = await progressMark(store);
+    r = await callRoute(h, store, null, tokenFor(ME, slices ? nowSec - 3600 : nowSec));
+    assert.ok(r.status === 202 || r.status === 200, `slice ${slices}: ${r.status} ${JSON.stringify(r.body)}`);
+    maxUsed = Math.max(maxUsed, r.used);
+    assert.ok(r.used <= budgetMod.WORKERS_FREE_SUBREQUESTS && r.queries <= budgetMod.D1_FREE_QUERIES);
+    if (r.status === 200) break;
+    assert.equal(r.body.status, 'in_progress');
+    assert.notEqual(await progressMark(store), before, `slice ${slices} made no durable progress`);
+    assert.equal((await store.get(`accountDeletions/${ME}`)).data.leaseUntil, 0, 'paused lease released');
+  }
+  assert.equal(r.status, 200);
+  await expectState(store, h);
+  assert.equal(await countDocs(store, 'notifications', 'userId', ME), 0);
+  for (let i = 0; i < 300; i++) assert.equal((await store.get(`travelPosts/bp${String(i).padStart(4, '0')}`)).data.likeCount, 0, 'each like released exactly once');
+  const sent = await store.query('notifications', [{ field: 'actorId', op: 'EQUAL', value: ME }]);
+  assert.equal(sent.length, 251, "other users keep their notifications (250 + the fixture's toBob)");
+  assert.ok(sent.every((n) => n.data.actorName === DELETED && n.data.actorPhoto === null && n.data.userId === BOB));
+  const tombs = await store.query('postComments', [{ field: 'authorId', op: 'EQUAL', value: ME }]);
+  assert.ok(tombs.filter((c) => c.path.startsWith('postComments/ac')).every((c) => c.data.isDeleted && c.data.authorName === DELETED));
+  assert.equal(h.authCalls.length, 1);
+  console.log(`      slices=${slices + 1} max subrequests=${maxUsed}`);
+}, 'memory');
+
+test('cron discovery over 5,100 incomplete jobs stays within budget, makes progress every run and does not starve behind held jobs', async () => {
+  const store = await newStore();
+  const now = Date.now();
+  const jobs = [];
+  // The first 100 by name are held by live attempts elsewhere; the rest failed earlier.
+  for (let i = 0; i < 5100; i++) {
+    const uid = `j${String(i).padStart(5, '0')}`;
+    jobs.push([`accountDeletions/${uid}`, i < 100
+      ? { uid, status: 'in_progress', attemptId: 'elsewhere', leaseUntil: now + 60 * 60 * 1000, completedSteps: [], startedAtMs: now }
+      : { uid, status: 'failed', attemptId: 'old', leaseUntil: 0, completedSteps: [], startedAtMs: now }]);
+  }
+  for (let i = 0; i < 150; i++) {
+    const uid = `f${String(i).padStart(4, '0')}`;
+    jobs.push([`accountDeletions/${uid}`, { uid, status: 'in_progress', attemptId: 'gone', leaseUntil: 0, pendingFinalization: true, mediaClearedAtMs: now, completedSteps: [], startedAtMs: now }]);
+  }
+  await bulk(store, jobs);
+  const h = harness(store);
+  const statusOf = async (uid) => (await store.get(`accountDeletions/${uid}`)).data.status;
+  let completedLater = 0;
+  // Durable progress: completed jobs plus completed steps across all jobs.
+  const progress = () => {
+    let n = 0;
+    for (const [p, d] of store.docs) {
+      if (!p.startsWith('accountDeletions/')) continue;
+      n += (d.data.status === 'completed' ? 1000 : 0) + (Array.isArray(d.data.completedSteps) ? d.data.completedSteps.length : 0);
+    }
+    return n;
+  };
+  for (let run = 0; run < 80; run++) {
+    const before = progress();
+    const inv = invocation(h, store, null);
+    const result = await deletion.runScheduledMaintenance(inv.deps);
+    assert.ok(inv.budget.used <= budgetMod.WORKERS_FREE_SUBREQUESTS, `run ${run}: ${inv.budget.used}`);
+    assert.ok(progress() > before, `cron run ${run} made no durable progress (${JSON.stringify(result)})`);
+  }
+  for (let i = 100; i < 5100; i++) if (await statusOf(`j${String(i).padStart(5, '0')}`) === 'completed') completedLater++;
+  assert.ok(completedLater > 0, 'jobs behind the held ones are reached');
+  for (let i = 0; i < 100; i++) assert.equal(await statusOf(`j${String(i).padStart(5, '0')}`), 'in_progress', 'live attempts untouched');
+  const finalized = (await Promise.all(Array.from({ length: 150 }, (_, i) => statusOf(`f${String(i).padStart(4, '0')}`)))).filter((s) => s === 'completed').length;
+  assert.equal(finalized, 150, 'all pending finalizations (more than one page) completed');
+}, 'memory');
+
+test('real REST adapter: a 1,200-document dataset is deleted page by page under a hard 50-fetch cap per invocation', async () => {
+  const store = await newStore(); await seed(store); const h = harness(store);
+  const extra = [];
+  for (let i = 0; i < 1200; i++) extra.push([`notifications/n${String(i).padStart(5, '0')}`, { userId: ME, title: 'x' }]);
+  for (let i = 0; i < 230; i++) extra.push([`users/${ME}/trips/t1/checklist/c${String(i).padStart(4, '0')}`, { title: 'item' }]);
+  await bulk(store, extra);
+  let result; let slices = 0;
+  for (; slices < 200; slices++) {
+    const budget = new budgetMod.SubrequestBudget();
+    const rest = new FirestoreRest({ projectId: PROJECT, token: async () => 'owner', emulatorHost: EMULATOR_HOST, fetch: budgetMod.budgetedFetch(budget) });
+    result = await deletion.deleteAccount({ uid: ME, email: null }, { ...h.deps, store: rest, budget });
+    assert.ok(budget.used <= 50);
+    if (result.status === 'deleted') break;
+    assert.equal(result.status, 'in_progress');
+  }
+  assert.equal(result.status, 'deleted');
+  assert.ok(slices > 3, `expected several slices, got ${slices + 1}`);
+  await expectState(store, h);
+  assert.equal(await countDocs(store, 'notifications', 'userId', ME), 0);
+}, 'emulator');
 
 (async () => {
   let passed = 0;

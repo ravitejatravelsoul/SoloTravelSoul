@@ -256,7 +256,7 @@ Measured in the in-memory model with a metered store (each store call = one REST
 ### Legacy media
 
 - `profile_images/{uid}.jpg` (earlier app) is now covered by deletion and the late-media sweep.
-- Legacy Firebase Storage deletion is recorded in `legacyMediaCleanup/{uid}` as `verified_absent` only after a fresh listing and object lookup prove absence; objects still listed fail the step. If Storage is inaccessible (401/403, as on Spark) the record is `unresolved` and the job carries `legacyMediaUnresolved`; `GET /admin/deletion-status` lists them. An `unresolved` record is an open item, not evidence of deletion.
+- Legacy Firebase Storage deletion is recorded in `legacyMediaCleanup/{uid}` as `verified_absent` only after a fresh listing and object lookup prove absence; objects still listed fail the step. If Storage is inaccessible (401/403, as on Spark) the record is `unresolved` and the job carries `legacyMediaUnresolved`; `GET /admin/deletion-status` lists them. An `unresolved` record is an open item, not evidence of deletion, and (since the fixes below) it keeps the deletion blocked with Auth intact.
 - `scripts/migrateLegacyMedia.ts` (not run): dry run by default (`--apply` to write); token only from `ADMIN_DELETION_TOKEN` in the environment; owner derived from the path and required to exist in Auth; refuses objects referenced by another account; imports through `POST /admin/media/import`; verifies SHA-256, status and owner through the digest endpoint; swaps references transactionally only if they still hold the old URL; records each stage in a resumable state file; never deletes sources.
 
 ### Rollout (only when explicitly authorized; none of this was run)
@@ -279,7 +279,43 @@ Measured in the in-memory model with a metered store (each store call = one REST
 ### Remaining live-service / native blockers
 
 1. Cloudflare: no Wrangler login; staging KV namespace, D1 database, migration apply and staging Worker deploy not done; production bindings absent (the new app upload path must not ship before they exist).
-2. Workers CPU time (10 ms Free limit) and real subrequest counts unmeasured on a deployed Worker. Cloudflare does not document D1 behaviour past the free daily limits; it is handled as a fail-closed error but not verified live.
+2. Workers CPU time (10 ms Free limit) and real subrequest counts unmeasured on a deployed Worker. When a D1 Free daily limit is reached, queries return errors until 00:00 UTC (documented by Cloudflare); the Worker fails closed on them, not verified live.
 3. Firebase: staging project resources, staging rules deploy, Firebase CLI re-login. Legacy Firebase Storage is inaccessible on Spark, so the 2 known `profile_images/*.jpg` objects stay **unresolved** unless Storage access is restored; the legacy R2 inventory was not taken (no credentials).
 4. Native: device verification of header-authorized image loading, iOS/Android image-cache behaviour, the deletion progress UI and continuation, group creation with more than 8 invitees, and the two-account checklist (no devices/macOS available).
 5. EAS preview environment variables and build approval; store submission review.
+
+## Deletion correctness fixes (from a912b86)
+
+### Inaccessible legacy Storage no longer completes a deletion
+
+Reproduced: with Cloud Storage answering 403, `deleteFirebaseMedia` recorded `unresolved` and returned, so the step counted as complete, Auth was deleted and the API answered `deleted` while `profile_images/{uid}.jpg` remained.
+
+Fix: the step now completes only after a fresh listing and object lookup prove absence (`legacyMediaCleanup/{uid}` = `verified_absent`). When Storage is inaccessible it records `unresolved` (operator record kept, listed by `GET /admin/deletion-status`), sets `legacyMediaUnresolved` and `blockedOn: 'firebaseMedia'` on the job, keeps the step out of `completedSteps`, releases the lease and returns **202** `{status: 'blocked', step: 'firebaseMedia', reason: 'legacy-media-inaccessible'}`. Auth is not removed. The app stops continuing and tells the user that the account stays locked until the remaining photos are deleted. Every later user continuation and every hourly cron run retries the step. Once access returns and absence is verified, the flag is cleared and the deletion finishes (Auth removal, completion). Finalization refuses jobs with `legacyMediaUnresolved`. A job left by the previous version (all steps marked done, unresolved, pending finalization) is not finalized: its legacy step is re-run first.
+
+**Consequence on Spark:** if Cloud Storage stays inaccessible, deletions of accounts with legacy Storage media cannot complete. They stay locked, blocked and reported (stalled after 6 hours) until Storage access is restored (Blaze) or an operator resolves the objects by another verified means. No override exists in code.
+
+### Pagination can no longer exhaust a slice before any progress
+
+Reproduced: `FirestoreRest.query/listDocumentIds/listCollectionIds` fetched every page inside one call. A 6,000-document query needs 61 fetches, so it hit the 50-subrequest cap (`BudgetExceeded`) before deleting anything. Each retry repeated this, and the slice could neither save progress nor release its lease. Cron discovery had the same problem with many jobs.
+
+Fix:
+- The store takes `limit` (one page, one subrequest) and `startAfter` (resume after a document) on queries, and `limit` on listings.
+- Every deletion step processes one page at a time through `eachPage`/`eachMatch`. The position (last fully handled document) is kept per step in `cursors` on the job and saved when a slice pauses or fails, so documents a step changes but does not remove (tombstoned comments, anonymized notifications and messages) are not re-read from the start. Cursors for a step are cleared when it completes.
+- Subtrees are deleted one listing page at a time. Documents whose subtrees are already empty are deleted in one commit per page. If the slice ends mid-page, that partial commit is made from the reserve.
+- Cron discovery (finalization, paused/failed jobs, late-media sweep) reads one page per query. Rotating cursors are kept in `deletionMaintenance/cron` (rules deny clients by default), so long lists cannot exhaust a run. Jobs held by live attempts, or blocked, do not starve the ones behind them, and paused jobs are continued before new failed ones. Operator status reads the first page per status.
+- The 10-call reserve still covers the partial commit, the progress write and the lease release.
+
+### D1 quota correction
+
+The earlier statement that Cloudflare does not document D1 behaviour past the free daily limits was wrong. Cloudflare documents that once a Free-plan daily limit (rows read, rows written) is reached, queries return errors until the limits reset at 00:00 UTC. The Worker treats those errors as failures and fails closed: uploads and views answer 503 and cleanup stays queued. This was not observed against a live D1 database.
+
+### Verified results (this phase)
+
+| Check | Result |
+|---|---|
+| New regressions written first | Before the fix: 4 failed (blocked deletion returned `deleted`; finalization removed Auth; 6,000-document slice stopped making progress at slice 29; cron discovery over 5,100 jobs threw `BudgetExceeded`) |
+| `npm run test:release` | PASS: queues 13, account deletion 57/57, media 15/15, app 6/6, staging 6/6 |
+| `npm run test:rules` | PASS: rules 82, account deletion 49/49 (incl. a 1,430-document dataset through the real REST adapter under a hard 50-fetch cap), media 11/11 |
+| Type checks | PASS: Worker `tsc`, `turbo type-check` |
+
+In the in-memory model, a user with 6,000 notifications, a 1,500-document subtree, 300 likes, 300 comments and 251 sent notifications finished in 122 user slices. Each slice stayed at or below 43 subrequests and released its lease, made durable progress, and released each counter exactly once. 80 consecutive cron runs over 5,250 jobs each stayed within budget and made durable progress; all 150 pending finalizations completed and jobs behind 100 held ones were reached. Workers CPU time remains unmeasured.

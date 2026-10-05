@@ -43,10 +43,28 @@ class MemoryStore {
         : Array.isArray(d.data[f.field]) && d.data[f.field].includes(f.value));
       if (ok) out.push({ path: p, data: clone(d.data), updateTime: d.updateTime });
     }
-    return out.sort((a, b) => a.path.localeCompare(b.path));
+    const ineq = filters.find((f) => f.op === 'GREATER_THAN');
+    const key = (doc) => [ineq ? doc.data[ineq.field] : 0, doc.path];
+    const cmp = (a, b) => { const [x, y] = [key(a), key(b)]; return x[0] !== y[0] ? (x[0] < y[0] ? -1 : 1) : x[1].localeCompare(y[1]); };
+    out.sort(cmp);
+    const after = opts.startAfter ? { path: opts.startAfter.path, data: opts.startAfter.data ?? {} } : null;
+    const rest = after ? out.filter((d) => cmp(d, after) > 0) : out;
+    return opts.limit ? rest.slice(0, opts.limit) : rest;
   }
-  async listDocumentIds(col) { this.calls++; const s = new Set(); for (const p of this.docs.keys()) if (p.startsWith(col + '/')) s.add(p.slice(col.length + 1).split('/')[0]); return [...s]; }
-  async listCollectionIds(d) { this.calls++; const s = new Set(); for (const p of this.docs.keys()) if (p.startsWith(d + '/')) s.add(p.slice(d.length + 1).split('/')[0]); return [...s]; }
+  async listDocumentIds(col, opts = {}) {
+    this.calls++;
+    const ids = new Set();
+    for (const p of this.docs.keys()) if (p.startsWith(col + '/')) ids.add(p.slice(col.length + 1).split('/')[0]);
+    const sorted = [...ids].sort();
+    return opts.limit ? sorted.slice(0, opts.limit) : sorted;
+  }
+  async listCollectionIds(docPath, opts = {}) {
+    this.calls++;
+    const ids = new Set();
+    for (const p of this.docs.keys()) if (p.startsWith(docPath + '/')) ids.add(p.slice(docPath.length + 1).split('/')[0]);
+    const sorted = [...ids].sort();
+    return opts.limit ? sorted.slice(0, opts.limit) : sorted;
+  }
   async commit(writes) {
     this.calls++;
     const { StoreConflict } = worker('firestoreRest');

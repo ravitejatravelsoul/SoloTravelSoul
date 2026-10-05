@@ -7,6 +7,8 @@ function deletionError(code: string, message = 'Account deletion failed'): Error
 }
 
 export type DeletionProgress = { completedSteps: number; totalSteps: number };
+/** 'blocked': a cleanup step waits on something outside the app (e.g. legacy photo storage); the server retries it. */
+export type DeletionOutcome = 'deleted' | 'in_progress' | 'blocked';
 /** Continuation requests per tap; the server's cron continues any remainder. */
 export const MAX_DELETION_SLICES = 30;
 
@@ -16,10 +18,12 @@ export const MAX_DELETION_SLICES = 30;
  * recent sign-in. On Workers Free the server works in bounded slices and
  * answers 202 while work remains; this keeps continuing with the same verified
  * token (continuation is bound to that token's UID) and reports progress.
- * Resolves 'deleted' when data, media and the Auth identity are gone, or
- * 'in_progress' after MAX_DELETION_SLICES (the server finishes it).
+ * Resolves 'deleted' when data, media and the Auth identity are gone,
+ * 'blocked' when the server reports a step it cannot finish yet (it keeps the
+ * account and retries; continuing now would not help), or 'in_progress' after
+ * MAX_DELETION_SLICES (the server finishes it).
  */
-export async function requestAccountDeletion(onProgress?: (p: DeletionProgress) => void): Promise<'deleted' | 'in_progress'> {
+export async function requestAccountDeletion(onProgress?: (p: DeletionProgress) => void): Promise<DeletionOutcome> {
   const workerUrl = (process.env.EXPO_PUBLIC_R2_UPLOAD_WORKER_URL ?? '').replace(/\/$/, '');
   if (!workerUrl) throw deletionError('deletion/unavailable');
 
@@ -35,8 +39,9 @@ export async function requestAccountDeletion(onProgress?: (p: DeletionProgress) 
       throw deletionError('deletion/network');
     }
     if (resp.status === 202) {
-      const body = (await resp.json().catch(() => ({}))) as Partial<DeletionProgress>;
+      const body = (await resp.json().catch(() => ({}))) as Partial<DeletionProgress> & { status?: string };
       onProgress?.({ completedSteps: Number(body.completedSteps ?? 0), totalSteps: Number(body.totalSteps ?? 0) });
+      if (body.status === 'blocked') return 'blocked';
       continue;
     }
     if (resp.ok) return 'deleted';
