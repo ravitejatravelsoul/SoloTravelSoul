@@ -38,9 +38,9 @@ const first=cq.processChatQueue('u');const second=cq.processChatQueue('u');await
 await cq.enqueueChatOp('u',dm('b'));unlock();await Promise.all([first,second]);
 out.push({name:'Chat single flight',expected:1,actual:calls});
 out.push({name:'Chat enqueue during drain',expected:1,actual:await cq.getChatQueueSize('u')});
-send=async()=>{throw Object.assign(new Error('denied'),{code:'permission-denied'})};
+send=async()=>{throw Object.assign(new Error('server error'),{code:'internal'})};
 for(let i=0;i<6;i++)await cq.processChatQueue('u');
-out.push({name:'Failed messages retained for recovery',expected:1,actual:await cq.getChatQueueSize('u')});
+out.push({name:'Failed messages retained for recovery (non-permission errors; denials: chatQueue.cjs)',expected:1,actual:await cq.getChatQueueSize('u')});
 const originalSet=storage.setItem;storage.setItem=async()=>{throw Error('disk full')};let rejected=false;
 try{await cq.enqueueChatOp('u',dm('c'))}catch{rejected=true}finally{storage.setItem=originalSet}
 out.push({name:'Storage failures reported to caller',expected:true,actual:rejected});
@@ -55,7 +55,8 @@ const hook=load('apps/mobile/hooks/useSyncEngine.ts',{
 '@/stores/tripStore':{useTripStore:f=>f(state)},
 '@/utils/syncQueue':{getQueueSize:async()=>0,processQueue:async()=>{drains++;await drain;return{succeeded:0,failed:0}}},
 '@/stores/authStore':{useAuthStore:{getState:()=>({user:{uid:'u'}})}},
-'@/utils/chatQueue':{getChatQueueSize:async()=>2,processChatQueue:async()=>({succeeded:0,failed:0})},
+'@/stores/uiStore':{useUIStore:{getState:()=>({addToast(){}})}},
+'@/utils/chatQueue':{getChatQueueSize:async()=>2,processChatQueue:async()=>({succeeded:0,failed:0,rejected:[]})},
 '@/utils/offlineCache':{getLatestSyncTime:async()=>null,setLastSync:async()=>{}}
 });
 const one=hook.useSyncEngine('u'),two=hook.useSyncEngine('u');

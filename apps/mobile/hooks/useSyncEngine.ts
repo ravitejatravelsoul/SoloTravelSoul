@@ -6,6 +6,7 @@ import { useTripStore } from '@/stores/tripStore';
 import { processQueue, getQueueSize } from '@/utils/syncQueue';
 import { processChatQueue, getChatQueueSize } from '@/utils/chatQueue';
 import { useAuthStore } from '@/stores/authStore';
+import { useUIStore } from '@/stores/uiStore';
 import { getLatestSyncTime, setLastSync } from '@/utils/offlineCache';
 
 export interface SyncEngineState {
@@ -76,6 +77,10 @@ export function useSyncEngine(uid: string | undefined): SyncEngineState & {
       ]);
       if (result.succeeded > 0 || chatResult.succeeded > 0) {
         await setLastSync(uid, 'queue');
+      }
+      if (chatResult.rejected.length > 0 && useAuthStore.getState().user?.uid === uid) {
+        const n = chatResult.rejected.length;
+        useUIStore.getState().addToast(`${n} queued message${n === 1 ? ' was' : 's were'} not sent. This account cannot send messages.`, 'error');
       }
       const count = await pendingCount(uid);
       const lastSyncedAt = await getLatestSyncTime(uid);

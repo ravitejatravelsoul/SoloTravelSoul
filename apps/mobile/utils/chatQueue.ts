@@ -28,7 +28,27 @@ interface ChatQueueEntry {
   retries: number;
 }
 
-export type ChatSyncResult = { succeeded: number; failed: number };
+/** A queued send the server refused outright; it has been dropped, not kept for retry. */
+export type RejectedChatOp = { type: ChatQueuedOp['type']; clientId: string };
+export type ChatSyncResult = { succeeded: number; failed: number; rejected: RejectedChatOp[] };
+
+type RejectionListener = (uid: string, ops: RejectedChatOp[]) => void;
+const rejectionListeners = new Set<RejectionListener>();
+
+/** Notified after a drain drops sends the server refused (e.g. to clear their pending bubbles). */
+export function onChatOpsRejected(listener: RejectionListener): () => void {
+  rejectionListeners.add(listener);
+  return () => { rejectionListeners.delete(listener); };
+}
+
+/**
+ * The rules refused the write (e.g. suspended account). Retrying cannot succeed,
+ * and replaying it later (after unsuspension) would deliver a message the
+ * server rejected, so such sends are dropped and reported instead.
+ */
+export function isPermanentRejection(err: unknown): boolean {
+  return (err as { code?: string } | null)?.code === 'permission-denied';
+}
 
 const drains = new Map<string, Promise<ChatSyncResult>>();
 const queueKey = (uid: string) => `@sts:chatqueue:${uid}`;
@@ -73,22 +93,30 @@ export async function processChatQueue(uid: string): Promise<ChatSyncResult> {
 
 async function drainQueue(uid: string): Promise<ChatSyncResult> {
   const queue = await withQueueLock(queueKey(uid), () => load(uid));
-  if (queue.length === 0) return { succeeded: 0, failed: 0 };
+  if (queue.length === 0) return { succeeded: 0, failed: 0, rejected: [] };
 
   let succeeded = 0;
   let failed = 0;
+  const rejected: RejectedChatOp[] = [];
+  const remove = (entry: ChatQueueEntry) => withQueueLock(queueKey(uid), async () => {
+    const current = await load(uid);
+    await save(uid, current.filter((e) => entryKey(e.op) !== entryKey(entry.op)));
+  });
 
   for (const entry of queue) {
     try {
       await applyChatOp(entry.op);
-      await withQueueLock(queueKey(uid), async () => {
-        const current = await load(uid);
-        await save(uid, current.filter((e) => entryKey(e.op) !== entryKey(entry.op)));
-      });
+      await remove(entry);
       succeeded++;
     } catch (err) {
       if (isNetworkError(err)) {
         break;
+      }
+      if (isPermanentRejection(err)) {
+        await remove(entry);
+        rejected.push({ type: entry.op.type, clientId: entry.op.clientId });
+        failed++;
+        continue;
       }
       await withQueueLock(queueKey(uid), async () => {
         const current = await load(uid);
@@ -98,7 +126,12 @@ async function drainQueue(uid: string): Promise<ChatSyncResult> {
     }
   }
 
-  return { succeeded, failed };
+  if (rejected.length > 0) {
+    for (const listener of rejectionListeners) {
+      try { listener(uid, rejected); } catch { /* a listener must not break the drain */ }
+    }
+  }
+  return { succeeded, failed, rejected };
 }
 
 // ── Op executor ───────────────────────────────────────────────────────

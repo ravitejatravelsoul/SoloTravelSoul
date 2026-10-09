@@ -4,7 +4,7 @@ import {
   sendGroupMessage as fbSendGroup,
   markGroupRead,
 } from '@solotravelsoul/firebase';
-import { enqueueChatOp } from '@/utils/chatQueue';
+import { enqueueChatOp, isPermanentRejection, onChatOpsRejected } from '@/utils/chatQueue';
 import { useAuthStore } from '@/stores/authStore';
 import { useNetworkState } from '@/hooks/useNetworkState';
 import { useUIStore } from '@/stores/uiStore';
@@ -26,6 +26,17 @@ export function useGroupChat(groupId: string, myName: string) {
 
   const [confirmed, setConfirmed] = useState<TravelGroupMessage[]>([]);
   const [pending, setPending] = useState<TravelGroupMessage[]>([]);
+
+  // Queued sends the server refused later (offline, then suspended) are dropped
+  // by the queue; remove their pending bubbles so they are not shown as sending.
+  useEffect(() => {
+    if (!uid) return;
+    return onChatOpsRejected((owner, ops) => {
+      if (owner !== uid) return;
+      const ids = new Set(ops.map((o) => o.clientId));
+      setPending((prev) => prev.filter((m) => !ids.has(m.clientId)));
+    });
+  }, [uid]);
 
   useEffect(() => {
     setConfirmed([]);
@@ -86,7 +97,7 @@ export function useGroupChat(groupId: string, myName: string) {
         await fbSendGroup(groupId, uid, myName, text.trim(), clientId);
       } catch (e) {
         // Refused by the rules (e.g. suspended account): retrying cannot succeed.
-        if ((e as { code?: string }).code === 'permission-denied') {
+        if (isPermanentRejection(e)) {
           setPending((prev) => prev.filter((m) => m.clientId !== clientId));
           useUIStore.getState().addToast('Message not sent. This account cannot send messages.', 'error');
           return;

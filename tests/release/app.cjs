@@ -245,10 +245,7 @@ test('native Android findings (staging APK, 2026-10-09) stay fixed', () => {
   assert.match(read('components/profile/ProfileStats.tsx'), /statWrap: \{\s*flex: 1,/);
   // Moderation: one decision resolves every open report on the same item.
   assert.match(read('app/(app)/moderation/index.tsx'), /reports\.filter\(\(x\) => x\.targetType === r\.targetType && x\.targetId === r\.targetId\)/);
-  // Chat: a send refused by the rules (suspended) is not queued for later delivery.
-  for (const f of ['hooks/useGroupChat.ts', 'hooks/useMessages.ts']) {
-    assert.match(read(f), /code === 'permission-denied'\) \{[\s\S]{0,300}return;\s*\}[\s\S]{0,120}?await enqueueChatOp/, f);
-  }
+  // Chat sends refused by the rules: behaviour tests in tests/release/chatQueue.cjs.
 });
 
 (async () => {
