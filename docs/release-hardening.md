@@ -515,3 +515,87 @@ Changes made (staging-deployed, regression-tested):
 | 3 units | cron run (hourly build + `*/5` rotation) | 6 | 6 ms | 13 ms | 13 ms | 1 |
 
 **Conclusion:** the changes cut deletion CPU from 42–65 ms to a median of 7 ms, but about 17% of slices still reach 10–19 ms. Even slices doing almost no work sit at 7–12 ms. Cold first invocations of uploads and views reach 16–24 ms. The existing free architecture (Firestore REST over `fetch`, fenced leases, ID-token checks) **cannot reliably stay under Workers Free's 10 ms with headroom**. This is a release blocker for relying on Workers Free; no readiness is claimed. The CPU allowance values, the cron rotation and the client continuation count are not the remaining problem; the per-call and fixed-slice costs are.
+
+## Durable Object host feasibility proof (from 9204fdc, staging only)
+
+Question: can SQLite-backed Durable Objects on Workers Free run the existing handlers, so the public Worker stays far below its 10 ms CPU limit?
+
+### What was built (isolated; the existing staging Worker is unchanged for rollback)
+
+- `wrangler.do-staging.toml` sets up a separate Worker, `solotravelsoul-api-do-staging` (`src/edge.ts`). It has an `ApiShard` SQLite-backed Durable Object class (migration `v1`) and uses the same staging Firebase project, KV and D1. Media URLs keep the staging origin as their canonical form. It has its own secrets (a separate staging service-account key and admin token) and a `*/5` cron. Remove it with `npx wrangler delete -c wrangler.do-staging.toml`.
+- **Thin front:**
+  - Serves the static deletion page itself and answers 404 for anything outside an allowlist of public API routes.
+  - Forwards allowed requests unread: no body parsing, no token verification.
+  - If the object is unavailable (overload, reset, daily limit) it fails closed with 503 `no-store`.
+- **Object (`ApiShard`):** runs the existing `handleFetch()` (authentication, media, moderation, admin, deletion) and `runScheduled()`. These are the same functions the plain Worker now calls, so barriers, authorization, leases, counters, KV/D1 gates and cleanup are unchanged. There is no second job system: the Firestore job documents and cursors are reused.
+- **Routing:**
+  - Server-chosen names only: `api-0` … `api-7`, plus `maintenance`.
+  - Views shard on the media ID; other routes on the token's unverified `sub` (routing only; the object verifies the token), so one account's requests share an object; admin routes share one.
+  - Hostile tokens never create new names, and the shard count is capped at 64.
+- **Cron:** the front calls the fixed `maintenance` object through an RPC method that no HTTP request can reach. Inside the object every phase runs per cron run (`CRON_ALL_PHASES`); work allowances are sized to the 50-subrequest cap (`SLICE_WORK_UNITS = CRON_WORK_UNITS = 40`) rather than to 10 ms.
+
+### Platform facts
+
+- **Plan:** the account is on Workers Free and deployed the SQLite-backed class without error.
+- **Cloudflare documentation (Durable Objects limits and pricing):**
+  - CPU per request is 30 s by default (configurable to 5 minutes) on Free and Paid alike, reset by each incoming request.
+  - Free plan daily limits: 100,000 requests, 13,000 GB-s duration, 5 M rows read, 100,000 rows written, 5 GB storage in total. Beyond any of them, operations fail with an error.
+  - Duration is charged at 128 MB while an object is running *or waiting on I/O*; idle objects eligible for hibernation are not charged.
+  - Each front Worker request also counts toward Workers Free's 100,000 requests/day.
+- **CPU-burn probe** (scratch build only, never committed): the same pure-JavaScript loop ran 2.8–2.9 s of CPU per request inside the object with outcome `ok` (3/3). In the plain front Worker it also ran 0.76–1.15 s with `ok`. The Free 10 ms limit is not observably enforced at that size, so `ok` outcomes are not evidence of compliance. The basis for the object is the documented 30 s limit.
+
+### Measurements (Cloudflare tail `cpuTime`/`wallTime`; front and object reported separately)
+
+| Host | Route | Samples | CPU median | CPU p95 | CPU max | Wall median |
+|---|---|---|---|---|---|---|
+| front | view | 24–29 per run | 1 ms | 1–2 ms | 2 ms | 0.25–0.28 s |
+| front | upload | 17–18 per run | 0–1 ms | 1–2 ms | 2 ms | 0.44–0.52 s |
+| front | deletion | 11 | 0 ms | 1 ms | 1 ms | 2.5 s |
+| front | cron | 2 | 0 ms | 0 ms | 0 ms | 12–14 s |
+| front | first 8 after a redeploy (cold) | 8 | 1 ms | 1 ms | 1 ms | – |
+| object | view | 37–39 per run | 3–4 ms | 16–19 ms | 21 ms | 0.18–0.22 s |
+| object | upload | 17–18 per run | 2–6 ms | 8–16 ms | 16 ms | 0.43–0.49 s |
+| object | deletion slice (38 subrequests, ≤ 14 D1 queries) | 11 | 40 ms | 50 ms | 50 ms | 2.5 s |
+| object | cron, all phases (37 subrequests) | 2 | 29 ms | 32 ms | 32 ms | 12–14 s |
+| object | first 8 after a redeploy (cold) | 8 | 3 ms | 8 ms | 8 ms | – |
+
+Cloudflare analytics for the proof window (00:31–01:10 UTC): 350 object requests with 0 errors, 0 exceeded-CPU and 0 exceeded-memory, 234 s active time (≈ 30 GB-s); front Worker 348 requests with 0 errors, CPU p50 1.03 ms and p99 2.44 ms.
+
+### Live checks through the object host (disposable staging accounts)
+
+- **Two-account checks:** all 21 pass (setup; media 8/8 including the direct client privacy change, report auto-hide and moderator removal; linked content; A's deletion in 4 invocations, with B's retained data verified).
+- **Large account L:** 20 photo posts, 15 likes, 25 comments, DM and group, deleted in **11 invocations** (82–97 on the 10 ms-sized Worker) with exact counters, all 20 media rows purged.
+- **Concurrency:** 10 parallel uploads (distinct IDs); 40 parallel view decisions correct; two simultaneous deletion starts for one account gave 202 + 409, and the deletion then completed once.
+- **Restart:** redeploying the proof Worker in the middle of a large deletion; the run continued (11 invocations, no failed request) and verification passed.
+- **Unauthorized:** missing token 401; invalid token 403; wrong admin token 403; internal (`/maintenance`) and diagnostic paths 404 at the front.
+- **Cron:** the proof's maintenance object ran all four phases per run (29–32 ms CPU). An abandoned deletion (account CR: one slice, then left) was finished by cron alone. Both staging crons share the project, and the job completed after 15 attempts, about 44 minutes later. Auth is gone and the data and all 20 media rows are removed. Most of that time was one slice per job per run, plus media purging in small batches by the 10 ms-sized staging Worker's cron.
+- **Quota errors:** an unavailable object (daily limit, overload, reset) gives 503 `no-store` at the front (unit-tested; shared quotas were not exhausted live). KV/D1/Firestore quota failures are handled by the unchanged handlers (existing tests).
+
+### Daily capacity on Free (upper bounds from the measured wall times; concurrent requests on one object share active time)
+
+| Operation | Object wall time | GB-s each | Limited by |
+|---|---|---|---|
+| view | ≈ 0.2 s | ≈ 0.026 | 100,000 Worker + 100,000 object requests/day (duration would allow ≈ 500,000) |
+| upload | ≈ 0.45 s | ≈ 0.058 | requests (duration ≈ 225,000) |
+| deletion slice | ≈ 2.5 s | ≈ 0.32 | duration ≈ 40,000 slices/day (a large account ≈ 11) |
+| cron run (`*/5`) | ≈ 13 s | ≈ 1.7 | 288 runs/day ≈ 480 GB-s (≈ 3.7% of the allowance) + 288 requests |
+| proof mix (measured) | – | 0.086 per request | requests (duration ≈ 150,000/day) |
+
+**Trade-offs:**
+- Every API call costs one Worker request and one object request, so the host does not raise the 100,000-requests/day ceiling.
+- It adds a duration ceiling (13,000 GB-s) that the measured mix does not reach.
+- Firestore on Spark (50,000 reads/day; a view reads 2–3 documents) remains the tighter limit for views, at roughly 17,000–25,000 per day.
+- Cron recovery still advances one slice per job per run, because the 50-subrequest cap applies inside the object too.
+
+### Verdict: **PASS** (feasibility), with the trade-offs above
+
+The front Worker stays at 0–2 ms CPU (p99 2.44 ms in analytics, cold invocations 1 ms) on every route, including cron. The handlers run unchanged inside a SQLite-backed Durable Object on Workers Free, under the documented 30 s per-request CPU limit, with 0 errors across 350 object requests. Deleting a large account drops from 82–97 invocations to 11.
+
+### Exact remaining migration scope (not started)
+
+1. **Production config:** add the Durable Object binding, the `v1` `new_sqlite_classes` migration and `main = "src/edge.ts"` to production. This is a production change and needs its own approval, together with the production KV/D1 bindings that already block this code. The existing `[env.staging]` Worker becomes the rollback.
+2. **One staging host:** retire either the plain staging Worker or the proof Worker so only one cron maintains the shared staging project; point `EXPO_PUBLIC_R2_UPLOAD_WORKER_URL` (EAS `preview`) at the chosen host, and keep `MEDIA_PUBLIC_ORIGIN` as the canonical media origin or migrate the stored URLs.
+3. **Work allowances inside the object:** keep `SLICE_WORK_UNITS`/`CRON_WORK_UNITS` sized to the 50-subrequest cap (40 here). Cron recovery is still one slice per job per run. If faster unattended recovery is needed, add object alarms to schedule extra maintenance invocations; each alarm is an object request and costs duration.
+4. **Monitoring:** alert on the Free daily limits (100,000 Worker requests, 100,000 object requests, 13,000 GB-s) and on 503 `service/unavailable` from the front. Turn `LOG_BUDGET` off outside staging.
+5. **Tests:** add an emulator-level end-to-end test through the front and object entry. Today the front is unit-tested (`tests/release/edge.cjs`) and the shared handlers by the existing suites.
+6. **Unchanged blockers:** the Firestore Spark read quota (≈ 17,000–25,000 views/day), native/device checks, EAS build approval, and the owner decisions in `docs/release-handoff.md`.

@@ -2,7 +2,7 @@ import { verifyFirebaseToken } from './auth';
 import { handleAccountDeletion, handleAdminAccountDeletion, handleAdminDeletionStatus } from './accountRoute';
 import { accountDeletionPage } from './deletionPage';
 import { handleRemoveMedia } from './moderationRoute';
-import { runScheduledMaintenance, type DeletionDeps } from './accountDeletion';
+import { runScheduledMaintenance, type DeletionDeps, type MaintenancePhase } from './accountDeletion';
 import { FirestoreRest, type DocStore } from './firestoreRest';
 import { firebaseStorageDeleter, r2Deleter } from './objectStores';
 import { getAccessToken, identityToolkitUserDeleter, identityToolkitUserExists, parseServiceAccount } from './google';
@@ -195,49 +195,59 @@ async function route(request: Request, env: Env, svc: ReturnType<typeof services
     return err('Not found', 404);
 }
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const budget = new SubrequestBudget(WORKERS_FREE_SUBREQUESTS, units(env.SLICE_WORK_UNITS, SLICE_WORK_UNITS));
-    const svc = services(env, budget);
-    const response = await route(request, env, svc);
-    logBudget(env, routeLabel(request.method, new URL(request.url).pathname), budget, svc.queries, { status: response.status });
-    return response;
-  },
+/** One API request: authentication, budgets and the route handlers. Shared by the Worker and the Durable Object host. */
+export async function handleFetch(request: Request, env: Env): Promise<Response> {
+  const budget = new SubrequestBudget(WORKERS_FREE_SUBREQUESTS, units(env.SLICE_WORK_UNITS, SLICE_WORK_UNITS));
+  const svc = services(env, budget);
+  const response = await route(request, env, svc);
+  logBudget(env, routeLabel(request.method, new URL(request.url).pathname), budget, svc.queries, { status: response.status });
+  return response;
+}
 
-  // Cron (wrangler.toml): one budgeted invocation finishes stranded jobs,
-  // advances one paused/failed deletion by a slice, sweeps late media, then
-  // spends what is left on media maintenance. Everything resumes next run.
-  async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    const budget = new SubrequestBudget(WORKERS_FREE_SUBREQUESTS, units(env.CRON_WORK_UNITS, CRON_WORK_UNITS));
-    const svc = services(env, budget);
-    const phase = cronPhase(event.scheduledTime);
-    const deletion = svc.deletion();
-    if (!deletion) {
-      console.error('[Worker] deletion maintenance skipped: deletion is not configured');
-      return;
+/**
+ * One scheduled maintenance run. Under the Workers Free 10 ms CPU limit it does
+ * the single phase chosen by cronPhase(); `allPhases` runs every phase in turn
+ * (for hosts without that per-invocation limit). Every phase stops at its budget
+ * and resumes on the next run.
+ */
+export async function runScheduled(scheduledTime: number, env: Env, allPhases = false): Promise<void> {
+  const budget = new SubrequestBudget(WORKERS_FREE_SUBREQUESTS, units(env.CRON_WORK_UNITS, CRON_WORK_UNITS));
+  const svc = services(env, budget);
+  const phases: string[] = allPhases ? ['finalize', 'resume', 'sweep', 'media'] : [cronPhase(scheduledTime)];
+  const deletion = svc.deletion();
+  if (!deletion) {
+    console.error('[Worker] deletion maintenance skipped: deletion is not configured');
+    return;
+  }
+  let result: unknown = null;
+  let media: unknown = null;
+  const deletionPhases = phases.filter((p): p is MaintenancePhase => p !== 'media');
+  if (deletionPhases.length) {
+    try {
+      result = await runScheduledMaintenance(deletion, deletionPhases);
+    } catch (e) {
+      console.error('[Worker] deletion maintenance failed:', (e as Error).message);
     }
-    ctx.waitUntil((async () => {
-      let result: unknown = null;
-      let media: unknown = null;
-      if (phase !== 'media') {
-        try {
-          result = await runScheduledMaintenance(deletion, [phase]);
-        } catch (e) {
-          console.error('[Worker] deletion maintenance failed:', (e as Error).message);
-        }
-      }
-      if (phase === 'media' && svc.media && svc.store && env.MEDIA_PUBLIC_ORIGIN && budget.remaining() > 12) {
-        try {
-          // D1 queries ≈ 0.4 ms CPU each: at most 14 per run.
-          media = await runMediaMaintenance(
-            { ...svc.media, store: svc.store, publicBaseUrl: mediaOrigin(env) },
-            maintenanceLimits(Math.min(budget.remaining(), 16), Math.min(svc.media.queries.remaining(), 14))
-          );
-        } catch (e) {
-          if (!(e instanceof SliceExhausted)) console.error('[Worker] media maintenance failed:', (e as Error).message);
-        }
-      }
-      logBudget(env, `cron:${phase}`, budget, svc.queries, { maintenance: result, media, workUnits: budget.workUsed });
-    })());
+  }
+  if (phases.includes('media') && svc.media && svc.store && env.MEDIA_PUBLIC_ORIGIN && budget.remaining() > 12) {
+    try {
+      // D1 queries ≈ 0.4 ms CPU each: at most 14 per run.
+      media = await runMediaMaintenance(
+        { ...svc.media, store: svc.store, publicBaseUrl: mediaOrigin(env) },
+        maintenanceLimits(Math.min(budget.remaining(), 16), Math.min(svc.media.queries.remaining(), 14))
+      );
+    } catch (e) {
+      if (!(e instanceof SliceExhausted)) console.error('[Worker] media maintenance failed:', (e as Error).message);
+    }
+  }
+  logBudget(env, `cron:${phases.join('+')}`, budget, svc.queries, { maintenance: result, media, workUnits: budget.workUsed });
+}
+
+export default {
+  fetch: (request: Request, env: Env): Promise<Response> => handleFetch(request, env),
+
+  // Cron (wrangler.toml): every 5 minutes, one maintenance phase per run.
+  async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(runScheduled(event.scheduledTime, env));
   },
 };

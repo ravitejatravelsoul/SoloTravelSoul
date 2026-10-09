@@ -1,0 +1,50 @@
+# Durable Object feasibility proof — STAGING ONLY (Workers Free, SQLite-backed Durable Objects).
+#   npx wrangler deploy -c wrangler.do-staging.toml
+# A separate Worker: the existing staging Worker (wrangler.toml --env staging)
+# stays deployed and unchanged for rollback. Same staging Firebase project, KV
+# and D1. Media URLs keep the existing staging origin as their canonical form, so
+# media is served the same through either Worker.
+# Secrets (separate from the staging Worker's):
+#   npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON -c wrangler.do-staging.toml
+#   npx wrangler secret put ADMIN_DELETION_TOKEN -c wrangler.do-staging.toml
+# Remove: npx wrangler delete -c wrangler.do-staging.toml
+name = "solotravelsoul-api-do-staging"
+main = "src/edge.ts"
+compatibility_date = "2025-06-01"
+workers_dev = true
+preview_urls = false
+
+[[durable_objects.bindings]]
+name = "API"
+class_name = "ApiShard"
+
+# Free plan: only SQLite-backed Durable Objects.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ApiShard"]
+
+[[kv_namespaces]]
+binding = "MEDIA_KV"
+id      = "06c0c9d13501409cb5a115e6f71da4fd"
+
+[[d1_databases]]
+binding        = "MEDIA_DB"
+database_name  = "solotravelsoul-media-staging"
+database_id    = "59c506b6-8e0d-45c8-906c-98fd55572e20"
+migrations_dir = "migrations"
+
+[vars]
+FIREBASE_PROJECT_ID = "solotravelsoul-staging"
+FIREBASE_STORAGE_BUCKET = "solotravelsoul-staging.firebasestorage.app"
+MEDIA_PUBLIC_ORIGIN = "https://solotravelsoul-r2-upload-staging.ravitejatravelsoul.workers.dev"
+LEGACY_MEDIA_MODE = "none"
+LOG_BUDGET = "1"
+API_SHARDS = "8"
+# Inside the object the 50-subrequest cap still applies; the work allowances are
+# sized to it instead of the front Worker's 10 ms CPU limit.
+SLICE_WORK_UNITS = "40"
+CRON_WORK_UNITS = "40"
+CRON_ALL_PHASES = "1"
+
+[triggers]
+crons = ["*/5 * * * *"]

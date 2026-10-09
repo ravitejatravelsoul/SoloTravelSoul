@@ -34,6 +34,10 @@ const sh = (args, cwd = ROOT) => execFileSync(npx, args, { cwd, encoding: 'utf8'
 const toml = fs.readFileSync(path.join(ROOT, 'workers/r2-upload-worker/wrangler.toml'), 'utf8');
 const WORKER = (toml.match(/MEDIA_PUBLIC_ORIGIN\s*=\s*"([^"]+)"/) || [])[1];
 if (!WORKER || !/^https:\/\/solotravelsoul-r2-upload-staging\./.test(WORKER)) throw new Error('staging Worker origin not configured');
+// Requests may go to another staging host serving the same API (e.g. the Durable Object proof);
+// media URLs keep the canonical staging origin.
+const API = process.env.STS_API_ORIGIN || WORKER;
+if (!/^https:\/\/solotravelsoul-[a-z0-9-]*staging\.[a-z0-9-]+\.workers\.dev$/.test(API)) throw new Error('STS_API_ORIGIN must be a staging workers.dev origin');
 
 const state = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, 'utf8')) : { users: {}, ids: {} };
 const save = () => fs.writeFileSync(STATE, JSON.stringify(state, null, 2), { mode: 0o600 });
@@ -148,21 +152,21 @@ async function upload(s, purpose, bytes = PNG, type = 'image/png') {
   form.append('file', new Blob([bytes], { type }), 'x.png');
   form.append('purpose', purpose);
   const headers = s ? { Authorization: `Bearer ${await s.token()}` } : {};
-  const r = await fetch(`${WORKER}/media/upload`, { method: 'POST', headers, body: form });
+  const r = await fetch(`${API}/media/upload`, { method: 'POST', headers, body: form });
   return { status: r.status, body: await r.json().catch(() => ({})) };
 }
 async function view(s, url) {
-  const r = await fetch(url, { headers: s ? { Authorization: `Bearer ${await s.token()}` } : {} });
+  const r = await fetch(url.replace(WORKER, API), { headers: s ? { Authorization: `Bearer ${await s.token()}` } : {} });
   const bytes = r.status === 200 ? Buffer.from(await r.arrayBuffer()) : null;
   return { status: r.status, cache: r.headers.get('cache-control'), vary: r.headers.get('vary'), bytes };
 }
-async function deleteUntilDone(s, maxSlices = 40, fresh = true) {
+async function deleteUntilDone(s, maxSlices = Number(process.env.STS_MAX_SLICES) || 40, fresh = true) {
   // Starting needs a recent sign-in: sign in again just before the first call.
   if (fresh) await sdkAuth.signInWithEmailAndPassword(s.auth, state.users[s.key].email, state.users[s.key].password);
   const token = await s.auth.currentUser.getIdToken(true);
   const slices = [];
   for (let i = 0; i < maxSlices; i++) {
-    const r = await fetch(`${WORKER}/account/delete`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const r = await fetch(`${API}/account/delete`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
     const body = await r.json().catch(() => ({}));
     slices.push({ status: r.status, state: body.status, step: body.step ?? null, completed: body.completedSteps ?? null });
     if (r.status !== 202 || body.status === 'blocked') break;
@@ -249,7 +253,7 @@ const phases = {
     });
     await check('moderator removal: visibility removed, remove-media revokes and deletes KV bytes', async () => {
       await m.moderation.setContentVisibility('post', state.ids.post1, m.uid, 'removed');
-      const r = await fetch(`${WORKER}/moderation/remove-media`, { method: 'POST', headers: { Authorization: `Bearer ${await m.token()}`, 'Content-Type': 'application/json' },
+      const r = await fetch(`${API}/moderation/remove-media`, { method: 'POST', headers: { Authorization: `Bearer ${await m.token()}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ targetType: 'post', targetId: state.ids.post1 }) });
       const body = await r.json();
       const id = url.split('/').pop();
@@ -409,6 +413,41 @@ const phases = {
     });
   },
 
+  async concurrency() {
+    const b = await session('b');
+    const cc = state.users.cc ? await session('cc') : await newUser('cc');
+    let urls = [];
+    await check('10 parallel uploads all succeed with distinct opaque IDs', async () => {
+      const rs = await Promise.all(Array.from({ length: 10 }, () => upload(cc, 'post')));
+      assert(rs.every((r) => r.status === 200), JSON.stringify(rs.map((r) => r.status)));
+      urls = rs.map((r) => r.body.photoURL);
+      assert(new Set(urls).size === 10, 'duplicate IDs');
+      state.ids.ccPost = await cc.posts.createPost(postInput(cc, urls, 'parallel'));
+      save();
+      return '10/10';
+    });
+    await check('40 parallel views (owner and another user) return the right decision', async () => {
+      const rs = await Promise.all([...urls, ...urls].map((u, i) => view(i % 2 ? b : cc, u)));
+      const ok = rs.filter((r) => r.status === 200 && r.bytes && r.bytes.equals(PNG)).length;
+      assert(ok === 20 && rs.length === 20, `${ok}/${rs.length}`);
+      const more = await Promise.all(urls.flatMap((u) => [view(b, u), view(cc, u)]));
+      assert(more.every((r) => r.status === 200), JSON.stringify(more.map((r) => r.status)));
+      return '40/40 (20 + 20)';
+    });
+    await check('two simultaneous deletion starts: the lease admits one; the deletion then completes once', async () => {
+      await sdkAuth.signInWithEmailAndPassword(cc.auth, state.users.cc.email, state.users.cc.password);
+      const token = await cc.auth.currentUser.getIdToken(true);
+      const call = () => fetch(`${API}/account/delete`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+      const [r1, r2] = await Promise.all([call(), call()]);
+      const statuses = [r1.status, r2.status].sort();
+      assert(statuses.includes(409) && (statuses.includes(202) || statuses.includes(200)), JSON.stringify([r1, r2]));
+      let r = r1.status === 409 ? r2 : r1;
+      for (let i = 0; i < 40 && r.status === 202; i++) r = await call();
+      assert(r.status === 200 && r.body.status === 'deleted', JSON.stringify(r));
+      return `first pair ${JSON.stringify(statuses)}; completed`;
+    });
+  },
+
   async 'start-user'(key) {
     const s = state.users[key] ? await session(key) : await newUser(key);
     await check(`${key}: create content with media`, async () => {
@@ -432,6 +471,13 @@ const phases = {
       if (!s) return 'account already deleted (sign-in refused)';
       const slices = await deleteUntilDone(s, 40, false);
       return JSON.stringify(slices.slice(-1)[0]) + ` after ${slices.length} invocation(s)`;
+    });
+  },
+
+  async 'job-status'(key) {
+    await check(`${key}: deletion job progress (read-only)`, async () => {
+      const job = await adminGet(`accountDeletions/${state.users[key].uid}`);
+      return JSON.stringify(job && { status: job.status, attempts: job.attempts, completedSteps: (job.completedSteps || []).length, currentStep: job.currentStep ?? null, blockedOn: job.blockedOn ?? null, lastError: job.lastError ? job.lastError.step : null });
     });
   },
 
