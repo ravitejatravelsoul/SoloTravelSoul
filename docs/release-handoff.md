@@ -153,3 +153,18 @@ Run interactively instead (without `--non-interactive`) to be asked before the k
    - Abandon a second account's deletion mid-way (close the app); confirm the staging cron finishes it within about an hour (`GET /admin/deletion-status`).
 9. **Health check afterwards:** `node scripts/stagingUsage.cjs` (with `STS_ADMIN_TOKEN` for stalled deletions).
 
+### First Android preview build (2026-10-09)
+
+- **EAS build `07c0e312-69a9-4f1f-bf7c-47a71e8c18d2`**, profile `preview`, commit `e02a9e0`, SDK 54, version 1.0.0 (versionCode 1): **FINISHED** (04:28–04:41 UTC). Logs: https://expo.dev/accounts/ravitejatravelsoul/projects/solotravelsoul/builds/07c0e312-69a9-4f1f-bf7c-47a71e8c18d2 · APK: https://expo.dev/artifacts/eas/mCYfUbC9VKRCeGjg938WOC3gWHzet1fmPvF1N0yi8zE.apk
+- **How it was built:**
+  - From a clean `git worktree` of the pushed commit, so no local uncommitted files were uploaded.
+  - `--non-interactive`: EAS generated a new cloud keystore for `com.solotravelsoul.app.staging` only; the production package has no credentials touched.
+  - Only the `preview` variables and the profile env were loaded.
+  - EAS Free usage afterwards: 1 of 30 builds, no overage, $0.
+- **Artifact inspection** (the APK's compiled manifest and resources; not native behaviour):
+  - package `com.solotravelsoul.app.staging`, label "SoloTravelSoul Staging", scheme `solotravelsoul-staging`, no native Google/Firebase config.
+  - App permissions as introspected: coarse/fine location, camera, internet, post-notifications, boot-completed, biometric, fingerprint, vibrate.
+  - Library-merged permissions: network/Wi-Fi state, wake lock, FCM `c2dm.RECEIVE` (expo-notifications), Play install referrer, vendor launcher badge permissions.
+  - None of the blocked restricted permissions is present.
+- **Native checklist: BLOCKED.** No Android device, emulator or adb is available on this machine, so the APK has not been installed or run.
+
