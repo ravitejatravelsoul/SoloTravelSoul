@@ -1,6 +1,6 @@
 # Release handoff (free tier: Firebase Spark + Workers Free + KV/D1)
 
-Status at commit time: **not store-ready.** Staging is consolidated and live-verified (see below and `docs/release-hardening.md`). The first Android preview APK was built and its native checklist run on an Android 15 emulator (section 10); the device fixes it led to still need a new APK. Production is untouched, and the iOS, build and owner items in section 9 are still open. Everything marked *draft* must be confirmed by the app owner before it is entered in a console. No owner, staff member or completed operation is assumed here.
+Status at commit time: **not store-ready.** Staging is consolidated and live-verified (see below and `docs/release-hardening.md`). Two Android preview APKs were built and tested on an Android 15 emulator (section 10). The second verified the device fixes; one follow-up fix (keyboard while offline) still needs a build. Production is untouched, and the iOS, build and owner items in section 9 are still open. Everything marked *draft* must be confirmed by the app owner before it is entered in a console. No owner, staff member or completed operation is assumed here.
 
 Technical detail and test evidence: `docs/release-hardening.md` (latest section: "Consolidated staging on the Durable Object host").
 
@@ -86,7 +86,7 @@ The two `profile_images/*.jpg` objects stay **unresolved** until their deletion 
 
 ## 8. Native and live verification
 
-Checklist: `docs/release-hardening.md` → "Live and native verification checklist". The staging backend is deployed and live-verified (section 0). **Android:** the preview APK (build `07c0e312`) was installed and the checklist run on an Android 15 emulator on 2026-10-09: results, defects and evidence are in section 10. The fixes need a new preview APK before they can be verified natively. **iOS:** BLOCKED (no macOS; device builds need a paid Apple Developer membership). Builds exported with `expo export` and mocked tests are not proof of native UI behaviour.
+Checklist: `docs/release-hardening.md` → "Live and native verification checklist". The staging backend is deployed and live-verified (section 0). **Android:** the preview APK (build `07c0e312`) was installed and the checklist run on an Android 15 emulator on 2026-10-09: results, defects and evidence are in section 10. A second preview build (`aa5c4b9e`, commit `1cc9600`) verified those fixes on the same emulator. One gap remains: the keyboard while the offline banner shows. It is fixed in code afterwards and needs one more build to verify (section 10). **iOS:** BLOCKED (no macOS; device builds need a paid Apple Developer membership). Builds exported with `expo export` and mocked tests are not proof of native UI behaviour.
 
 ## 9. Consolidated remaining blockers (owner actions)
 
@@ -96,8 +96,9 @@ Checklist: `docs/release-hardening.md` → "Live and native verification checkli
    - **Mapbox maps:** without `EXPO_PUBLIC_MAPBOX_ENABLED=true` and a public `EXPO_PUBLIC_MAPBOX_TOKEN`, the app shows its placeholder map. To test Mapbox maps on a device, the owner adds both to EAS `preview`.
    - **Foursquare:** stays off unless `EXPO_PUBLIC_FOURSQUARE_ENABLED=true` (with `EXPO_PUBLIC_FOURSQUARE_API_KEY`); it is not needed.
 3. **Builds:** the first Android preview build ran on 2026-10-09 (build `07c0e312`, section 10).
-   - **Cost:** EAS Free plan, 1 of 30 builds used in the cycle ending 2026-11-01, $0.
-   - **Next:** the device fixes from the native run need **one more preview build** (owner approval) and a re-run of the affected checklist items.
+   - **Cost:** EAS Free plan, 2 of 30 builds used in the cycle ending 2026-11-01, $0.
+   - **Second build:** `aa5c4b9e` (commit `1cc9600`) verified the device fixes (section 10).
+   - **Next:** the offline-banner keyboard fix (committed after that build) needs one more preview build (owner approval) and a re-check of chat input while offline.
    - **iOS:** device builds need a paid Apple Developer membership, outside the no-paid-plans constraint.
 4. **Device testing:** Android checklist run on an emulator (section 10): all items PASS or have fixed defects. `GET /admin/deletion-status` is BLOCKED until the owner supplies the rotated staging admin token. iOS is BLOCKED (no macOS). A physical Android device run is still advisable before submission.
 5. **Legacy production media:** the 2 `profile_images/*.jpg` objects in production Storage stay unresolved until deleted and verified by a fresh listing (section 6); the legacy R2 inventory is not taken.
@@ -219,4 +220,47 @@ Run interactively instead (without `--non-interactive`) to be asked before the k
 - No UI to lift a suspension or to change an existing post's visibility.
 - The client-side daily report limit (5) is stored per device, not per account. It is advisory only; the server rules enforce one report per user and item.
 - There is no staging banner.
+
+### Second preview build: fix verification (2026-10-09)
+
+- **Build:**
+  - EAS build `aa5c4b9e-f7a2-41ae-a061-447ea129b19f`, profile `preview`, commit `1cc9600`, built from a clean `git worktree` of the pushed commit: **FINISHED**.
+  - APK: https://expo.dev/artifacts/eas/YiJfBp6Gcf6rZqKEZVDHx9YvRDxDabsHzS1lAbr_7K4.apk (SHA-256 `08e3982ec73c4544409d0b816848ece830aad31cc3e9b2ed844cedf43c6529f8`), package `com.solotravelsoul.app.staging` 1.0.0 (1).
+  - EAS Free usage afterwards: 2 of 30 builds, $0.
+- **Device:** installed with `adb install -r` on the same Android 15 emulator, with app data cleared first.
+- **Fixtures:** A, B, M (moderator), R1–R3. All were deleted afterwards (jobs `completed`). The moderator grant, the group, the A–B DM thread and the 3 report documents created by this run were removed. The remaining media row is `removed` with no pending KV delete.
+- **Evidence:** `docs/evidence/native-android-2026-10-09-build2/` (28 screenshots; `logcat-app-sanitized.txt`, with no app crash or exception).
+
+**Queue correction in this build (`1cc9600`):**
+- A queued DM or group send that the server refuses with `permission-denied` is now dropped under the queue lock. It is reported in `rejected` (also counted as failed); its pending bubble is cleared, and the user sees "N queued messages were not sent".
+- Network failures still stop the drain and keep the send; other errors still retry. Per-user queues and single-flight draining are unchanged.
+- Behaviour tests: `tests/release/chatQueue.cjs` (11) covers the queue, both chat hooks (online denial, online transient failure, offline queue then denial) and the sync-engine report. The queue and offline tests fail on the old queue code, and the online-denial tests fail on the hooks from before the last fix.
+
+| # | Defect | Result on build `aa5c4b9e` |
+|---|---|---|
+| 1 | Notification bell (Home, Profile) and Saved Posts | **PASS**: all open their screens. |
+| 2 | Keyboard covers inputs | **PASS online**: comments sheet, DM and group inputs sit above the keyboard; send works with the keyboard open. **FAIL while offline:** the global offline banner pushes the screens down, and the chat input sits behind the keyboard by the banner's height. Fixed in code afterwards (the banner now overlays the status-bar area, with a regression check); **not verified natively**, since it needs another build. |
+| 3 | Composer kept the previous post; refused post failed silently | **PASS**: the composer reopens empty after sharing; a refused post shows "Post not shared". |
+| 4 | Profile stats clipped | **PASS**: all six stats are visible. |
+| 5 | Report sheet: first tap; "This message" | **PASS**: the label is "This post". Submit worked on the first tap in all three reports. The keyboard was confirmed showing (`mInputShown=true`) in the two where it was measured. |
+| 6 | Sibling reports left open | **PASS**: two reports on one post; one Remove → both `actioned`, the post `removed`, gone from the queue. |
+| 7 | Suspended upload message | **PASS**: "This account can no longer upload photos." |
+| 8 | Refused chat sends queued and delivered after unsuspension | **PASS**: see below. |
+
+Defect 8, in detail:
+- **Online:** DM and group sends while suspended show "Message not sent…" and leave no bubble.
+- **Offline, app's own queue:** with airplane mode on and the app reopened, a DM and a group message were queued. After reconnecting (B still suspended), the app reported "2 queued messages were not sent…" (captured in the UI dump; the screenshot was taken a moment earlier), and both bubbles cleared.
+- **After unsuspension:** M lifted the suspension and the app drained again. **None of the refused messages exists on the server**, while a new group message was delivered.
+- **Firestore's own buffer:** if the app is offline but has not noticed (see below), Firestore's client SDK holds the write instead of the app's queue. When the app returned to the foreground it was refused, and the online path removed it the same way.
+
+**Observation (not fixed):** `useNetworkState` re-checks connectivity only on mount and when the app returns to the foreground. While the app stays open, losing the network is not detected: no offline banner appears and sends are not queued by the app (Firestore's own buffer holds them).
+
+**Health re-check (analytics, fresh window):**
+- The 12.29 ms front-Worker CPU p99 reported earlier comes from version `e784bd26` (the pre-consolidation worker-mode build) in the hours before 10-09 02:19Z. That window includes the consolidation deploy and the rollback test.
+  - The script reports the **maximum** of per-status-group p99s over 24 h.
+  - Since version `b228b58f` (object mode, from 02:19:23Z) the hourly front p99 is 0.64–2.98 ms, with no Worker errors.
+- The single Durable Object error falls in the 15:00Z hour, with status `clientDisconnected` and no exception recorded in analytics. It coincides with the deliberate force-stop of the app during the abandoned-deletion test (15:13:27Z); the front Worker logged 2 `clientDisconnected` requests in the same hour.
+- Workers Logs could not be read with the local Wrangler OAuth token (Telemetry API "Authentication error"), so the exact request is not proven. No defect was reproduced; nothing was redesigned.
+
+**Admin checks:** `GET /admin/deletion-status` is BLOCKED; no staging admin token is available to this run.
 
