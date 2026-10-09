@@ -96,15 +96,30 @@ test('Android preview configuration: staging profile, no native Firebase files, 
   for (const [file, flag] of [['apps/mobile/services/mapProvider.ts', "EXPO_PUBLIC_MAPBOX_ENABLED === 'true'"], ['apps/mobile/services/foursquareService.ts', "EXPO_PUBLIC_FOURSQUARE_ENABLED === 'true'"]]) {
     assert.ok(fs.readFileSync(path.join(root, file), 'utf8').includes(flag), `${file} gated by ${flag}`);
   }
-  // Evaluated native config (Expo prebuild introspection; no SDK needed).
-  const r = spawnSync(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['expo', 'config', '--type', 'introspect', '--json'], { cwd: path.join(root, 'apps/mobile'), encoding: 'utf8', shell: process.platform === 'win32', maxBuffer: 64 * 1024 * 1024 });
-  assert.equal(r.status, 0, 'expo config introspection');
-  const c = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  // Preview builds use the staging variant; Mapbox and Foursquare stay disabled.
+  assert.deepEqual([preview.env.APP_VARIANT, preview.env.EXPO_PUBLIC_MAPBOX_ENABLED, preview.env.EXPO_PUBLIC_FOURSQUARE_ENABLED], ['staging', 'false', 'false']);
+  assert.ok(!eas.build.production.env || !eas.build.production.env.APP_VARIANT, 'production profile has no variant');
+  // Evaluated configs (app.config.js over app.json): staging variant vs production.
+  const evaluate = (type, variant) => {
+    const r = spawnSync(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['expo', 'config', '--type', type, '--json'], {
+      cwd: path.join(root, 'apps/mobile'), encoding: 'utf8', shell: process.platform === 'win32', maxBuffer: 64 * 1024 * 1024,
+      env: { ...process.env, APP_VARIANT: variant ?? '' },
+    });
+    assert.equal(r.status, 0, `expo config --type ${type}`);
+    return JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  };
+  const prod = evaluate('public');
+  assert.deepEqual([prod.name, prod.scheme, prod.android.package, prod.ios.bundleIdentifier], ['SoloTravelSoul', 'solotravelsoul', 'com.solotravelsoul.app', 'com.solotravelsoul.app'], 'production identifiers unchanged');
+  const stg = evaluate('public', 'staging');
+  assert.deepEqual([stg.name, stg.scheme, stg.android.package, stg.ios.bundleIdentifier], ['SoloTravelSoul Staging', 'solotravelsoul-staging', 'com.solotravelsoul.app.staging', 'com.solotravelsoul.app']);
+  assert.equal(stg.extra.eas.projectId, prod.extra.eas.projectId, 'same EAS project');
+  // Evaluated native config (Expo prebuild introspection; no SDK needed) for the staging build.
+  const c = evaluate('introspect', 'staging');
   const perms = c._internal.modResults.android.manifest.manifest['uses-permission'].map((x) => [x.$['android:name'], x.$['tools:node'] ?? '']);
   const active = perms.filter(([, t]) => t !== 'remove').map(([n]) => n.replace('android.permission.', '')).sort();
   assert.deepEqual(active, ['ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION', 'CAMERA', 'INTERNET', 'POST_NOTIFICATIONS', 'RECEIVE_BOOT_COMPLETED', 'USE_BIOMETRIC', 'USE_FINGERPRINT', 'VIBRATE'], 'merged manifest permissions');
   assert.ok(!(c._internal.modResults.android.gradleProperties || []).some((x) => x.key === 'MAPBOX_DOWNLOADS_TOKEN'), 'no Mapbox token in gradle.properties');
-  assert.equal(c.android.package, 'com.solotravelsoul.app');
+  assert.equal(c.android.package, 'com.solotravelsoul.app.staging');
 });
 
 test('media cache policy is documented truthfully: no recall of already downloaded images', () => {

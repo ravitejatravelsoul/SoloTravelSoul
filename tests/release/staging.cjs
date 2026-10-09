@@ -121,7 +121,7 @@ function fixture({ project = 'sts-staging', workerVarsProject = project, staging
     ...(legacyMode !== null ? [`LEGACY_MEDIA_MODE = "${legacyMode}"`] : []),
     '[env.staging.triggers]', 'crons = ["17 * * * *"]',
   ].join('\n'));
-  fs.writeFileSync(path.join(dir, 'apps/mobile/eas.json'), JSON.stringify({ build: { preview: { environment: 'preview', env: { EXPO_PUBLIC_APP_ENV: previewEnv } } } }));
+  fs.writeFileSync(path.join(dir, 'apps/mobile/eas.json'), JSON.stringify({ build: { preview: { environment: 'preview', env: { EXPO_PUBLIC_APP_ENV: previewEnv, APP_VARIANT: 'staging' } }, production: { env: { EXPO_PUBLIC_APP_ENV: 'production' } } } }));
   return dir;
 }
 function runChecker(dir, extra = []) {

@@ -100,6 +100,9 @@ if (fs.existsSync(easJson)) {
   const eas = JSON.parse(fs.readFileSync(easJson, 'utf8'));
   check(eas.build?.preview?.env?.EXPO_PUBLIC_APP_ENV === 'staging', 'EAS preview profile sets EXPO_PUBLIC_APP_ENV=staging');
   check(eas.build?.preview?.environment === 'preview', 'EAS preview profile reads the "preview" EAS environment');
+  // Distinct staging app (package, label, scheme) via app.config.js; never on production builds.
+  check(eas.build?.preview?.env?.APP_VARIANT === 'staging' && !eas.build?.production?.env?.APP_VARIANT,
+    'EAS preview profile builds the staging app variant (production does not)');
 }
 
 // ── EAS preview environment (optional) ────────────────────────────────────

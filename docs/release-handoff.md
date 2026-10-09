@@ -121,16 +121,16 @@ Checklist: `docs/release-hardening.md` → "Live and native verification checkli
   - package `com.solotravelsoul.app`, with no native Firebase file and no Mapbox token in `gradle.properties`;
   - merged-manifest permissions limited to location (coarse, fine), camera, internet, notifications, boot-completed (local reminders), biometrics and vibrate;
   - restricted media, storage, audio, exact-alarm and overlay (`SYSTEM_ALERT_WINDOW`) permissions are removed.
-- The preview APK uses the production application ID, so it replaces, rather than sits beside, any production install on the same device.
+- The preview build is a separate staging app: `app.config.js` with `APP_VARIANT=staging` (set only by the `preview` profile) gives Android package `com.solotravelsoul.app.staging`, label "SoloTravelSoul Staging" and scheme `solotravelsoul-staging`. It installs beside the production app and has its own EAS-managed keystore; production identifiers and credentials are untouched. Mapbox and Foursquare are pinned off in the `preview` profile.
 
-**Build** (owner approval required; the first run is interactive so EAS can generate and store the Android keystore):
+**Build** (owner approval required). In `--non-interactive` mode EAS generates and stores a new keystore for the staging package itself:
 
 ```
 cd apps/mobile
-npx eas build --profile preview --platform android
+npx eas build --profile preview --platform android --non-interactive
 ```
 
-Answer **Yes** to "Generate a new Android Keystore?". Later runs can add `--non-interactive`. The build runs in the EAS Free queue and ends with an install URL/QR code for the APK.
+Run interactively instead (without `--non-interactive`) to be asked before the keystore is generated. The build runs in the EAS Free queue and ends with an install URL/QR code for the APK.
 
 **Install** on an Android 10+ device: open the URL/QR on the device and allow installing from that source. With a computer and USB debugging: `adb install -r <downloaded.apk>` (Android platform-tools are not installed on this machine).
 
