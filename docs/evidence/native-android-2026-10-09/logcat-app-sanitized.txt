@@ -1,0 +1,11 @@
+--------- beginning of main
+10-09 08:53:44.078 W/ReactNativeJS( 3142): '[2026-10-09T13:53:44.078Z]  @firebase/firestore:', 'Firestore (11.10.0): WebChannelConnection', 'RPC \'Listen\' stream 0x1e8b39c2 transport errored. Name:', undefined, 'Message:', undefined
+--------- beginning of crash
+10-09 08:53:57.758 E/AndroidRuntime(12617): FATAL EXCEPTION: GoogleApiHandler
+10-09 08:53:57.758 E/AndroidRuntime(12617): Process: com.google.android.googlequicksearchbox:search, PID: 12617
+10-09 08:53:57.758 E/AndroidRuntime(12617): DeadSystemException: The system died; earlier logs will point to the root cause
+10-09 08:53:57.787 E/AndroidRuntime( 1600): FATAL EXCEPTION: GoogleApiHandler
+10-09 08:53:57.787 E/AndroidRuntime( 1600): Process: com.google.android.googlequicksearchbox:interactor, PID: 1600
+10-09 08:53:57.787 E/AndroidRuntime( 1600): DeadSystemException: The system died; earlier logs will point to the root cause
+10-09 09:54:04.061 I/ReactNativeJS(14981): Running "main"
+10-09 10:22:12.174 I/ReactNativeJS(19427): Running "main"

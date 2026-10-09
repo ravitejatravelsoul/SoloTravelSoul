@@ -1,0 +1,9 @@
+# G1 abandoned deletion (app force-stopped 15:13:27Z after 1 slice); cron */5 recovery, polled read-only
+# time(UTC) status attempts currentStep completedSteps updatedAt
+15:15:56 in_progress 1 directory 19 2026-10-09T15:13:35.948Z
+15:16:58 in_progress 2 firebaseMedia 23 2026-10-09T15:16:21.476Z
+15:17:59 in_progress 2 firebaseMedia 23 2026-10-09T15:16:21.476Z
+15:19:01 in_progress 2 firebaseMedia 23 2026-10-09T15:16:21.476Z
+15:20:02 in_progress 2 firebaseMedia 23 2026-10-09T15:16:21.476Z
+15:21:05 in_progress 2 firebaseMedia 23 2026-10-09T15:16:21.476Z
+15:22:06 completed 3 None 25 2026-10-09T15:21:10.868Z

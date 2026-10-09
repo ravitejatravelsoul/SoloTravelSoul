@@ -397,7 +397,7 @@ Production is not touched by any step.
 
 ### Live and native verification checklist
 
-Run on two staging accounts (A, B) after the packet is executed. Status at commit time:
+Run on two staging accounts (A, B) after the packet is executed. The table below is the status from an earlier phase. Android native results (2026-10-09, staging APK on an Android 15 emulator) are in `docs/release-handoff.md` section 10, "Native Android verification". Status at commit time:
 
 | Check | Status |
 |---|---|
