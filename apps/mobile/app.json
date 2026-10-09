@@ -47,7 +47,8 @@
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.SCHEDULE_EXACT_ALARM",
         "android.permission.USE_EXACT_ALARM",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW"
       ]
     },
     "plugins": [
@@ -80,12 +81,7 @@
           "faceIDPermission": "Allow SoloTravelSoul to use Face ID for secure sign-in."
         }
       ],
-      [
-        "@rnmapbox/maps",
-        {
-          "RNMapboxMapsDownloadsToken": "$MAPBOX_DOWNLOADS_TOKEN"
-        }
-      ]
+      "@rnmapbox/maps"
     ],
     "experiments": {
       "typedRoutes": true

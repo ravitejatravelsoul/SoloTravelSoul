@@ -694,3 +694,21 @@ Daily limits (Cloudflare and Firebase documentation) and what each operation use
   - Push alerting on log queries or usage thresholds was not set up; whether it is available on the Free plan was not verified.
   - Firestore usage is visible only in the Firebase console's Usage tab.
   - Nothing exhausted a shared quota; quota failures were simulated in tests.
+
+## Android preview preflight (from 8080f07)
+
+- **Native Firebase files:**
+  - Confirmed unused: no `googleServicesFile` in the evaluated config, and no `@react-native-firebase` dependency.
+  - `GOOGLE_SERVICES_JSON` / `GOOGLE_SERVICE_INFO_PLIST` were each one EAS variable linked to production, preview and development. Deleting them would have removed production's copy, so `preview` was **unlinked** instead (`eas env:update … --environment production --environment development`). Production and development keep them with their values unchanged; the variables' update timestamps changed with the environment list.
+- **Mapbox:**
+  - `app.json` passed `{"RNMapboxMapsDownloadsToken": "$MAPBOX_DOWNLOADS_TOKEN"}`. The key is misspelled, so the installed plugin (`@rnmapbox/maps` 10.3.1) ignored it. JSON does not interpolate it either, so a corrected spelling would have written the literal string into `gradle.properties`. The plugin is now listed without options.
+  - The plugin's Maven repository needs no token (credentials are added only if `RNMAPBOX_MAPS_DOWNLOAD_TOKEN` is set).
+  - Runtime Mapbox use is optional (`EXPO_PUBLIC_MAPBOX_ENABLED` plus a public `EXPO_PUBLIC_MAPBOX_TOKEN`; otherwise a placeholder map). Foursquare is optional (`EXPO_PUBLIC_FOURSQUARE_ENABLED`).
+- **Permissions:** `SYSTEM_ALERT_WINDOW` (from Expo's default template; unused; special permission) is now blocked. Expo prebuild introspection shows the merged manifest's active permissions: coarse/fine location, camera, internet, post-notifications, receive-boot-completed, use-biometric, use-fingerprint, vibrate.
+- **Staging checker:**
+  - Now requires the EAS preview Worker URL to equal the staging `MEDIA_PUBLIC_ORIGIN`, the only origin the app attaches tokens to.
+  - Now requires that preview carries no native Google service files.
+  - Full run with current EAS preview values and live staging SDK metadata: **28/28 PASS, exit 0**.
+- **EAS Free:** 0 of 30 builds used this cycle, $0 estimated. No Android build has ever run, so the first build creates the keystore (interactive once). Build and device-test commands: `docs/release-handoff.md` section 10.
+- **Not done:** no build, no device test. Nothing native is claimed from exports or tests.
+

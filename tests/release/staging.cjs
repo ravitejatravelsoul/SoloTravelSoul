@@ -73,7 +73,7 @@ const firebaseVars = (project, number = project === env.PRODUCTION_FIREBASE_PROJ
   EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: `${project}.firebasestorage.app`, EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: number, EXPO_PUBLIC_FIREBASE_APP_ID: `1:${number}:web:abc123`,
 });
 const easLines = (vars) => Object.entries(vars).map(([k, v]) => `${k}=${v}`).join(String.fromCharCode(10));
-const stagingEas = () => ({ ...firebaseVars('sts-staging'), EXPO_PUBLIC_R2_UPLOAD_WORKER_URL: 'https://solotravelsoul-r2-upload-staging.x.workers.dev', EXPO_PUBLIC_STORAGE_PROVIDER: 'r2' });
+const stagingEas = () => ({ ...firebaseVars('sts-staging'), EXPO_PUBLIC_R2_UPLOAD_WORKER_URL: 'https://solotravelsoul-r2-upload-staging.x.workers.dev' });
 const metadataFor = (vars, projectId = vars.EXPO_PUBLIC_FIREBASE_PROJECT_ID) => ({ result: { sdkConfig: {
   projectId, apiKey: vars.EXPO_PUBLIC_FIREBASE_API_KEY, authDomain: vars.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN, storageBucket: vars.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: vars.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID, appId: vars.EXPO_PUBLIC_FIREBASE_APP_ID } } });
@@ -172,6 +172,13 @@ test('checker: isolated staging config passes; any production target fails; valu
   for (const secret of [vars.EXPO_PUBLIC_FIREBASE_API_KEY, vars.EXPO_PUBLIC_FIREBASE_APP_ID, 'sts-staging.firebasestorage']) {
     assert.ok(!verified.out.includes(secret) && !blocked.out.includes(secret), 'no values printed');
   }
+  // Worker URL that differs from MEDIA_PUBLIC_ORIGIN (tokens would not attach to stored media URLs): FAIL.
+  fs.writeFileSync(easFile, easLines({ ...vars, EXPO_PUBLIC_R2_UPLOAD_WORKER_URL: 'https://solotravelsoul-r2-upload-staging.other.workers.dev' }));
+  assert.equal(runChecker(dir, ['--eas-env', easFile, '--firebase-metadata', metaFile]).code, 1, 'media origin mismatch');
+  // Native Google service files in the preview environment: FAIL.
+  fs.writeFileSync(easFile, easLines({ ...vars, GOOGLE_SERVICES_JSON: '/tmp/google-services.json' }));
+  assert.equal(runChecker(dir, ['--eas-env', easFile, '--firebase-metadata', metaFile]).code, 1, 'native Google files in preview');
+  fs.writeFileSync(easFile, easLines(vars));
   // API key from another project (metadata disagrees) or metadata for another project: FAIL.
   fs.writeFileSync(metaFile, JSON.stringify(metadataFor({ ...vars, EXPO_PUBLIC_FIREBASE_API_KEY: 'AIza-other' })));
   assert.equal(runChecker(dir, ['--eas-env', easFile, '--firebase-metadata', metaFile]).code, 1);

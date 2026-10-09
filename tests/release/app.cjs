@@ -75,6 +75,38 @@ test('stored staging media URLs keep authenticating; the Firebase token is never
   assert.match(toml, new RegExp(`MEDIA_PUBLIC_ORIGIN = "${STAGING.replace(/[.]/g, '\\.')}"`));
 });
 
+test('Android preview configuration: staging profile, no native Firebase files, Mapbox/Foursquare optional, restricted permissions blocked', () => {
+  const { spawnSync } = require('child_process');
+  const app = JSON.parse(fs.readFileSync(path.join(root, 'apps/mobile/app.json'), 'utf8')).expo;
+  const eas = JSON.parse(fs.readFileSync(path.join(root, 'apps/mobile/eas.json'), 'utf8'));
+  const preview = eas.build.preview;
+  assert.deepEqual([preview.distribution, preview.android.buildType, preview.environment, preview.env.EXPO_PUBLIC_APP_ENV], ['internal', 'apk', 'preview', 'staging']);
+  assert.ok(!app.android.googleServicesFile && !app.ios.googleServicesFile, 'no native Firebase files are consumed');
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'apps/mobile/package.json'), 'utf8'));
+  assert.ok(!Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).some((d) => d.startsWith('@react-native-firebase/')), 'no native Firebase SDK');
+  // @rnmapbox/maps: no token option in app config (the Maven repo needs none; a token, if ever
+  // needed, comes from the RNMAPBOX_MAPS_DOWNLOAD_TOKEN build secret, never from app.json).
+  const mapbox = app.plugins.find((p) => (Array.isArray(p) ? p[0] : p) === '@rnmapbox/maps');
+  assert.equal(mapbox, '@rnmapbox/maps');
+  assert.ok(!/MAPBOX_DOWNLOADS_TOKEN|DownloadsToken|DownloadToken/.test(fs.readFileSync(path.join(root, 'apps/mobile/app.json'), 'utf8')));
+  for (const p of ['SYSTEM_ALERT_WINDOW', 'READ_MEDIA_IMAGES', 'READ_MEDIA_VIDEO', 'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE', 'SCHEDULE_EXACT_ALARM', 'USE_EXACT_ALARM', 'RECORD_AUDIO']) {
+    assert.ok(app.android.blockedPermissions.includes(`android.permission.${p}`), `${p} blocked`);
+  }
+  // Optional features stay off without their keys.
+  for (const [file, flag] of [['apps/mobile/services/mapProvider.ts', "EXPO_PUBLIC_MAPBOX_ENABLED === 'true'"], ['apps/mobile/services/foursquareService.ts', "EXPO_PUBLIC_FOURSQUARE_ENABLED === 'true'"]]) {
+    assert.ok(fs.readFileSync(path.join(root, file), 'utf8').includes(flag), `${file} gated by ${flag}`);
+  }
+  // Evaluated native config (Expo prebuild introspection; no SDK needed).
+  const r = spawnSync(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['expo', 'config', '--type', 'introspect', '--json'], { cwd: path.join(root, 'apps/mobile'), encoding: 'utf8', shell: process.platform === 'win32', maxBuffer: 64 * 1024 * 1024 });
+  assert.equal(r.status, 0, 'expo config introspection');
+  const c = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  const perms = c._internal.modResults.android.manifest.manifest['uses-permission'].map((x) => [x.$['android:name'], x.$['tools:node'] ?? '']);
+  const active = perms.filter(([, t]) => t !== 'remove').map(([n]) => n.replace('android.permission.', '')).sort();
+  assert.deepEqual(active, ['ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION', 'CAMERA', 'INTERNET', 'POST_NOTIFICATIONS', 'RECEIVE_BOOT_COMPLETED', 'USE_BIOMETRIC', 'USE_FINGERPRINT', 'VIBRATE'], 'merged manifest permissions');
+  assert.ok(!(c._internal.modResults.android.gradleProperties || []).some((x) => x.key === 'MAPBOX_DOWNLOADS_TOKEN'), 'no Mapbox token in gradle.properties');
+  assert.equal(c.android.package, 'com.solotravelsoul.app');
+});
+
 test('media cache policy is documented truthfully: no recall of already downloaded images', () => {
   const src = fs.readFileSync(path.join(root, 'apps/mobile/hooks/useMediaSource.ts'), 'utf8');
   assert.match(src, /cannot recall copies a device has already downloaded/);

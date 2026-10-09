@@ -120,6 +120,13 @@ if (easFile) {
   check(e.EXPO_PUBLIC_FIREBASE_PROJECT_ID === stagingProject, 'EAS preview EXPO_PUBLIC_FIREBASE_PROJECT_ID matches the staging alias');
   const host = (() => { try { return new URL(e.EXPO_PUBLIC_R2_UPLOAD_WORKER_URL ?? '').hostname; } catch { return ''; } })();
   check(host.startsWith(`${staging.name}.`), 'EAS preview EXPO_PUBLIC_R2_UPLOAD_WORKER_URL is the staging Worker');
+  // The app attaches the ID token only to `<EXPO_PUBLIC_R2_UPLOAD_WORKER_URL>/media/…`, and the
+  // Worker generates media URLs from MEDIA_PUBLIC_ORIGIN: they must be the same origin.
+  const norm = (u) => String(u ?? '').replace(/\/+$/, '');
+  check(norm(e.EXPO_PUBLIC_R2_UPLOAD_WORKER_URL) === norm(stagingVars.MEDIA_PUBLIC_ORIGIN),
+    'EAS preview Worker URL equals the staging MEDIA_PUBLIC_ORIGIN (authenticated media)');
+  // The app uses the Firebase JS SDK only; native Google service files must not reach preview builds.
+  check(!('GOOGLE_SERVICES_JSON' in e) && !('GOOGLE_SERVICE_INFO_PLIST' in e), 'EAS preview has no native Google service files');
 
   // ── Resource ownership: only trusted Firebase metadata can prove the API
   // key and app belong to the staging project; non-empty values do not.

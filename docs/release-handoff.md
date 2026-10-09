@@ -30,7 +30,7 @@ Technical detail and test evidence: `docs/release-hardening.md` (latest section:
 
 - Served by the Worker at `GET /account-deletion` (in-app steps, email request, what is deleted and kept). Operator fulfilment: `POST /admin/account-deletion` with the `ADMIN_DELETION_TOKEN` secret.
 - Production URL to enter in Play Console: `https://<production worker host>/account-deletion`. It must be reachable on the production Worker **after** the Worker with KV/D1 bindings is deployed. Verify it on a phone browser first.
-- Staging URL (for testing only): `https://solotravelsoul-r2-upload-staging.<workers.dev subdomain>/account-deletion`, available after the staging deploy.
+- Staging URL (for testing only, live): `https://solotravelsoul-r2-upload-staging.ravitejatravelsoul.workers.dev/account-deletion`.
 - Privacy contact used in the app and page: `privacy@solotravelsoul.app`. Confirm that the mailbox exists and is monitored.
 
 ## 3. Store privacy answers (draft)
@@ -72,7 +72,7 @@ Read-only inventory, made with the logged-in Firebase CLI account (counts only):
 | Production Firebase Storage `solotravelsoul-57a9e.firebasestorage.app` | bucket readable by the owner account; **2 objects, both under `profile_images/`** |
 | Production `solotravelsoul-57a9e.appspot.com` | bucket does not exist (404) |
 | Staging `solotravelsoul-staging.firebasestorage.app` / `.appspot.com` | do not exist (404): never provisioned |
-| Production legacy R2 `solotravelsoul-images` | **BLOCKED**: Wrangler is not logged in |
+| Production legacy R2 `solotravelsoul-images` | not inventoried: Wrangler access exists, but a production R2 listing has not been authorized in any phase so far |
 
 The two `profile_images/*.jpg` objects stay **unresolved** until their deletion is independently verified by a fresh listing. Separate, approval-gated steps (none run):
 
@@ -86,13 +86,19 @@ The two `profile_images/*.jpg` objects stay **unresolved** until their deletion 
 
 ## 8. Native and live verification
 
-Checklist and current status: `docs/release-hardening.md` → "Live and native verification checklist". Every item is BLOCKED at commit time: there are no devices, Android SDK, macOS, staging deployment or Wrangler login. Builds exported with `expo export` are not proof of native UI behaviour.
+Checklist: `docs/release-hardening.md` → "Live and native verification checklist". The staging backend is deployed and live-verified (section 0). Every **native** item is still BLOCKED: no native build has run, and no Android device/emulator or macOS is available here. Builds exported with `expo export` and mocked tests are not proof of native UI behaviour. Build and device commands: section 10.
 
 ## 9. Consolidated remaining blockers (owner actions)
 
-1. **Native Firebase files:** the app build uses the Firebase JS SDK only and references no native Firebase files. The local and EAS `preview` `GOOGLE_SERVICES_JSON` / `GOOGLE_SERVICE_INFO_PLIST` belong to production (`solotravelsoul-57a9e`); approve removing the two `preview` file variables so no staging build can carry them.
-2. **Preview keys:** Mapbox/Foursquare keys (and `MAPBOX_DOWNLOADS_TOKEN` as a secret) are not in EAS `preview`; the owner provides them.
-3. **Build approval:** an EAS Android preview build has not been approved and has not been run. iOS device builds need a paid Apple Developer membership, outside the no-paid-plans constraint.
+1. **Native Firebase files: resolved for preview.** The app uses the Firebase JS SDK only (no `googleServicesFile`, no `@react-native-firebase`). `GOOGLE_SERVICES_JSON` / `GOOGLE_SERVICE_INFO_PLIST` were single EAS variables shared by production, preview and development. `preview` was unlinked; production and development keep them (values unchanged).
+2. **Preview keys (optional):**
+   - **Not required for a preview build.** `@rnmapbox/maps` 10.3.1 downloads the Android SDK without a token, and app config no longer passes one (the old option was misspelled and ignored).
+   - **Mapbox maps:** without `EXPO_PUBLIC_MAPBOX_ENABLED=true` and a public `EXPO_PUBLIC_MAPBOX_TOKEN`, the app shows its placeholder map. To test Mapbox maps on a device, the owner adds both to EAS `preview`.
+   - **Foursquare:** stays off unless `EXPO_PUBLIC_FOURSQUARE_ENABLED=true` (with `EXPO_PUBLIC_FOURSQUARE_API_KEY`); it is not needed.
+3. **Build approval:** the Android preview build is prepared but not run.
+   - **Cost:** EAS Free plan, 0 of 30 builds used in the cycle ending 2026-11-01, no overage or add-ons, so one build costs nothing.
+   - **First build:** it must create the EAS-managed Android keystore, so run it interactively once (section 10).
+   - **iOS:** device builds need a paid Apple Developer membership, outside the no-paid-plans constraint.
 4. **Device testing:** no Android device/emulator or macOS is available here. The native checklist (authenticated image loading, token refresh/account switching, native caching, uploads, large groups, moderation, suspension, deletion continuation/blocked/recovery) is BLOCKED.
 5. **Legacy production media:** the 2 `profile_images/*.jpg` objects in production Storage stay unresolved until deleted and verified by a fresh listing (section 6); the legacy R2 inventory is not taken.
 6. **Moderators and response targets:** none appointed; at least two are needed before submission.
@@ -105,3 +111,45 @@ Checklist and current status: `docs/release-hardening.md` → "Live and native v
    - a decision on the production cron.
 10. **Quota ceilings to accept or plan for on Free/Spark:** about 1,000 uploads/day (KV writes), about 1,000 media deletions/day (KV deletes; the excess completes the next day), about 17,000–25,000 media views/day (Firestore reads), 100,000 API calls/day.
 11. **Housekeeping:** rotate the staging admin token; delete the disposable staging test accounts.
+
+## 10. Android preview build and device test (prepared; not run)
+
+**Prerequisites (verified):**
+- EAS `preview` holds exactly the eight `EXPO_PUBLIC_*` staging values (Firebase web config from the staging project, Worker URL = media origin).
+- `npm run check:staging -- --eas-env <pulled preview> --firebase-metadata <staging SDK config>`: 28/28 PASS.
+- **Evaluated Android config:**
+  - package `com.solotravelsoul.app`, with no native Firebase file and no Mapbox token in `gradle.properties`;
+  - merged-manifest permissions limited to location (coarse, fine), camera, internet, notifications, boot-completed (local reminders), biometrics and vibrate;
+  - restricted media, storage, audio, exact-alarm and overlay (`SYSTEM_ALERT_WINDOW`) permissions are removed.
+- The preview APK uses the production application ID, so it replaces, rather than sits beside, any production install on the same device.
+
+**Build** (owner approval required; the first run is interactive so EAS can generate and store the Android keystore):
+
+```
+cd apps/mobile
+npx eas build --profile preview --platform android
+```
+
+Answer **Yes** to "Generate a new Android Keystore?". Later runs can add `--non-interactive`. The build runs in the EAS Free queue and ends with an install URL/QR code for the APK.
+
+**Install** on an Android 10+ device: open the URL/QR on the device and allow installing from that source. With a computer and USB debugging: `adb install -r <downloaded.apk>` (Android platform-tools are not installed on this machine).
+
+**Device test (two disposable staging accounts, A and B; one moderator account granted with `npx tsx scripts/grantModerator.ts --project solotravelsoul-staging --uid <M> --apply`):** run the "Live and native verification checklist" in `docs/release-hardening.md` and record PASS/FAIL with screenshots:
+1. **Sign-up and sign-in:** check the staging banner/environment (Firebase project `solotravelsoul-staging`).
+2. **Authenticated images:**
+   - A uploads a profile photo and a post photo.
+   - B sees them only once the post is public.
+   - A makes the post private: B's next load fails. (Copies cached on the device may still show; that is expected and documented.)
+3. **Token refresh and account switching:**
+   - Keep the app open for more than 1 hour and confirm images still load.
+   - Sign out of A, sign in as B, and confirm no A-only image is shown.
+4. **Uploads:** a photo over 2 MB is rejected with the size message; a normal photo succeeds.
+5. **Large groups:** create a group with 10 or more members; all appear; the group stays hidden until creation completes.
+6. **Moderation:** three reports hide a post (`under_review`); the moderator removes it; the media stops loading for others.
+7. **Suspension:** the moderator suspends B, so B cannot post or upload; unsuspending restores this.
+8. **Deletion:**
+   - A deletes the account (password re-entry; progress shown) and the app signs out.
+   - B sees "Deleted User" in chats and comments.
+   - Abandon a second account's deletion mid-way (close the app); confirm the staging cron finishes it within about an hour (`GET /admin/deletion-status`).
+9. **Health check afterwards:** `node scripts/stagingUsage.cjs` (with `STS_ADMIN_TOKEN` for stalled deletions).
+
