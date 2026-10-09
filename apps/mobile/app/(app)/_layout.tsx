@@ -65,7 +65,6 @@ export default function AppLayout() {
 
   return (
     <View style={styles.root}>
-      {!isConnected && <OfflineBanner />}
       <Tabs
       screenListeners={{ tabPress: () => haptics.selection() }}
       screenOptions={{
@@ -182,6 +181,7 @@ export default function AppLayout() {
       <Tabs.Screen name="journal/create" options={{ href: null }} />
       <Tabs.Screen name="journal/[journalId]" options={{ href: null }} />
     </Tabs>
+      {!isConnected && <OfflineBanner overlay />}
     </View>
   );
 }

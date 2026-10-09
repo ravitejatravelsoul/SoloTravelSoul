@@ -233,6 +233,12 @@ test('native Android findings (staging APK, 2026-10-09) stay fixed', () => {
   assert.deepEqual(sources.filter(([, s]) => /(push|replace|navigate)\(\s*['"`][^'"`]*\/index['"`]/.test(s)).map(([p]) => p), []);
   // Android 15 is edge-to-edge: the window no longer resizes for the keyboard, so avoidance must stay on.
   assert.deepEqual(sources.filter(([, s]) => /'padding'\s*:\s*undefined/.test(s)).map(([p]) => p), []);
+  // The global offline banner overlays the status bar instead of pushing the tabs down
+  // (a shifted parent made keyboard avoidance fall short by the banner's height).
+  const layout = read('app/(app)/_layout.tsx');
+  assert.match(layout, /<\/Tabs>\s*\{!isConnected && <OfflineBanner overlay \/>\}/);
+  assert.ok(!/<OfflineBanner \/>\s*<Tabs/.test(layout));
+  assert.match(read('components/ui/OfflineBanner.tsx'), /overlay: \{\s*position: 'absolute',/);
   // Composer: a shared post clears the form (the screen stays mounted); a refused post is reported.
   const create = read('app/(app)/post/create.tsx');
   assert.match(create, /if \(postId\) \{[\s\S]*setImages\(\[\]\);[\s\S]*setCaption\(''\);[\s\S]*router\.replace/);
