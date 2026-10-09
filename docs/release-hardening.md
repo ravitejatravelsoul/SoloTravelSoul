@@ -599,3 +599,98 @@ The front Worker stays at 0–2 ms CPU (p99 2.44 ms in analytics, cold invocatio
 4. **Monitoring:** alert on the Free daily limits (100,000 Worker requests, 100,000 object requests, 13,000 GB-s) and on 503 `service/unavailable` from the front. Turn `LOG_BUDGET` off outside staging.
 5. **Tests:** add an emulator-level end-to-end test through the front and object entry. Today the front is unit-tested (`tests/release/edge.cjs`) and the shared handlers by the existing suites.
 6. **Unchanged blockers:** the Firestore Spark read quota (≈ 17,000–25,000 views/day), native/device checks, EAS build approval, and the owner decisions in `docs/release-handoff.md`.
+
+## Consolidated staging on the Durable Object host (from b42a2d7)
+
+### Final staging topology
+
+- **One canonical staging API/media host:** `https://solotravelsoul-r2-upload-staging.ravitejatravelsoul.workers.dev` (Worker `solotravelsoul-r2-upload-staging`, `wrangler.toml` `[env.staging]`, `main = "src/edge.ts"`). It keeps the existing hostname, so every stored media URL stays valid. `MEDIA_PUBLIC_ORIGIN`, the EAS `preview` `EXPO_PUBLIC_R2_UPLOAD_WORKER_URL` and generated media URLs are all this one origin. The app attaches the Firebase ID token only to `<that origin>/media/…`; tests cover look-alike hosts, a downgraded scheme, userinfo tricks, the retired proof host and the production host.
+- **Front:**
+  - Serves the static deletion page.
+  - Answers 404 for anything outside the public-route allowlist (including `/maintenance` and other internal paths).
+  - Forwards allowed requests unread to SQLite-backed Durable Objects `api-0` … `api-7` (names chosen by the server).
+  - If an object is unavailable it fails closed with 503 `no-store` and logs `service_unavailable`.
+- **Objects (`ApiShard`):** authenticate and run the existing handlers. Firestore barriers, authorization, fenced leases, counters, KV/D1 gates and cleanup guarantees are the same code as before.
+- **Maintenance:** cron `*/5 * * * *` calls the fixed `maintenance` object by RPC only and runs all phases each run (`CRON_ALL_PHASES`). This is now the **only** staging maintenance schedule: the proof Worker and its cron are deleted. The production section of `wrangler.toml` is unchanged (plain Worker, hourly cron, R2 binding, no Durable Object) and was not deployed.
+- **Workers Logs** are enabled for staging (`[env.staging.observability]`).
+- **Bindings:** KV `staging-MEDIA_KV`, D1 `solotravelsoul-media-staging`, Firebase project `solotravelsoul-staging`, Durable Object class `ApiShard` (migration `v1`, env-scoped).
+- **Active credentials:**
+  - **One** staging service-account key (`sts-staging-deleter…`, key ID ending `615e6b`), used only by this Worker's `GOOGLE_SERVICE_ACCOUNT_JSON`. The proof Worker's key (ending `0b4253`) was revoked after that Worker was deleted.
+  - The staging `ADMIN_DELETION_TOKEN` was rotated in this phase for the live checks. **The owner must rotate it again and keep it in a password manager.**
+
+### Rollback (verified live before the proof Worker was retired)
+
+- **Switch:** `cd workers/r2-upload-worker && npx wrangler deploy --env staging --var API_HOST_MODE:worker` makes the same Worker run the handlers directly. That is the pre-consolidation behaviour, one maintenance phase per cron run.
+- **Why a switch:** the `ApiShard` class stays exported, so rollback never changes Durable Object migrations. Cloudflare does not allow version rollback across a migration, so `wrangler rollback` to the pre-consolidation version is not the path.
+- **Return:** `npx wrangler deploy --env staging` (without the `--var`).
+- **Verified:**
+  - Worker mode (version `052b8221…`): smoke checks and 8/8 live media checks passed.
+  - Object mode restored (`c3c4d59a…`).
+  - The end-to-end test also covers worker mode.
+- **Current version:** `b228b58f…` (redeployed during the restart test).
+
+### Verification (this phase)
+
+| Check | Result |
+|---|---|
+| `npm run test:release` | PASS: queues 13, deletion 65/65, media 15/15, edge 6/6, app 7/7, staging 6/6 |
+| `npm run test:rules` (Firestore, Storage, Auth emulators) | PASS: rules 82, deletion 52/52, media 11/11, **end-to-end 7/7** |
+| End-to-end (`tests/release/e2e.cjs`) | The real front Worker and SQLite Durable Objects in workerd (Miniflare), local KV/D1, Firestore/Auth/Storage emulators: internal-route denial, unauthorized requests, authenticated upload/view, deletion across many slices, concurrent deletion attempts, maintenance recovery through the cron entry (RPC), rollback mode |
+| Type checks / lint | PASS / 0 errors (warnings unchanged) |
+| Staging isolation | `check:staging` all PASS; full EAS + metadata check passed earlier (26/26) and the EAS values are unchanged |
+| Live, canonical host (disposable accounts) | 22/22: 12 stored pre-consolidation media URLs authorize correctly; media (8/8 incl. direct client privacy change, report auto-hide, moderator removal, profile replacement); two-account deletion with B's retained data verified; large account (11 invocations, exact counters); concurrency (10 parallel uploads, 40 parallel views, simultaneous deletion starts → 202 + 409, completed once) |
+| Live restart | redeploy during a large deletion: the run continued (11 invocations, no failed request), verified |
+| Live unattended recovery | account CR2 abandoned after one slice at 02:21:20 UTC and finished by the single `*/5` schedule alone: completed after 12 attempts, about 55 minutes (data, Auth and 21 media rows removed). The first verification attempt failed on a transient `wrangler d1 execute` subprocess error; the re-check passed |
+
+**Measured on the final host** (Cloudflare tail; front and object separately):
+
+| Host | Route | Samples | CPU median | CPU max | Wall median |
+|---|---|---|---|---|---|
+| front | view | 28 | 1 ms | 2 ms | 0.27 s |
+| front | upload | 17 | 1 ms | 1 ms | 0.48 s |
+| front | deletion | 11 | 1 ms | 1 ms | 2.5 s |
+| front | cron | 12 | 0 ms | 0 ms | 12.9 s |
+| object | view | 39 | 2 ms | 5 ms | 0.18 s |
+| object | upload | 17 | 2 ms | 4 ms | 0.42 s |
+| object | deletion slice (≤ 38 subrequests, ≤ 14 D1 queries) | 11 | 19 ms | 26 ms | 2.5 s |
+| object | cron, all phases (≤ 40 subrequests, ≤ 28 D1 queries) | 12 | 20 ms | 25 ms | 12.9 s |
+
+All outcomes were `ok`. Cloudflare analytics for the 1.3 h after consolidation (`scripts/stagingUsage.cjs --hours 1.3`): 434 Worker requests, 390 object requests, ≈ 40 GB-s; 0 Worker errors, 0 object errors, 0 exceeded-CPU or exceeded-memory, 0 stalled deletions. Front CPU p99 was 7.17 ms; that window includes the rollback-mode test traffic, when the handlers ran in the Worker. KV: 98 writes and 105 deletes in that burst of tests. Over the last 24 h, KV writes were 192 (19% of the daily 1,000).
+
+### Free-plan ceilings and expected delays
+
+Daily limits (Cloudflare and Firebase documentation) and what each operation uses (measured):
+
+| Resource (Free/Spark per day) | Limit | Upload | View | Deletion |
+|---|---|---|---|---|
+| Worker requests | 100,000 | 1 | 1 | 1 per slice |
+| Durable Object requests | 100,000 | 1 | 1 | 1 per slice (+ 288 cron runs/day) |
+| Durable Object duration | 13,000 GB-s (128 MB × active time incl. I/O waits) | ≈ 0.05 GB-s | ≈ 0.02 GB-s | ≈ 0.32 GB-s per slice; cron ≈ 1.7 GB-s per run (≈ 480/day) |
+| KV writes / deletes | **1,000 / 1,000** | 1 write | – | 1 delete per media object |
+| KV reads | 100,000 | – | 1 | – |
+| D1 rows read / written | 5,000,000 / 100,000 | ≈ 2 written | ≈ 2 read | a few per media object |
+| Firestore (Spark) reads / writes / deletes | **50,000** / 20,000 / 20,000 | ≈ 4 reads | ≈ 2–3 reads | tens to hundreds per account |
+
+**Binding ceilings** (estimates from the table, not load-tested):
+- **Uploads:** about **1,000/day** (KV writes).
+- **Media cleanup:** about 1,000 objects/day (KV deletes). Beyond that, deletions stay queued (`kv_delete_pending`) and complete the next UTC day; they are never reported as deleted.
+- **Views:** about 17,000–25,000/day (Firestore reads).
+- **Request ceilings:** 100,000 API calls/day.
+
+**Expected delays:**
+- **User-driven deletion** finishes in seconds to about a minute (a large test account took 11 requests).
+- **Unattended deletion** (the user leaves) advances one slice per job per 5-minute cron run. A large account needs about an hour, and resume-cursor rotation can add one run.
+- **Stalled reporting:** deletions are reported as stalled after 6 hours.
+- **Late-media sweeps** run each cron for 24 hours after a deletion.
+
+### Monitoring available on Free
+
+- **Workers Logs** (enabled for staging). Query the structured events: `service_unavailable` (front 503), `maintenance_unavailable`, `account_deletion_stalled`, `deletion_sweep_failed`, and the `budget` lines.
+- **`scripts/stagingUsage.cjs`** (read-only):
+  - Worker and Durable Object requests and errors, front CPU p99, object exceeded-CPU/memory, duration GB-s, D1 rows and KV operations, each against the Free daily limits.
+  - Stalled deletions and unresolved legacy media (with the admin token).
+  - Exits non-zero at ≥ 80% of a limit, on errors or on stalled deletions. Run it daily by hand or from any scheduler the owner already has.
+- **Not available here:**
+  - Push alerting on log queries or usage thresholds was not set up; whether it is available on the Free plan was not verified.
+  - Firestore usage is visible only in the Firebase console's Usage tab.
+  - Nothing exhausted a shared quota; quota failures were simulated in tests.

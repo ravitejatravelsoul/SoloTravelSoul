@@ -93,14 +93,33 @@ test('cron reaches maintenance only through RPC on the fixed maintenance object'
   assert.ok(!/formData\(|\.json\(\)|\.text\(\)|arrayBuffer\(|verifyFirebaseToken/.test(src.split('export default')[1]), 'front does no body parsing or token verification');
 });
 
-test('proof config is staging-only and isolated from production and the existing staging Worker', () => {
-  const t = fs.readFileSync(path.join(root, 'workers/r2-upload-worker/wrangler.do-staging.toml'), 'utf8');
-  assert.match(t, /^name = "solotravelsoul-api-do-staging"/m);
-  assert.match(t, /new_sqlite_classes = \["ApiShard"\]/);
-  assert.match(t, /FIREBASE_PROJECT_ID = "solotravelsoul-staging"/);
-  assert.ok(!/solotravelsoul-57a9e|r2_buckets|"solotravelsoul-r2-upload"$/m.test(t), 'no production resource');
-  const main = fs.readFileSync(path.join(root, 'workers/r2-upload-worker/wrangler.toml'), 'utf8');
-  assert.ok(!/durable_objects|migrations\]\]/.test(main), 'existing Worker config unchanged (no Durable Objects)');
+test('staging is the Durable Object host on its existing hostname; production config has no Durable Object; one schedule', () => {
+  const toml = fs.readFileSync(path.join(root, 'workers/r2-upload-worker/wrangler.toml'), 'utf8');
+  const [prod, staging] = toml.split('[env.staging]');
+  const settings = (t) => t.split(/\r?\n/).filter((l) => !l.trim().startsWith('#')).join('\n');
+  assert.ok(!/durable_objects|migrations|edge\.ts/.test(settings(prod)), 'production section unchanged: plain Worker, no Durable Object');
+  assert.match(settings(prod), /^main\s*=\s*"src\/index\.ts"/m);
+  assert.match(staging, /^name = "solotravelsoul-r2-upload-staging"/m, 'existing staging hostname kept');
+  assert.match(staging, /^main = "src\/edge\.ts"/m);
+  assert.match(staging, /\[\[env\.staging\.durable_objects\.bindings\]\]\s*name = "API"\s*class_name = "ApiShard"/);
+  assert.match(staging, /\[\[env\.staging\.migrations\]\]\s*tag = "v1"\s*new_sqlite_classes = \["ApiShard"\]/);
+  assert.equal((staging.match(/crons = \[/g) || []).length, 1, 'exactly one staging schedule');
+  assert.ok(!fs.existsSync(path.join(root, 'workers/r2-upload-worker/wrangler.do-staging.toml')), 'proof config retired');
+});
+
+test('emulator wiring is ignored for anything but demo-* projects; emulator tokens are refused elsewhere', () => {
+  const index = load('index', { 'cloudflare:workers': { DurableObject } });
+  const hosts = { FIRESTORE_EMULATOR_HOST: '127.0.0.1:8188', FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9189', STORAGE_EMULATOR_HOST: '127.0.0.1:9188' };
+  assert.deepEqual(index.emulatorsFor({ FIREBASE_PROJECT_ID: 'solotravelsoul-staging', ...hosts }), {});
+  assert.deepEqual(index.emulatorsFor({ FIREBASE_PROJECT_ID: 'solotravelsoul-57a9e', ...hosts }), {});
+  assert.deepEqual(index.emulatorsFor({ FIREBASE_PROJECT_ID: 'demo-x', ...hosts }), { firestore: hosts.FIRESTORE_EMULATOR_HOST, auth: hosts.FIREBASE_AUTH_EMULATOR_HOST, storage: hosts.STORAGE_EMULATOR_HOST });
+  const auth = load('auth', {});
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  const tok = (project) => `${enc({ alg: 'none' })}.${enc({ iss: `https://securetoken.google.com/${project}`, aud: project, sub: 'u', exp: now + 600, auth_time: now })}.`;
+  assert.throws(() => auth.verifyEmulatorToken(tok('solotravelsoul-staging'), 'solotravelsoul-staging'), /demo projects/);
+  assert.equal(auth.verifyEmulatorToken(tok('demo-x'), 'demo-x').uid, 'u');
+  assert.throws(() => auth.verifyEmulatorToken(tok('demo-y'), 'demo-x'), /issuer|audience/);
 });
 
 (async () => {

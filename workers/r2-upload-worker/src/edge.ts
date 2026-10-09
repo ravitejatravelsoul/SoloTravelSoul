@@ -1,4 +1,4 @@
-// Durable Object host (staging feasibility proof; see wrangler.do-staging.toml).
+// Durable Object host for the staging API/media Worker (wrangler.toml [env.staging]).
 //
 // The public Worker stays thin: it serves the static deletion page, rejects
 // unknown routes and forwards every API request unread (no body parsing, no
@@ -14,6 +14,11 @@
 // media id; other routes on the token's unverified `sub` claim (routing only —
 // the object verifies the token), so one account's requests share an object
 // and no single object serializes all traffic.
+//
+// Rollback without a Durable Object migration: API_HOST_MODE = "worker" runs
+// the same handlers directly in this Worker (the pre-consolidation behaviour,
+// one maintenance phase per cron run). The class stays exported, so switching
+// back and forth never changes the Durable Object migrations.
 
 import { DurableObject } from 'cloudflare:workers';
 import { accountDeletionPage } from './deletionPage';
@@ -25,7 +30,11 @@ export interface EdgeEnv extends Env {
   API_SHARDS?: string;
   /** "1": the maintenance object runs every phase per cron run (no 10 ms limit inside the object). */
   CRON_ALL_PHASES?: string;
+  /** "object" (default) or "worker" (rollback: handle requests and cron in this Worker). */
+  API_HOST_MODE?: string;
 }
+
+const workerMode = (env: EdgeEnv) => env.API_HOST_MODE === 'worker';
 
 export class ApiShard extends DurableObject<EdgeEnv> {
   override async fetch(request: Request): Promise<Response> {
@@ -93,12 +102,15 @@ export default {
     if (!PUBLIC_ROUTES.some(([m, re]) => m === request.method && re.test(pathname))) {
       return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: { 'Content-Type': 'application/json', ...noStore } });
     }
+    if (workerMode(env)) return handleFetch(request, env);
     const shards = Math.min(64, Math.max(1, Number(env.API_SHARDS) || 8));
     const name = objectNameFor(request.method, pathname, request.headers.get('Authorization'), shards);
     try {
       return await env.API.get(env.API.idFromName(name)).fetch(request);
-    } catch {
-      // Object unavailable (overload, reset, quota): fail closed, nothing served.
+    } catch (e) {
+      // Object unavailable (overload, reset, daily limit): fail closed, nothing served.
+      // Structured log for monitoring (no identifiers).
+      console.error(JSON.stringify({ event: 'service_unavailable', object: name, reason: String((e as Error)?.message ?? e).slice(0, 120) }));
       return new Response(JSON.stringify({ error: 'Service temporarily unavailable.', code: 'service/unavailable' }), {
         status: 503, headers: { 'Content-Type': 'application/json', 'Retry-After': '5', ...noStore },
       });
@@ -106,6 +118,14 @@ export default {
   },
 
   async scheduled(event: ScheduledController, env: EdgeEnv, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(env.API.get(env.API.idFromName('maintenance')).maintenance(event.scheduledTime));
+    if (workerMode(env)) {
+      ctx.waitUntil(runScheduled(event.scheduledTime, env));
+      return;
+    }
+    ctx.waitUntil(
+      env.API.get(env.API.idFromName('maintenance')).maintenance(event.scheduledTime).catch((e: unknown) => {
+        console.error(JSON.stringify({ event: 'maintenance_unavailable', reason: String((e as Error)?.message ?? e).slice(0, 120) }));
+      })
+    );
   },
 };

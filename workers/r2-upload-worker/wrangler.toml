@@ -39,9 +39,31 @@ crons = ["17 * * * *"]
 #   wrangler secret put ADMIN_DELETION_TOKEN --env staging
 [env.staging]
 name = "solotravelsoul-r2-upload-staging"
+# Canonical staging API/media host. The public Worker is a thin front
+# (src/edge.ts): it forwards API routes unread to a fixed set of SQLite-backed
+# Durable Objects, which authenticate and run the handlers (Workers Free: the
+# front stays far below 10 ms CPU; objects have 30 s per request). Cron reaches
+# one fixed maintenance object by RPC. Rollback without changing migrations:
+#   npx wrangler deploy --env staging --var API_HOST_MODE:worker
+# (handlers run in this Worker again; deploy without --var to return).
+main = "src/edge.ts"
 # Reachable on workers.dev only; no per-version preview URLs.
 workers_dev = true
 preview_urls = false
+
+[[env.staging.durable_objects.bindings]]
+name = "API"
+class_name = "ApiShard"
+
+# Workers Free supports only SQLite-backed Durable Objects.
+[[env.staging.migrations]]
+tag = "v1"
+new_sqlite_classes = ["ApiShard"]
+
+# Workers Logs (free tier): structured events such as service_unavailable,
+# maintenance_unavailable, account_deletion_stalled and deletion_sweep_failed.
+[env.staging.observability]
+enabled = true
 
 # Media on Workers Free: bytes in KV, index in D1 (see migrations/).
 #   wrangler kv namespace create MEDIA_KV --env staging
@@ -60,13 +82,20 @@ migrations_dir = "migrations"
 [env.staging.vars]
 FIREBASE_PROJECT_ID = "solotravelsoul-staging"
 FIREBASE_STORAGE_BUCKET = "solotravelsoul-staging.firebasestorage.app"
-# Canonical origin for media URLs (https://<staging worker host>); cron media cleanup needs it.
+# Canonical origin for media URLs: this Worker's own origin (stored URLs stay valid).
 MEDIA_PUBLIC_ORIGIN = "https://solotravelsoul-r2-upload-staging.ravitejatravelsoul.workers.dev"
 # Staging never had legacy media (see above). Refused by the Worker for production.
 LEGACY_MEDIA_MODE = "none"
 # Logs per-invocation subrequest and D1 query counts (no IDs or tokens) for measurement.
 LOG_BUDGET = "1"
+API_SHARDS = "8"
+# Inside the objects the 50-subrequest cap still applies; allowances are sized
+# to it (in API_HOST_MODE "worker" these still bound each invocation's work).
+SLICE_WORK_UNITS = "40"
+CRON_WORK_UNITS = "40"
+# The maintenance object runs every phase on each cron run.
+CRON_ALL_PHASES = "1"
 
-# Every 5 minutes: under the 10 ms CPU limit each run does one maintenance phase.
+# The only staging maintenance schedule (every 5 minutes).
 [env.staging.triggers]
 crons = ["*/5 * * * *"]

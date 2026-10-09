@@ -474,6 +474,33 @@ const phases = {
     });
   },
 
+  async 'stored-media'(cutoffIso) {
+    const b = await session('b');
+    await check('media stored before consolidation (URLs already in Firestore) still authorize correctly', async () => {
+      const cutoff = Date.parse(cutoffIso);
+      const rows = d1(`SELECT id, owner_uid FROM media WHERE status = 'active' AND created_at < ${cutoff} ORDER BY created_at DESC LIMIT 12`);
+      assert(rows.length > 0, 'no stored media before the cutoff');
+      let shared = 0, ownerOnly = 0;
+      for (const r of rows) {
+        const url = `${WORKER}/media/${r.id}`;
+        const refs = await adminQuery('travelPosts', 'images', 'ARRAY_CONTAINS', url);
+        const publicRef = refs.some((d) => d.data.authorId === r.owner_uid && d.data.visibility === 'public' && d.data.isArchived !== true);
+        const v = await view(b, url);
+        if (publicRef) { assert(v.status === 200 && v.cache === 'private, max-age=300', `shared ${v.status}`); shared++; }
+        else { assert(v.status === 404, `unattached/private ${v.status}`); ownerOnly++; }
+      }
+      return `${rows.length} stored URLs: ${shared} shared 200, ${ownerOnly} denied 404`;
+    });
+  },
+
+  async 'jobs-pending'() {
+    await check('pending-finalization jobs (read-only)', async () => {
+      const rows = await adminQuery('accountDeletions', 'pendingFinalization', 'EQUAL', true);
+      const now = Date.now();
+      return JSON.stringify(rows.map((r) => ({ status: r.data.status, unresolved: r.data.legacyMediaUnresolved === true, leaseLive: Number(r.data.leaseUntil || 0) > now, attempts: r.data.attempts, step: r.data.currentStep ?? null })));
+    });
+  },
+
   async 'job-status'(key) {
     await check(`${key}: deletion job progress (read-only)`, async () => {
       const job = await adminGet(`accountDeletions/${state.users[key].uid}`);

@@ -82,6 +82,26 @@ function decodeSegment<T>(segment: string): T {
  * Verify a Firebase ID token and return the uid on success.
  * Throws a descriptive Error on any failure (expired, wrong project, bad sig, etc.).
  */
+/**
+ * Firebase Auth emulator tokens are unsigned (alg "none"). The caller only uses
+ * this for `demo-*` projects, which exist solely in the local emulators; the
+ * claims are checked exactly as for real tokens.
+ */
+export function verifyEmulatorToken(token: string, projectId: string): VerifiedToken {
+  if (!projectId.startsWith('demo-')) throw new Error('Emulator tokens are only accepted for demo projects');
+  const parts = token.split('.');
+  if (parts.length !== 3) throw new Error('Malformed token: expected 3 segments');
+  const header = decodeSegment<{ alg?: string }>(parts[0]);
+  if (header.alg !== 'none') throw new Error('Expected an emulator token');
+  const payload = decodeSegment<TokenPayload>(parts[1]);
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (payload.exp <= nowSec) throw new Error('Token expired');
+  if (payload.iss !== `https://securetoken.google.com/${projectId}`) throw new Error('Invalid token issuer');
+  if (payload.aud !== projectId) throw new Error('Invalid token audience');
+  if (!payload.sub) throw new Error('Token missing subject (uid)');
+  return { uid: payload.sub, authTime: payload.auth_time ?? 0, email: payload.email ?? null };
+}
+
 /** Imported verification keys, tied to the JWKS object they came from (refreshed with it). */
 const importedKeys = new WeakMap<object, Map<string, CryptoKey>>();
 

@@ -1,4 +1,4 @@
-import { verifyFirebaseToken } from './auth';
+import { verifyEmulatorToken, verifyFirebaseToken } from './auth';
 import { handleAccountDeletion, handleAdminAccountDeletion, handleAdminDeletionStatus } from './accountRoute';
 import { accountDeletionPage } from './deletionPage';
 import { handleRemoveMedia } from './moderationRoute';
@@ -35,6 +35,19 @@ export interface Env {
   /** Work units per deletion slice / cron run (CPU allowance; defaults sized for Workers Free's 10 ms). */
   SLICE_WORK_UNITS?: string;
   CRON_WORK_UNITS?: string;
+  /**
+   * Local emulators (e.g. "127.0.0.1:8188"). Honored only for `demo-*` project
+   * IDs, which exist solely in the emulators; ignored for staging and production.
+   */
+  FIRESTORE_EMULATOR_HOST?: string;
+  FIREBASE_AUTH_EMULATOR_HOST?: string;
+  STORAGE_EMULATOR_HOST?: string;
+}
+
+/** Emulator hosts, only for demo-* projects. */
+export function emulatorsFor(env: Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIRESTORE_EMULATOR_HOST' | 'FIREBASE_AUTH_EMULATOR_HOST' | 'STORAGE_EMULATOR_HOST'>) {
+  if (!env.FIREBASE_PROJECT_ID?.startsWith('demo-')) return {};
+  return { firestore: env.FIRESTORE_EMULATOR_HOST || undefined, auth: env.FIREBASE_AUTH_EMULATOR_HOST || undefined, storage: env.STORAGE_EMULATOR_HOST || undefined };
 }
 
 const units = (value: string | undefined, fallback: number) => {
@@ -79,10 +92,13 @@ const mediaOrigin = (env: Env, request?: Request) => (env.MEDIA_PUBLIC_ORIGIN ||
  */
 function services(env: Env, budget: SubrequestBudget) {
   const fetchFn = budgetedFetch(budget);
+  const emu = emulatorsFor(env);
   const account = parseServiceAccount(env.GOOGLE_SERVICE_ACCOUNT_JSON);
-  const token = account ? () => getAccessToken(account, fetchFn) : null;
-  const store: DocStore | null = token ? new FirestoreRest({ projectId: env.FIREBASE_PROJECT_ID, token, fetch: fetchFn }) : null;
-  const verify = (t: string) => verifyFirebaseToken(t, env.FIREBASE_PROJECT_ID, fetchFn);
+  const token = emu.firestore ? async () => 'owner' : account ? () => getAccessToken(account, fetchFn) : null;
+  const store: DocStore | null = token ? new FirestoreRest({ projectId: env.FIREBASE_PROJECT_ID, token, fetch: fetchFn, emulatorHost: emu.firestore }) : null;
+  const verify = emu.auth
+    ? async (t: string) => verifyEmulatorToken(t, env.FIREBASE_PROJECT_ID)
+    : (t: string) => verifyFirebaseToken(t, env.FIREBASE_PROJECT_ID, fetchFn);
   const queries = new SubrequestBudget(D1_FREE_QUERIES);
   const media = env.MEDIA_DB && env.MEDIA_KV ? { db: meteredD1(env.MEDIA_DB, queries), kv: env.MEDIA_KV, queries } : undefined;
   const deletion = (): DeletionDeps | null => {
@@ -96,11 +112,11 @@ function services(env: Env, budget: SubrequestBudget) {
       legacyMode,
       store,
       r2: env.R2_BUCKET ? r2Deleter(env.R2_BUCKET) : undefined,
-      firebaseStorage: firebaseStorageDeleter({ bucket: env.FIREBASE_STORAGE_BUCKET, token, fetch: fetchFn }),
+      firebaseStorage: firebaseStorageDeleter({ bucket: env.FIREBASE_STORAGE_BUCKET, token, fetch: fetchFn, emulatorHost: emu.storage }),
       media,
       budget,
-      deleteAuthUser: identityToolkitUserDeleter({ projectId: env.FIREBASE_PROJECT_ID, token, fetch: fetchFn }),
-      authUserExists: identityToolkitUserExists({ projectId: env.FIREBASE_PROJECT_ID, token, fetch: fetchFn }),
+      deleteAuthUser: identityToolkitUserDeleter({ projectId: env.FIREBASE_PROJECT_ID, token, fetch: fetchFn, emulatorHost: emu.auth }),
+      authUserExists: identityToolkitUserExists({ projectId: env.FIREBASE_PROJECT_ID, token, fetch: fetchFn, emulatorHost: emu.auth }),
     };
   };
   return { store, verify, media, deletion, queries };

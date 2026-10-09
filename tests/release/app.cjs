@@ -41,6 +41,40 @@ test('media sources: worker media carries the ID token and the default (header-d
   assert.equal(hook(`${WORKER}/media/${id}`).headers.Authorization, 'Bearer tok');
 });
 
+test('stored staging media URLs keep authenticating; the Firebase token is never attached to any other URL', () => {
+  const STAGING = 'https://solotravelsoul-r2-upload-staging.ravitejatravelsoul.workers.dev';
+  const m = mobile('apps/mobile/hooks/useMediaSource.ts', { react, 'react-native': {}, '@/stores/authStore': authStore('tok') }, { EXPO_PUBLIC_R2_UPLOAD_WORKER_URL: STAGING });
+  const id = '0123456789abcdef0123456789abcdef';
+  // URLs already stored in Firestore by the staging Worker (same canonical origin after consolidation).
+  for (const base of [STAGING, `${STAGING}/`]) {
+    const src = JSON.parse(JSON.stringify(m.mediaSource(`${STAGING}/media/${id}`, 'tok', base)));
+    assert.deepEqual(src, { uri: `${STAGING}/media/${id}`, headers: { Authorization: 'Bearer tok' }, cache: 'default' }, base);
+  }
+  const hook = m.useMediaSource();
+  assert.equal(hook(`${STAGING}/media/${id}`).headers.Authorization, 'Bearer tok');
+  for (const other of [
+    `http://solotravelsoul-r2-upload-staging.ravitejatravelsoul.workers.dev/media/${id}`, // downgraded scheme
+    `https://solotravelsoul-r2-upload-staging.ravitejatravelsoul.workers.dev.evil.test/media/${id}`, // look-alike host
+    `https://solotravelsoul-r2-upload-staging.ravitejatravelsoul.workers.dev@evil.test/media/${id}`, // userinfo trick
+    `https://solotravelsoul-api-do-staging.ravitejatravelsoul.workers.dev/media/${id}`, // retired proof host
+    `https://solotravelsoul-r2-upload.ravitejatravelsoul.workers.dev/media/${id}`, // production host
+    `${STAGING}/upload/post-photo`, `${STAGING}/mediafoo/${id}`, 'https://pub-abc.r2.dev/post_photos/u/x.jpg',
+    'https://firebasestorage.googleapis.com/v0/b/x/o/y', 'file:///data/x.jpg', '',
+  ]) {
+    assert.deepEqual(JSON.parse(JSON.stringify(m.mediaSource(other, 'tok', STAGING))), { uri: other }, `no token for ${other}`);
+  }
+  // The Worker accepts only its own canonical origin and 32-hex IDs.
+  const { worker } = require('./lib/fakes.cjs');
+  const media = worker('media');
+  assert.equal(media.mediaIdFromUrl(STAGING, `${STAGING}/media/${id}`), id);
+  assert.equal(media.mediaIdFromUrl(`${STAGING}/`, `${STAGING}/media/${id}`), id);
+  assert.equal(media.mediaIdFromUrl(STAGING, `https://evil.test/media/${id}`), null);
+  assert.equal(media.mediaIdFromUrl(STAGING, `${STAGING}/media/../admin`), null);
+  // The repo's staging config: one canonical origin for media URLs and the Worker host.
+  const toml = fs.readFileSync(path.join(root, 'workers/r2-upload-worker/wrangler.toml'), 'utf8');
+  assert.match(toml, new RegExp(`MEDIA_PUBLIC_ORIGIN = "${STAGING.replace(/[.]/g, '\\.')}"`));
+});
+
 test('media cache policy is documented truthfully: no recall of already downloaded images', () => {
   const src = fs.readFileSync(path.join(root, 'apps/mobile/hooks/useMediaSource.ts'), 'utf8');
   assert.match(src, /cannot recall copies a device has already downloaded/);
