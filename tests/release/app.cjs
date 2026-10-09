@@ -213,6 +213,44 @@ test('in-progress deletion keeps the user informed and the account locked (no lo
   assert.ok(!/blocked'[\s\S]{0,40}'Your account has been deleted/.test(src), 'a blocked deletion is never announced as deleted');
 });
 
+test('upload refused for a suspended/deleting account says so instead of asking to sign in again', async () => {
+  let reply = { status: 403, body: JSON.stringify({ error: 'This account cannot upload.', code: 'account/restricted' }) };
+  const m = mobile('apps/mobile/utils/storageUpload.ts', {
+    'expo-file-system/legacy': { FileSystemUploadType: { MULTIPART: 1 }, uploadAsync: async () => reply },
+    'firebase/auth': { getIdToken: async () => 'id-token' },
+    '@solotravelsoul/firebase': { auth: { currentUser: { uid: 'u' } } },
+  });
+  await assert.rejects(m.uploadMediaFromUri('file:///a.jpg', 'post'), (e) => e.code === 'account/restricted' && !/sign in/i.test(e.message));
+  reply = { status: 403, body: JSON.stringify({ error: 'Authentication failed' }) };
+  await assert.rejects(m.uploadMediaFromUri('file:///a.jpg', 'post'), (e) => e.code === 'auth/expired');
+});
+
+test('native Android findings (staging APK, 2026-10-09) stay fixed', () => {
+  const read = (f) => fs.readFileSync(path.join(root, 'apps/mobile', f), 'utf8');
+  const walk = (d, out = []) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p, out); else if (/\.tsx?$/.test(e.name)) out.push(p); } return out; };
+  const sources = [...walk(path.join(root, 'apps/mobile/app')), ...walk(path.join(root, 'apps/mobile/components'))].map((p) => [path.relative(root, p), fs.readFileSync(p, 'utf8')]);
+  // expo-router: an index route is reached by its folder path; "/x/index" is an unmatched route.
+  assert.deepEqual(sources.filter(([, s]) => /(push|replace|navigate)\(\s*['"`][^'"`]*\/index['"`]/.test(s)).map(([p]) => p), []);
+  // Android 15 is edge-to-edge: the window no longer resizes for the keyboard, so avoidance must stay on.
+  assert.deepEqual(sources.filter(([, s]) => /'padding'\s*:\s*undefined/.test(s)).map(([p]) => p), []);
+  // Composer: a shared post clears the form (the screen stays mounted); a refused post is reported.
+  const create = read('app/(app)/post/create.tsx');
+  assert.match(create, /if \(postId\) \{[\s\S]*setImages\(\[\]\);[\s\S]*setCaption\(''\);[\s\S]*router\.replace/);
+  assert.match(create, /\} else \{[\s\S]{0,200}Alert\.alert\('Post not shared'/);
+  // Report sheet: first tap on Submit submits while the details keyboard is open; posts are labelled as posts.
+  const report = read('components/community/ReportModal.tsx');
+  assert.match(report, /keyboardShouldPersistTaps="handled"/);
+  assert.match(report, /post: 'This post'/);
+  // Profile stats: six stats share the row instead of overflowing a phone-width screen.
+  assert.match(read('components/profile/ProfileStats.tsx'), /statWrap: \{\s*flex: 1,/);
+  // Moderation: one decision resolves every open report on the same item.
+  assert.match(read('app/(app)/moderation/index.tsx'), /reports\.filter\(\(x\) => x\.targetType === r\.targetType && x\.targetId === r\.targetId\)/);
+  // Chat: a send refused by the rules (suspended) is not queued for later delivery.
+  for (const f of ['hooks/useGroupChat.ts', 'hooks/useMessages.ts']) {
+    assert.match(read(f), /code === 'permission-denied'\) \{[\s\S]{0,300}return;\s*\}[\s\S]{0,120}?await enqueueChatOp/, f);
+  }
+});
+
 (async () => {
   let passed = 0;
   for (const t of tests) {

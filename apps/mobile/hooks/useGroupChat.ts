@@ -7,6 +7,7 @@ import {
 import { enqueueChatOp } from '@/utils/chatQueue';
 import { useAuthStore } from '@/stores/authStore';
 import { useNetworkState } from '@/hooks/useNetworkState';
+import { useUIStore } from '@/stores/uiStore';
 import { useSyncEngine } from '@/hooks/useSyncEngine';
 import type { TravelGroupMessage } from '@solotravelsoul/shared';
 
@@ -83,7 +84,13 @@ export function useGroupChat(groupId: string, myName: string) {
 
       try {
         await fbSendGroup(groupId, uid, myName, text.trim(), clientId);
-      } catch {
+      } catch (e) {
+        // Refused by the rules (e.g. suspended account): retrying cannot succeed.
+        if ((e as { code?: string }).code === 'permission-denied') {
+          setPending((prev) => prev.filter((m) => m.clientId !== clientId));
+          useUIStore.getState().addToast('Message not sent. This account cannot send messages.', 'error');
+          return;
+        }
         await enqueueChatOp(uid, {
           type: 'group.send',
           groupId,

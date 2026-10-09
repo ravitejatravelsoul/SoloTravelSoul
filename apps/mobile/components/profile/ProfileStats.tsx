@@ -15,14 +15,14 @@ interface Props {
 function Stat({ label, value, onPress }: StatItem) {
   const content = (
     <View style={styles.stat}>
-      <Text style={styles.value}>{value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value)}</Text>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={styles.value} numberOfLines={1}>{value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value)}</Text>
+      <Text style={styles.label} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
     </View>
   );
 
   if (onPress) {
     return (
-      <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+      <TouchableOpacity style={styles.stat} onPress={onPress} activeOpacity={0.7}>
         {content}
       </TouchableOpacity>
     );
@@ -30,6 +30,7 @@ function Stat({ label, value, onPress }: StatItem) {
   return content;
 }
 
+// Every stat gets an equal share of the row, so all six fit on a phone-width screen.
 export function ProfileStats({ stats }: Props) {
   return (
     <View style={styles.row}>
@@ -46,16 +47,18 @@ export function ProfileStats({ stats }: Props) {
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    justifyContent: 'center',
     paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xs,
   },
   statWrap: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
   },
   stat: {
+    flex: 1,
     alignItems: 'center',
-    paddingHorizontal: Spacing.xl,
+    paddingHorizontal: Spacing.xs,
   },
   value: {
     fontSize: FontSize.xl,

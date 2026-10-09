@@ -30,6 +30,16 @@ const REASONS: { value: ReportReason; label: string }[] = [
   { value: 'other', label: 'Other' },
 ];
 
+const TARGET_LABELS: Record<TargetType, string> = {
+  user: 'This user\'s profile',
+  trip: 'This trip',
+  group: 'This group',
+  message: 'This message',
+  post: 'This post',
+  journal: 'This journal',
+  comment: 'This comment',
+};
+
 const DAILY_REPORT_KEY = 'community_reports_daily';
 const DAILY_LIMIT = 5;
 
@@ -115,15 +125,12 @@ export function ReportModal({ visible, targetType, targetId, onClose }: ReportMo
             </TouchableOpacity>
           </View>
         ) : (
-          <ScrollView contentContainerStyle={styles.content}>
+          // "handled": with the details keyboard open, the first tap on Submit submits.
+          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
             {step === 1 && (
               <>
                 <Text style={styles.stepTitle}>What are you reporting?</Text>
-                <Text style={styles.stepSubtitle}>
-                  {targetType === 'user' ? 'This user\'s profile' :
-                   targetType === 'trip' ? 'This trip' :
-                   targetType === 'group' ? 'This group' : 'This message'}
-                </Text>
+                <Text style={styles.stepSubtitle}>{TARGET_LABELS[targetType] ?? 'This content'}</Text>
                 <TouchableOpacity style={styles.nextBtn} onPress={() => setStep(2)}>
                   <Text style={styles.nextBtnLabel}>Continue</Text>
                 </TouchableOpacity>

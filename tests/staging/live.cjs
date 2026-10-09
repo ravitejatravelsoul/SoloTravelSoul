@@ -11,6 +11,10 @@
 //   delete-a     delete A across slices; verify what is gone and what B retains
 //   start-user <key>        create content for a further account (C, D, ...) and start its deletion
 //   continue-user <key>     continue that account's deletion with its own token
+//   accounts <k1,k2,...>    create further disposable accounts (e.g. members for a large group)
+//   delete-user <key>       delete that account with its own token (fixture cleanup)
+//   set-visibility <key>:<postId>:<visibility>   owner changes a post's visibility (no UI for it)
+//   unsuspend <moderatorKey>:<key>               moderator lifts a suspension (no UI for it)
 //   verify-deleted <key>    verify that account is fully deleted
 //
 // Uses the app's own packages/firebase modules with the Firebase client SDK (real rules),
@@ -461,6 +465,40 @@ const phases = {
     await check(`${key}: deletion started (stops at first non-202, blocked or 200)`, async () => {
       const slices = await deleteUntilDone(s);
       state.ids[`${key}Start`] = slices; save();
+      return JSON.stringify(slices.slice(-1)[0]) + ` after ${slices.length} invocation(s)`;
+    });
+  },
+
+  async accounts(keys = '') {
+    state.run = state.run || crypto.randomBytes(3).toString('hex');
+    for (const k of keys.split(',').filter(Boolean)) {
+      await check(`create disposable account ${k}`, async () => { if (!state.users[k]) await newUser(k); return 'ok'; });
+    }
+  },
+
+  async 'set-visibility'(arg = '') {
+    const [key, postId, visibility] = arg.split(':');
+    const s = await session(key);
+    await check(`${key}: set post visibility to ${visibility} (owner, client SDK)`, async () => {
+      await s.posts.updatePost(postId, s.uid, { visibility });
+      return 'ok';
+    });
+  },
+
+  async unsuspend(arg = '') {
+    const [modKey, key] = arg.split(':');
+    const m = await session(modKey);
+    await check(`${modKey} lifts the suspension of ${key} (moderator, client SDK; no UI for it)`, async () => {
+      await m.moderation.unsuspendUser(state.users[key].uid);
+      return 'ok';
+    });
+  },
+
+  async 'delete-user'(key) {
+    const s = await session(key).catch(() => null);
+    await check(`${key}: delete with the account's own token`, async () => {
+      if (!s) return 'account already deleted (sign-in refused)';
+      const slices = await deleteUntilDone(s);
       return JSON.stringify(slices.slice(-1)[0]) + ` after ${slices.length} invocation(s)`;
     });
   },

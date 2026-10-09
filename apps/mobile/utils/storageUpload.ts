@@ -38,6 +38,10 @@ export async function uploadMediaFromUri(fileUri: string, purpose: MediaPurpose)
     headers: { Authorization: `Bearer ${idToken}` },
   });
 
+  if (result.status === 403 && /"code":\s*"account\/restricted"/.test(result.body ?? '')) {
+    // Suspended by a moderator, or the account is being deleted: signing in again would not help.
+    throw Object.assign(new Error('This account can no longer upload photos.'), { code: 'account/restricted' });
+  }
   if (result.status === 401 || result.status === 403) {
     throw Object.assign(new Error('Photo upload was refused. Please sign in again.'), { code: 'auth/expired' });
   }

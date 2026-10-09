@@ -7,7 +7,6 @@ import {
   Alert,
   TextInput,
   KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
   Image,
 } from 'react-native';
@@ -120,7 +119,7 @@ export default function CreateJournalScreen() {
       </View>
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         style={{ flex: 1 }}
       >
         <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>

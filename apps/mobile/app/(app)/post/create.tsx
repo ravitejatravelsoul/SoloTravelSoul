@@ -8,7 +8,6 @@ import {
   TextInput,
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -104,7 +103,19 @@ export default function CreatePostScreen() {
     setUploading(false);
 
     if (postId) {
+      // This screen stays mounted after navigating away; start the next post empty.
+      setImages([]);
+      setCaption('');
+      setLocation('');
+      setCountry('');
+      setHashtagInput('');
+      setHashtags([]);
+      setPostType('photo');
+      setVisibility('public');
       router.replace(`/(app)/post/${postId}` as never);
+    } else {
+      // e.g. refused by the rules (suspended account, blocked terms): keep the draft and say so.
+      Alert.alert('Post not shared', 'Your post could not be shared. Please try again later.');
     }
   }, [caption, images, location, country, hashtags, postType, visibility, user, create]);
 
@@ -131,7 +142,7 @@ export default function CreatePostScreen() {
       </View>
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         style={{ flex: 1 }}
       >
         <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>

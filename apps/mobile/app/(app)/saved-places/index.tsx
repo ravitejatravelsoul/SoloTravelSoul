@@ -9,7 +9,6 @@ import {
   ScrollView,
   Alert,
   KeyboardAvoidingView,
-  Platform,
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -399,7 +398,7 @@ function PlaceDetailModal({
     >
       <KeyboardAvoidingView
         style={styles.detailSheet}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
       >
         {/* Drag handle */}
         <View style={styles.dragHandle} />

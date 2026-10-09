@@ -95,7 +95,9 @@ export default function ModerationScreen() {
       setBusy(r.id);
       try {
         await action();
-        await reviewReport(r.id, uid, status, resolution);
+        // One decision covers every open report on the same item (e.g. the three that hid it).
+        const ids = new Set([r.id, ...reports.filter((x) => x.targetType === r.targetType && x.targetId === r.targetId).map((x) => x.id)]);
+        await Promise.all([...ids].map((id) => reviewReport(id, uid, status, resolution)));
         addToast(`${label} done.`, 'success');
       } catch {
         addToast(`${label} failed. Nothing further was changed.`, 'error');
@@ -103,7 +105,7 @@ export default function ModerationScreen() {
         setBusy(null);
       }
     },
-    [uid, addToast]
+    [uid, addToast, reports]
   );
 
   const confirm = (title: string, onOk: () => void) =>

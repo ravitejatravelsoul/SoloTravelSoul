@@ -51,7 +51,7 @@ export function CommentsSheet({ postId, authorId, onClose }: Props) {
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.backdrop} onPress={onClose} />
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior="padding"
           style={styles.sheet}
         >
           {/* ── Handle bar ── */}

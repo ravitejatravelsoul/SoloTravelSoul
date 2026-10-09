@@ -7,6 +7,7 @@ import {
 import { enqueueChatOp } from '@/utils/chatQueue';
 import { useAuthStore } from '@/stores/authStore';
 import { useNetworkState } from '@/hooks/useNetworkState';
+import { useUIStore } from '@/stores/uiStore';
 import { useSyncEngine } from '@/hooks/useSyncEngine';
 import type { DirectMessage } from '@solotravelsoul/shared';
 
@@ -86,7 +87,13 @@ export function useMessages(chatId: string, otherUids: string[]) {
 
       try {
         await fbSendDM(chatId, uid, text.trim(), clientId, otherUids);
-      } catch {
+      } catch (e) {
+        // Refused by the rules (e.g. suspended account): retrying cannot succeed.
+        if ((e as { code?: string }).code === 'permission-denied') {
+          setPending((prev) => prev.filter((m) => m.clientId !== clientId));
+          useUIStore.getState().addToast('Message not sent. This account cannot send messages.', 'error');
+          return;
+        }
         // Snapshot didn't arrive in time or send failed — queue for retry
         await enqueueChatOp(uid, {
           type: 'dm.send',

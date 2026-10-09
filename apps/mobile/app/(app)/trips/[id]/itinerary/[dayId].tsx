@@ -8,7 +8,6 @@ import {
   ScrollView,
   TextInput,
   KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -332,7 +331,7 @@ export default function DayDetailScreen() {
         <SafeAreaView style={styles.modalSheet} edges={['top']}>
           <KeyboardAvoidingView
             style={styles.fill}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            behavior="padding"
           >
             {/* Modal header */}
             <View style={styles.modalHeader}>

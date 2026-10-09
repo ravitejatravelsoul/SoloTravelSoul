@@ -43,7 +43,7 @@ function FeedHeader() {
           <Ionicons name="add-circle-outline" size={26} color={Colors.primary} />
         </TouchableOpacity>
         <TouchableOpacity
-          onPress={() => router.push('/(app)/notifications/index' as never)}
+          onPress={() => router.push('/(app)/notifications' as never)}
           hitSlop={10}
           style={styles.headerBtn}
         >

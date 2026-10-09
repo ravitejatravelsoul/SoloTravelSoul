@@ -10,7 +10,6 @@ import {
   Modal,
   TextInput,
   KeyboardAvoidingView,
-  Platform,
   Image,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -136,7 +135,7 @@ export default function ProfileScreen() {
       <View style={styles.topBar}>
         <Text style={styles.topBarTitle}>{profile.name}</Text>
         <View style={styles.topBarActions}>
-          <TouchableOpacity onPress={() => router.push('/(app)/notifications/index' as never)} hitSlop={10}>
+          <TouchableOpacity onPress={() => router.push('/(app)/notifications' as never)} hitSlop={10}>
             <Ionicons name="notifications-outline" size={24} color={Colors.textPrimary} />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push('/(app)/post/create' as never)} hitSlop={10} style={{ marginLeft: Spacing.md }}>
@@ -318,7 +317,7 @@ export default function ProfileScreen() {
               label="Saved Posts"
               iconBg={Colors.warning + '15'}
               iconColor={Colors.warning}
-              onPress={() => router.push('/(app)/saved-posts/index' as never)}
+              onPress={() => router.push('/(app)/saved-posts' as never)}
             />
           </View>
         </View>
@@ -414,7 +413,7 @@ export default function ProfileScreen() {
         <SafeAreaView style={styles.modalSafe} edges={['top', 'bottom']}>
           <KeyboardAvoidingView
             style={styles.modalInner}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            behavior="padding"
           >
             <View style={styles.modalHeader}>
               <TouchableOpacity onPress={() => setShowDeleteModal(false)}>

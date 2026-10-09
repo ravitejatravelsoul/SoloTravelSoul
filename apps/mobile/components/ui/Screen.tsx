@@ -1,6 +1,5 @@
 import {
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
   View,
   type ViewStyle,
@@ -51,7 +50,7 @@ export function Screen({
     <SafeAreaView style={[styles.safe, { backgroundColor }, style]}>
       <KeyboardAvoidingView
         style={styles.fill}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
       >
         {inner}
       </KeyboardAvoidingView>
