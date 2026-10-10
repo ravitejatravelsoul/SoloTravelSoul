@@ -88,30 +88,48 @@ The two `profile_images/*.jpg` objects stay **unresolved** until their deletion 
 
 Checklist: `docs/release-hardening.md` → "Live and native verification checklist". The staging backend is deployed and live-verified (section 0). **Android:** the preview APK (build `07c0e312`) was installed and the checklist run on an Android 15 emulator on 2026-10-09: results, defects and evidence are in section 10. A second preview build (`aa5c4b9e`, commit `1cc9600`) verified those fixes on the same emulator. A third build (`161e441d`, commit `9d807ca`) verified the offline-banner keyboard fix and live connectivity detection (section 10). **iOS:** BLOCKED (no macOS; device builds need a paid Apple Developer membership). Builds exported with `expo export` and mocked tests are not proof of native UI behaviour.
 
-## 9. Consolidated remaining blockers (owner actions)
+## 9. Remaining release blockers (authoritative list, 2026-10-10)
 
-1. **Native Firebase files: resolved for preview.** The app uses the Firebase JS SDK only (no `googleServicesFile`, no `@react-native-firebase`). `GOOGLE_SERVICES_JSON` / `GOOGLE_SERVICE_INFO_PLIST` were single EAS variables shared by production, preview and development. `preview` was unlinked; production and development keep them (values unchanged).
-2. **Preview keys (optional):**
-   - **Not required for a preview build.** `@rnmapbox/maps` 10.3.1 downloads the Android SDK without a token, and app config no longer passes one (the old option was misspelled and ignored).
-   - **Mapbox maps:** without `EXPO_PUBLIC_MAPBOX_ENABLED=true` and a public `EXPO_PUBLIC_MAPBOX_TOKEN`, the app shows its placeholder map. To test Mapbox maps on a device, the owner adds both to EAS `preview`.
-   - **Foursquare:** stays off unless `EXPO_PUBLIC_FOURSQUARE_ENABLED=true` (with `EXPO_PUBLIC_FOURSQUARE_API_KEY`); it is not needed.
-3. **Builds:** the first Android preview build ran on 2026-10-09 (build `07c0e312`, section 10).
-   - **Cost:** EAS Free plan, 2 of 30 builds used in the cycle ending 2026-11-01, $0.
-   - **Second build:** `aa5c4b9e` (commit `1cc9600`) verified the device fixes (section 10).
-   - **Third build:** `161e441d` (commit `9d807ca`) verified live connectivity and the offline keyboard; 3 of 30 builds used, $0.
-   - **iOS:** device builds need a paid Apple Developer membership, outside the no-paid-plans constraint.
-4. **Device testing:** Android checklist run on an emulator (section 10): all items PASS or have fixed defects. `GET /admin/deletion-status` is BLOCKED until the owner supplies the rotated staging admin token. iOS is BLOCKED (no macOS). A physical Android device run is still advisable before submission.
-5. **Legacy production media:** the 2 `profile_images/*.jpg` objects in production Storage stay unresolved until deleted and verified by a fresh listing (section 6); the legacy R2 inventory is not taken.
-6. **Moderators and response targets:** none appointed; at least two are needed before submission.
-7. **Privacy answers:** section 3 drafts need confirmation (location to place-search providers, push token).
-8. **Old-client retirement:** decide forced update or adoption window before production rules (section 5).
-9. **Production rollout** (separate approval):
-   - production KV/D1 bindings, then the Durable Object binding and migration on the production Worker (as in `[env.staging]`);
-   - production secrets, rules and indexes;
-   - monitoring (`scripts/stagingUsage.cjs` against the production script);
-   - a decision on the production cron.
-10. **Quota ceilings to accept or plan for on Free/Spark:** about 1,000 uploads/day (KV writes), about 1,000 media deletions/day (KV deletes; the excess completes the next day), about 17,000–25,000 media views/day (Firestore reads), 100,000 API calls/day.
-11. **Housekeeping:** rotate the staging admin token; delete the disposable staging test accounts.
+This list replaces every earlier blocker list in this file and in `docs/release-hardening.md`. Nothing here is done unless marked so. Evidence for the completed work is in section 10.
+
+**Already done (no action):**
+- Staging host consolidated and live-verified.
+- Three Android preview builds (EAS Free, 3 of 30 used, $0) and the native checklist on an Android 15 emulator: all device defects found are fixed and verified.
+- Admin endpoints refuse missing or wrong credentials (2026-10-10).
+
+**A. Required before release (owner decisions or approvals):**
+1. **Staging admin token** (staging closure): supply the current staging `ADMIN_DELETION_TOKEN` securely (owner action in section 10, "Staging operational closure"). Without it, the valid-token check of `GET /admin/deletion-status` and the stalled-fixture check stay BLOCKED. Production needs its own token (item 6).
+2. **Moderators:** appoint at least two and confirm response targets (App Store 1.2 / Google Play user-generated-content policy). Until then, reports are only auto-hidden at 3 reports.
+3. **Privacy answers** (section 3): confirm the location and push-token rows, and confirm that `privacy@solotravelsoul.app` exists and is monitored.
+4. **Old-client retirement** (section 5): choose a forced update or an adoption window before the production rules deploy.
+5. **Legacy media** (section 6): decide the path; then (each approval-gated):
+   - migrate or delete the 2 production `profile_images/*.jpg` and verify with a fresh listing;
+   - inventory the legacy R2 bucket.
+6. **Production rollout** (separate approval):
+   - KV/D1 bindings, then the Durable Object binding and migration on the production Worker;
+   - production secrets (including its own `ADMIN_DELETION_TOKEN`), rules and indexes;
+   - the cron decision and monitoring (`scripts/stagingUsage.cjs --script <production>`);
+   - then the production account-deletion URL in Play Console (section 2).
+7. **Counter audit** (section 7): dry run, then an approved repair on production before the rules deploy.
+8. **Store submission:**
+   - production builds;
+   - replace the `eas.json` `submit.production` placeholders and provide `google-play-key.json` locally (section 4);
+   - store listings.
+   No submission has been made.
+9. **Physical-device check:** one run of section 10's checklist on a real Android phone before submission; so far only an emulator has been used.
+10. **iOS:** only if iOS is in scope. It needs macOS and a paid Apple Developer membership, which is outside the no-paid-plans constraint; it is BLOCKED otherwise.
+11. **Free/Spark ceilings:** accept them or plan for them: about 1,000 uploads/day (KV writes), about 1,000 media deletions/day (KV deletes; the excess completes the next day), about 17,000–25,000 media views/day (Firestore reads), 100,000 API calls/day.
+
+**B. Staging housekeeping (not release-blocking):**
+- Delete the disposable `sts-live-*` accounts left by earlier live-test runs. The native runs removed their own.
+- Optional EAS `preview` keys: Mapbox (`EXPO_PUBLIC_MAPBOX_ENABLED`, `EXPO_PUBLIC_MAPBOX_TOKEN`) and Foursquare (`EXPO_PUBLIC_FOURSQUARE_ENABLED`, `EXPO_PUBLIC_FOURSQUARE_API_KEY`). The placeholder map is shown without them.
+- `scripts/stagingUsage.cjs` reports the **maximum** per-status p99 over the window, so hours from older versions can dominate. Read it with the per-version breakdown in section 10.
+
+**C. Optional UI features (owner choice; not required for release):**
+- A screen to lift a suspension. Moderators can use the console or `unsuspendUser` meanwhile.
+- Changing an existing post's visibility. Today it is set only when the post is created.
+- A per-account client-side daily report limit. Today it is per device and advisory; the server rules enforce one report per user and item.
+- A staging banner in the app. The launcher label already says "SoloTravelSoul Staging".
 
 ## 10. Android preview build and device test
 
@@ -296,3 +314,21 @@ Defect 8, in detail:
 | Refused messages never deliver | **PASS**: B suspended (moderator, client SDK: `live.cjs suspend`), DM and group messages queued offline, reconnect → "2 queued messages were not sent…" and the bubbles cleared. After unsuspension and another disconnect/reconnect, neither refused message exists on the server, while a new group message was delivered once. |
 | `GET /admin/deletion-status` | **BLOCKED**: no staging admin token available. |
 
+### Staging operational closure (2026-10-10, commit `9aa1db3`)
+
+| Check | Result |
+|---|---|
+| Admin credentials available to this run | **None**: not in the process, user or machine environment, nor in Windows Credential Manager. The token was not rotated: the owner may hold the only working copy, and storage of a new one could not be confirmed. The Worker secret `ADMIN_DELETION_TOKEN` is set on staging (secret names listed only). |
+| Missing / wrong credentials refused | **PASS**: `GET /admin/deletion-status` with no `Authorization`, an empty bearer, a random wrong bearer or a non-Bearer scheme → 403 `{"error":"Forbidden"}` each. `POST /admin/account-deletion` with a wrong bearer → 403. (A 403 rather than 404 also confirms the secret is configured.) |
+| Valid credentials return the status | **BLOCKED** (no token) |
+| Disposable stalled / unresolved fixture reported, then removed | **BLOCKED** (needs the endpoint). No fixture was created. |
+| Read-only job state (not the endpoint) | 0 `in_progress`, 0 `failed`, 0 `blocked` jobs (none older than 6 h); pending-finalization: none. |
+| `node scripts/stagingUsage.cjs` (24 h, sanitized) | Worker requests 827 (0.83% of the Free daily limit), Durable Object requests 755 (0.76%), Durable Object GB-s 243 (1.87%), D1 rows read 14,652 (0.29%) and written 3,118 (3.12%), KV reads 438 (0.44%), writes 202 (20.20%), deletes 185 (18.50%). Worker errors 0; Worker CPU p99 9.16 ms. **1 Durable Object error**: the known `clientDisconnected` event at 10-09 15:00Z from the deliberate force-stop test. Per-version CPU above 10 ms appears only in pre-consolidation hours (`e784bd26`). Stalled deletions not checked (no token). |
+
+**Owner action (one, secure):** on this machine, in PowerShell, store the current staging admin token as a user environment variable without displaying it:
+
+```
+$t = Read-Host 'Staging ADMIN_DELETION_TOKEN' -AsSecureString; [Environment]::SetEnvironmentVariable('STS_ADMIN_TOKEN', [Net.NetworkCredential]::new('', $t).Password, 'User')
+```
+
+Then the next session runs the two BLOCKED checks. If no working copy exists anywhere, say so instead. Rotation is then safe: the new value is stored in that same `STS_ADMIN_TOKEN` user variable *before* `wrangler secret put ADMIN_DELETION_TOKEN --env staging` replaces the old one.

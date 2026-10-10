@@ -93,6 +93,8 @@ Run on a physical iPhone and an Android 14+ device (preview builds against stagi
 
 ### Remaining blockers
 
+> Superseded: the authoritative remaining-blocker list is `docs/release-handoff.md` section 9 (2026-10-10).
+
 - **No native or staging verification** — no Android SDK/emulator or device on this machine, iOS requires macOS, Wrangler is not logged in, and there is no authorized staging Firebase project. All items in the checklist above are unverified.
 - **Moderation operations** (App Store 1.2): tooling and enforcement now exist (see Gap closure → Moderation), but at least two moderators must be appointed, the response targets confirmed, and the process staffed before submission. The term filter is a short list and there is no automated image analysis; reported media is hidden at 3 reports and removed by moderators.
 - **Operator fulfilment of web requests** requires verifying the requester owns the account email before calling the admin endpoint; the processing time promised on the web page should be confirmed by the owner.
@@ -277,6 +279,8 @@ Measured in the in-memory model with a metered store (each store call = one REST
 | `expo export` iOS + Android | PASS — bundles contain `/media/upload` and no Firebase Storage upload code |
 
 ### Remaining live-service / native blockers
+
+> Superseded: the authoritative remaining-blocker list is `docs/release-handoff.md` section 9 (2026-10-10).
 
 1. Cloudflare: no Wrangler login; staging KV namespace, D1 database, migration apply and staging Worker deploy not done; production bindings absent (the new app upload path must not ship before they exist).
 2. Workers CPU time (10 ms Free limit) and real subrequest counts unmeasured on a deployed Worker. When a D1 Free daily limit is reached, queries return errors until 00:00 UTC (documented by Cloudflare); the Worker fails closed on them, not verified live.
