@@ -24,8 +24,8 @@ Every open decision is in this table. Recommendations come from the code and the
 |---|---|---|---|
 | Moderators and coverage | Name a primary moderator and a backup (project recommendation, not a store rule) and adopt the response targets in section 11 | Without anyone working the queue, the "timely responses" (Apple 1.2) and "robust, ongoing moderation" (Google Play) requirements cannot be met; reports are only auto-hidden at 3 | Who (the accounts to grant later), and confirmation of the targets |
 | Privacy answers | Declare per section 3: no device location, no push token, no analytics; retained items as listed | Store forms must match the shipped build; enabling Mapbox or Foursquare later changes the answers | Confirm section 3, the privacy mailbox, and that Mapbox/Foursquare stay off for release |
-| Old clients | Decide after the owner confirms past distribution. Current EAS history holds only staging previews, so no gate is needed unless older Expo builds were distributed some other way. The legacy Swift iOS app (bundle `Raviteja.SoloTravelSoul`) cannot be force-updated by this app. | Any older client still installed fails closed once the new rules deploy | Were any Expo builds distributed outside the current EAS history? Was the Swift app ever distributed (TestFlight or App Store)? Is any of its production data to be kept? (All unresolved.) |
-| Legacy media | Approve the inventory (section 6), then migrate any of the 2 `profile_images/*.jpg` whose owner still exists and delete the rest, using the packet in section 6 | Until resolved, deletions for those owners end `blocked` and keep the account in Auth | Approval for each step in section 6 |
+| Old clients | **Answered:** the owner confirmed on 2026-10-10 that neither the Expo app nor the legacy Swift app (`Raviteja.SoloTravelSoul`) was ever distributed. So: no forced-update gate, no adoption window, and nothing to retire for users. Deploy the new rules with the first store release (section 5). | No installed old clients exist to break | None |
+| Legacy data and media | **Answered:** the owner confirmed on 2026-10-10 that the Swift app's production data is disposable test data. No migration: after the inventory (section 6, step 0), delete the 2 `profile_images/*.jpg` (step 3) and clear the Swift-era test data. Each step is a separate production write. | Until done, deletions for those owners end `blocked` and keep the account in Auth | Approval and a date for the inventory, then for the deletions |
 | Production counter audit | Approve the sizing count first, then the full read-only audit if the count fits the budget (section 7) | Without it, counters are unverified before the stricter rules | Approval and a low-traffic day |
 | Production rollout | Approve as one change set: production EAS variables, Worker bindings and Durable Object migration, secrets (including a production admin token stored with the section 10 procedure), rules, indexes, cron | Nothing in production changes until then; store review needs a working production backend | Approval and a date |
 | Store accounts and iOS | Android first; iOS only if a paid Apple Developer membership is accepted | iOS stays BLOCKED otherwise | Play Console access and service-account key (kept local); the decision on iOS |
@@ -97,20 +97,20 @@ Other facts:
 ## 5. Old clients: forced update versus adoption window
 
 **Who the old clients are (checked 2026-10-10):**
-- **Expo app (`com.solotravelsoul.app`):** the current EAS build history contains only the three staging preview builds (package `com.solotravelsoul.app.staging`, 2026-10-09), and `app.json` carries no version history. Builds made outside this EAS project (local builds, another account, Expo Go sessions) cannot be seen here. Whether older versions were ever distributed is **owner-unconfirmed**.
+- **Expo app (`com.solotravelsoul.app`):** the current EAS build history contains only the three staging preview builds (package `com.solotravelsoul.app.staging`, 2026-10-09), and `app.json` carries no version history. **Answered:** the owner confirmed on 2026-10-10 that no build was ever distributed outside it.
 - **Legacy native Swift iOS app** (Xcode project at the repository root, bundle `Raviteja.SoloTravelSoul`):
   - It uses the production Firebase project `solotravelsoul-57a9e` (its `GoogleService-Info.plist`) and the collections `users`, `groupChats`, `messages`, `trips`, `requests`, `notifications`, `preferences`, `languages`, `destinations` and `groups`, plus Firebase Storage.
   - The new rules do not allow most of these paths, and Storage uploads are refused. Once the rules deploy, an installed copy fails closed and can no longer write.
-  - Whether it was ever distributed, and whether its production data must be kept, are **unresolved owner decisions**.
+  - **Answered:** the owner confirmed on 2026-10-10 that it was never distributed (no TestFlight, no App Store), and that its production data is disposable test data. No installed copies exist, and nothing needs migrating.
 
 | Option | Fits this project? | Cost | Effect |
 |---|---|---|---|
-| Forced-update gate in the Expo app | Only if the owner confirms that older Expo builds were distributed. It can never reach the Swift app, which is a different bundle. | New code, a remote config value, store review | Protects only distributed Expo versions |
-| Adoption window (keep the old rules until the old versions fade) | Not preferred: the old rules keep the forged-relationship and counter holes open in production for the whole window | Delayed security fixes | Gives old clients time, at the cost of security |
-| **Deploy the new rules with the first store release; retire any distributed old client first (recommended, pending the owner's answers)** | Yes, once the distribution questions are answered | Owner action: confirm what was distributed. If the Swift app was, expire its TestFlight builds or remove it from sale and tell its users | Old copies fail closed; no gate unless older Expo builds turn out to be distributed |
+| Forced-update gate in the Expo app | **Not needed**: no older Expo build was distributed (owner-confirmed). It could not reach the Swift app anyway. | New code, a remote config value, store review | — |
+| Adoption window (keep the old rules until the old versions fade) | **Not needed**: there are no old clients to wait for, and the old rules keep the forged-relationship and counter holes open | Delayed security fixes | — |
+| **Deploy the new rules with the first store release (decided by the owner's answers)** | Yes | None beyond the production rollout | No user-facing impact: no distributed old client exists |
 
 Before the production rules deploy:
-1. The owner confirms whether older Expo builds or the Swift app were distributed, and whether the Swift app's production data (for example `groupChats`, `requests`) must be migrated or may be dropped. All of this is **unresolved**.
+1. Distribution and data: answered (the owner confirmed on 2026-10-10). Nothing was distributed, and the Swift-era data (for example `users`, `groupChats`, `requests` written by the Swift app, and `profile_images/`) is disposable test data. Clearing it is a separate, approved production step: inventory first (counts only), then deletion, then a fresh count. It is optional for launch, because the new rules deny those paths.
 2. Run the counter audit (section 7).
 3. Deploy the rules together with the production backend (section 9, item 6).
 
@@ -128,6 +128,8 @@ Read-only inventory, made with the logged-in Firebase CLI account (counts only):
 The two `profile_images/*.jpg` objects stay **unresolved** until their deletion is independently verified by a fresh listing.
 
 ### Legacy media approval packet (prepared; nothing run)
+
+**Owner answer (the owner confirmed on 2026-10-10):** the legacy data is disposable test data. Use steps 0 and 3 only: inventory, then deletion with a fresh listing. Migration (steps 1 and 2) is not needed. Step 3's rollback note then only asks for an offline copy if wanted.
 
 Each step needs its own approval, and runs only after the production Worker with KV/D1 bindings exists (section 9, item 6). Credentials:
 - the production admin token, held as described in section 10 (DPAPI copy), passed to the process environment only;
@@ -173,9 +175,9 @@ This list replaces every earlier blocker list in this file and in `docs/release-
 1. **Staging admin token: done (2026-10-10).** Rotated, and the encrypted owner copy is stored (section 10). Valid-token, refusal and stalled-fixture checks pass. Production needs its own token (item 6), handled with the same procedure.
 2. **Moderation staffing:** the stores require working reporting, blocking, filtering, timely responses and ongoing moderation (Apple 1.2; Google Play user-generated content). They do **not** set a number of moderators. Project recommendation: a primary moderator plus a backup, with the targets in section 11. Until someone is appointed, reports are only auto-hidden at 3.
 3. **Privacy answers** (section 3): confirm the location and push-token rows, and confirm that `privacy@solotravelsoul.app` exists and is monitored.
-4. **Old-client retirement** (section 5): choose a forced update or an adoption window before the production rules deploy.
-5. **Legacy media** (section 6): decide the path; then (each approval-gated):
-   - migrate or delete the 2 production `profile_images/*.jpg` and verify with a fresh listing;
+4. **Old clients: decided** (the owner confirmed on 2026-10-10: nothing was distributed). No forced update or adoption window; the rules deploy with the first store release (section 5).
+5. **Legacy media and test data** (section 6): the owner confirmed disposable test data, so they are deleted, not migrated. Each step is approval-gated:
+   - delete the 2 production `profile_images/*.jpg` (packet steps 0 and 3; step 1 is optional, steps 2 and 4 are not needed) and verify with a fresh listing;
    - inventory the legacy R2 bucket.
 6. **Production rollout** (separate approval):
    - KV/D1 bindings, then the Durable Object binding and migration on the production Worker;
