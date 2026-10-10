@@ -96,7 +96,7 @@ Run on a physical iPhone and an Android 14+ device (preview builds against stagi
 > Superseded: the authoritative remaining-blocker list is `docs/release-handoff.md` section 9 (2026-10-10).
 
 - **No native or staging verification** — no Android SDK/emulator or device on this machine, iOS requires macOS, Wrangler is not logged in, and there is no authorized staging Firebase project. All items in the checklist above are unverified.
-- **Moderation operations** (App Store 1.2): tooling and enforcement now exist (see Gap closure → Moderation), but at least two moderators must be appointed, the response targets confirmed, and the process staffed before submission. The term filter is a short list and there is no automated image analysis; reported media is hidden at 3 reports and removed by moderators.
+- **Moderation operations** (App Store 1.2 requires timely responses to reports; Google Play requires robust, ongoing moderation; neither sets a staffing level): tooling and enforcement now exist (see Gap closure → Moderation). Appointing a primary and a backup moderator and confirming the response targets are project recommendations (`docs/release-handoff.md` section 11). The term filter is a short list and there is no automated image analysis; reported media is hidden at 3 reports and removed by moderators.
 - **Operator fulfilment of web requests** requires verifying the requester owns the account email before calling the admin endpoint; the processing time promised on the web page should be confirmed by the owner.
 - **Credentials/config** listed in the rollout order (Workers Paid, service account, admin token, Storage-to-Firestore grant, EAS env vars, store submit config) are not set up by this change.
 - Public photo URLs remain bearer-link accessible until deleted; legacy data repair and coordinated old-client rollout as described above.
@@ -128,12 +128,12 @@ Enforced by `firestore.rules` / `storage.rules` and the Worker, not by the app U
 | Role | Responsibility |
 |---|---|
 | Project owner | Appoints/removes moderators (`moderators/{uid}`), owns the blocked-term list, approves suspensions longer than 30 days, handles legal requests. |
-| Moderators (at least two, so the queue is covered every day) | Work the queue oldest-first, record a resolution on every report, remove violating content and its media, suspend repeat or severe offenders. |
+| Moderators (project recommendation: a primary and a backup, so the queue is covered every day; not a store rule) | Work the queue oldest-first, record a resolution on every report, remove violating content and its media, suspend repeat or severe offenders. |
 
 | Report type | Target first action |
 |---|---|
 | Child safety, credible threats, self-harm (`safety`) | Within 4 hours: hide/remove, suspend, escalate. |
-| Harassment, hate, sexual content (`harassment`, `inappropriate`) | Within 24 hours (App Review expects objectionable content to be acted on promptly). |
+| Harassment, hate, sexual content (`harassment`, `inappropriate`) | Within 24 hours (project target; Apple 1.2 asks for "timely responses" without a figure). |
 | Spam, fake profiles, other | Within 72 hours. |
 
 Escalation: child sexual abuse material is never reviewed further or forwarded internally — remove it, suspend the account, preserve the report record, and report to NCMEC (CyberTipline) or the national authority; imminent danger goes to local emergency services; legal/law-enforcement requests go to the project owner (privacy@ / safety@solotravelsoul.app). Review the queue age daily; anything older than its target is escalated to the owner.

@@ -16,15 +16,20 @@ Technical detail and test evidence: `docs/release-hardening.md` (latest section:
 - **Retired:** the proof Worker `solotravelsoul-api-do-staging` (deleted) and its key (revoked).
 - **Disposable test accounts:** earlier live-test runs left some in staging Auth/Firestore (emails `sts-live-<run>-<key>@example.test`). Delete them when staging testing is finished. The native run of 2026-10-09 removed all of its own (section 10).
 
-## 1. Open decisions and owners (to be named)
+## 1. Owner decisions (one table, 2026-10-10)
 
-| Item | Needed before | Owner | Status |
+Every open decision is in this table. Recommendations come from the code and the checks recorded in this file; nothing has been decided or appointed.
+
+| Decision | Recommendation | Consequence | Required input |
 |---|---|---|---|
-| Approve the staging approval packet (release-hardening.md → "Staging approval packet") | any staging write or build | app owner | open |
-| Appoint at least two moderators and confirm response targets (release-hardening.md → "Responsibilities, response targets and escalation") | store submission (App Store 1.2) | app owner | open: no moderators appointed in staging or production |
-| Choose how old app versions are retired (section 5) | production rules deploy | app owner | open |
-| Decide the legacy media path (section 6) | production Worker deploy | app owner | open |
-| Confirm the privacy answers (section 3) | console entry | app owner | open: drafts only |
+| Moderators and coverage | Name a primary moderator and a backup (project recommendation, not a store rule) and adopt the response targets in section 11 | Without anyone working the queue, the "timely responses" (Apple 1.2) and "robust, ongoing moderation" (Google Play) requirements cannot be met; reports are only auto-hidden at 3 | Who (the accounts to grant later), and confirmation of the targets |
+| Privacy answers | Declare per section 3: no device location, no push token, no analytics; retained items as listed | Store forms must match the shipped build; enabling Mapbox or Foursquare later changes the answers | Confirm section 3, the privacy mailbox, and that Mapbox/Foursquare stay off for release |
+| Old clients | No forced-update gate (no Expo build was ever distributed). Retire the legacy Swift iOS app (bundle `Raviteja.SoloTravelSoul`) before the production rules deploy | The Swift app cannot be force-updated by this app; any installed copies stop writing once the new rules deploy | Was the Swift app ever distributed (TestFlight or App Store), and is any of its production data to be kept? |
+| Legacy media | Approve the inventory (section 6), then migrate any of the 2 `profile_images/*.jpg` whose owner still exists and delete the rest, using the packet in section 6 | Until resolved, deletions for those owners end `blocked` and keep the account in Auth | Approval for each step in section 6 |
+| Production counter audit | Approve the sizing count first, then the full read-only audit if the count fits the budget (section 7) | Without it, counters are unverified before the stricter rules | Approval and a low-traffic day |
+| Production rollout | Approve as one change set: production EAS variables, Worker bindings and Durable Object migration, secrets (including a production admin token stored with the section 10 procedure), rules, indexes, cron | Nothing in production changes until then; store review needs a working production backend | Approval and a date |
+| Store accounts and iOS | Android first; iOS only if a paid Apple Developer membership is accepted | iOS stays BLOCKED otherwise | Play Console access and service-account key (kept local); the decision on iOS |
+| Free/Spark ceilings | Accept for launch and monitor with `scripts/stagingUsage.cjs` | Above the ceilings, uploads, deletions or views fail until the next day | Acceptance |
 
 ## 2. Account-deletion URL
 
@@ -33,35 +38,75 @@ Technical detail and test evidence: `docs/release-hardening.md` (latest section:
 - Staging URL (for testing only, live): `https://solotravelsoul-r2-upload-staging.ravitejatravelsoul.workers.dev/account-deletion`.
 - Privacy contact used in the app and page: `privacy@solotravelsoul.app`. Confirm that the mailbox exists and is monitored.
 
-## 3. Store privacy answers (draft)
+## 3. Store privacy answers (draft from code, 2026-10-10)
 
-Derived from the current code, which differs from the older tables in `docs/PLAY_STORE_SUBMISSION_CHECKLIST.md` Step 7 and `docs/APP_STORE_SUBMISSION_CHECKLIST.md` Step 7. Correct those files once confirmed.
+Checked against the current code. It differs from the older tables in `docs/PLAY_STORE_SUBMISSION_CHECKLIST.md` and `docs/APP_STORE_SUBMISSION_CHECKLIST.md` (Step 7); correct those once confirmed. **Owner confirmation needed** is marked; everything else is a fact of the current code.
 
-| Data | Collected | Shared with other users | Notes from code |
-|---|---|---|---|
-| Name, email | Yes (required) | Name and photo appear on public profile, posts, comments and chats | Email is used for sign-in and an exact-match lookup directory; it is not listed publicly |
-| Photos | Yes (optional) | Yes, when attached to public posts, journals or the profile | Stored by the Worker (KV/D1); access is checked on every request; copies already downloaded cannot be recalled |
-| User content (trips, journals, posts, comments, reviews) | Yes | Public posts and journals; trips are private unless published | — |
-| Messages (direct and group chats) | Yes | With the chat participants | Kept for the other participants after deletion, with the name shown as "Deleted User" |
-| Location | Device position used on-device (`services/locationService.ts`); the user-entered city is stored | City and destination are shared with other users only through the opt-in Nearby Travelers feature | Confirm whether coordinates are sent to Mapbox/Foursquare place searches. If so, declare approximate location processed by service providers |
-| Crash logs / analytics | **No SDK found** (no Crashlytics or analytics package in `apps/mobile/package.json`) | — | The older checklist's Crashlytics row is wrong unless an SDK is added |
-| Push token | Check `expo-notifications` usage before declaring | — | Confirm with the owner |
+| Data | Collected / stored | Shared with other users | Sent to service providers | From code |
+|---|---|---|---|---|
+| Name, email | Yes (required) | Name and photo on the public profile, posts, comments and chats; email is not listed publicly | Firebase (Auth, Firestore) | Email is used for sign-in and an exact-match lookup directory |
+| Photos | Yes (optional) | When attached to public posts, journals or the profile | Cloudflare (Worker, KV, D1) | Access is checked on every request; copies already downloaded cannot be recalled |
+| User content (trips, journals, posts, comments, reviews) | Yes | Public posts and journals; trips are private unless published | Firebase | — |
+| Messages (direct and group) | Yes | With the chat participants | Firebase | Kept for the other participants after deletion, shown as "Deleted User" |
+| City, home country, travel destination | Yes, typed by the user | Through the opt-in Nearby Travelers feature only | Firebase | Free text, not coordinates |
+| Device location (GPS) | **Not collected in the current build** | — | — | `getCurrentLocation()` is reachable only through `hooks/useLocation.ts`, which no screen uses. Foursquare `searchNearby()` has no caller. Mapbox and Foursquare are off unless `EXPO_PUBLIC_MAPBOX_ENABLED` / `EXPO_PUBLIC_FOURSQUARE_ENABLED` are `"true"`, and neither is set for production. **Owner confirmation needed:** if Mapbox is enabled later, maps show the device position through the Mapbox SDK, whose telemetry must then be declared or disabled. The location permissions in `app.json` are declared but unused. |
+| Push token | **Not collected** | — | — | No `getExpoPushTokenAsync`/`getDevicePushTokenAsync` call. Only local notifications are scheduled on the device (trip reminders, join-request alerts). The FCM receive permission comes in through the `expo-notifications` library. |
+| Crash logs, analytics, advertising IDs | **None** | — | — | No Crashlytics, analytics or ad SDK in `apps/mobile/package.json` |
+| Safety reports | Yes (reporter, target, reason, optional details) | Moderators only | Firebase | Retained after either party's deletion |
 
+**Deletion behaviour (in-app: Profile → Delete account; web: section 2):**
+- **Deleted:**
+  - the profile and every subcollection, the directory entries, and the public profile;
+  - posts, journals, trips and groups the user owns, and the user's likes, saves, follows and memberships;
+  - the image bytes (KV), and the Firebase Auth account (last).
+- **Kept, anonymised as "Deleted User":** messages the user sent, comments on others' posts (as tombstones), and notifications already delivered to others.
+- **Kept (records):**
+  - safety reports;
+  - the `accountDeletions/{uid}` job record (status, steps, timestamps), which permanently blocks writes for that UID;
+  - `legacyMediaCleanup/{uid}`;
+  - the D1 media index rows with `status = removed`. These keep the owner UID, media ID, purpose, size, type and timestamps, but no image.
+
+  **Owner confirmation needed:** declare these retained technical records, or approve a later change that clears `owner_uid` on removal.
+- **Timing:** deletion usually completes in seconds. It can take longer, because the cron finishes interrupted deletions (verified: about 8 minutes). It can end `blocked` while legacy media is unverified. State "deletion may take time" rather than "immediate".
+- **Logs:** Cloudflare Workers Logs are enabled on staging (`[env.staging.observability]`). **Owner confirmation needed:** whether production enables them, and their retention.
+
+Other facts:
 - Encrypted in transit: yes (HTTPS to Firebase and the Worker).
-- Deletion: in-app (Profile → Delete account) and the web URL above. Deletion can end in a **blocked** state if legacy media cannot be verified as deleted. The account stays locked and is completed later, so state "deletion may take time" rather than "immediate".
-- Data not sold; no advertising SDKs found.
+- No data is sold; no advertising SDKs.
 
-## 4. Store submission placeholders
+**Owner confirmation needed:** that `privacy@solotravelsoul.app` exists and is monitored.
 
-`apps/mobile/eas.json` → `submit.production` still holds `REPLACE_WITH_YOUR_APPLE_ID`, `REPLACE_WITH_YOUR_APP_STORE_CONNECT_APP_ID` and `REPLACE_WITH_YOUR_APPLE_TEAM_ID`. Android needs `google-play-key.json` locally (gitignored). iOS distribution needs an Apple Developer Program membership, which is a paid account. It is out of scope under the no-paid-plans constraint and listed as a blocker, not a recommendation.
+## 4. Store configuration and credentials still missing (no values requested here)
 
-## 5. Old-client rollout requirement
+| Item | State | What the owner provides (locally, never in chat) |
+|---|---|---|
+| EAS `production` environment | Holds only `GOOGLE_SERVICES_JSON` and `GOOGLE_SERVICE_INFO_PLIST` (names checked; the app does not use them). **None of the eight `EXPO_PUBLIC_*` values** is set (Firebase web config of `solotravelsoul-57a9e`, production Worker URL), so a production build would fail its config guard. | Add the eight values to EAS `production` after the production Worker exists (the same names as `preview`). `npm run check:staging` validates the staging set; run the equivalent check before building production. |
+| `eas.json` `submit.production.ios` | `REPLACE_WITH_YOUR_APPLE_ID`, `REPLACE_WITH_YOUR_APP_STORE_CONNECT_APP_ID`, `REPLACE_WITH_YOUR_APPLE_TEAM_ID` | Only if iOS is in scope (needs the paid Apple Developer Program) |
+| `eas.json` `submit.production.android` | `serviceAccountKeyPath: ./google-play-key.json`, track `internal` | The Play Console service-account JSON at `apps/mobile/google-play-key.json`; it is gitignored and never committed |
+| Play Console app `com.solotravelsoul.app` | Not created according to this repository; no EAS production build exists (EAS lists only the three staging previews) | Create the app; complete Data safety (section 3), content rating and target audience; set the account-deletion URL (section 2) |
+| Android signing for production | EAS-managed keystores exist only for `com.solotravelsoul.app.staging` | The first production build creates the production keystore. Run it interactively once, after approval. |
+| Version numbers | `app.json` `version` 1.0.0; build numbers are managed by EAS (`cli.appVersionSource: remote`, `production.autoIncrement: true`) | Nothing needed; raise `version` for user-visible releases |
+| Target API | Builds target API 36, which meets Google Play's requirement for new apps and updates from 31 Aug 2026 ([developer.android.com](https://developer.android.com/google/play/requirements/target-sdk)) | — |
 
-The current rules reject old app versions: bulk email queries, comment batches without action IDs, separate DM writes, and Firebase Storage uploads (removed). Before deploying the rules to production:
+## 5. Old clients: forced update versus adoption window
 
-1. Release the new app version and wait for adoption, or ship a forced-update gate. A gate has not been implemented; that is a decision for the owner.
-2. Deploy the rules only once old clients are acceptably retired. Old clients then fail closed: they cannot write.
-3. Run the counter audit (section 7) and repair before testing unlike/unfollow on production data.
+**Who the old clients are (checked 2026-10-10):**
+- **Expo app (`com.solotravelsoul.app`):** no build was ever distributed. EAS lists only the three staging preview builds (package `com.solotravelsoul.app.staging`), and `app.json` has no version history. So there is no installed base of older versions of this app.
+- **Legacy native Swift iOS app** (Xcode project at the repository root, bundle `Raviteja.SoloTravelSoul`):
+  - It uses the production Firebase project `solotravelsoul-57a9e` (its `GoogleService-Info.plist`) and the collections `users`, `groupChats`, `messages`, `trips`, `requests`, `notifications`, `preferences`, `languages`, `destinations` and `groups`, plus Firebase Storage.
+  - The new rules do not allow most of these paths, and Storage uploads are refused. Once the rules deploy, an installed copy fails closed and can no longer write.
+  - Whether it was ever distributed is not recorded here.
+
+| Option | Fits this project? | Cost | Effect |
+|---|---|---|---|
+| Forced-update gate in the Expo app | **No**: there are no older Expo builds to force, and a gate in this app cannot reach the Swift app, which is a different bundle | New code, a remote config value, store review | None for the actual old client |
+| Adoption window (keep the old rules until the old versions fade) | **No**: keeping the old rules would keep the forged-relationship and counter holes open in production for the whole window | Delayed security fixes | Delays the rules for a client the new app does not replace in place |
+| **Retire the legacy Swift app, then deploy the new rules with the first store release (recommended)** | Yes | Owner action only: confirm its distribution; if distributed, expire TestFlight builds or remove it from sale and tell its users | No gate needed; new installs get the new app; old Swift copies fail closed |
+
+Before the production rules deploy:
+1. The owner confirms the Swift app's distribution status, and whether its production data (for example `groupChats`, `requests`) must be migrated or may be dropped. Not decided here.
+2. Run the counter audit (section 7).
+3. Deploy the rules together with the production backend (section 9, item 6).
 
 ## 6. Legacy media
 
@@ -74,15 +119,36 @@ Read-only inventory, made with the logged-in Firebase CLI account (counts only):
 | Staging `solotravelsoul-staging.firebasestorage.app` / `.appspot.com` | do not exist (404): never provisioned |
 | Production legacy R2 `solotravelsoul-images` | not inventoried: Wrangler access exists, but a production R2 listing has not been authorized in any phase so far |
 
-The two `profile_images/*.jpg` objects stay **unresolved** until their deletion is independently verified by a fresh listing. Separate, approval-gated steps (none run):
+The two `profile_images/*.jpg` objects stay **unresolved** until their deletion is independently verified by a fresh listing.
 
-1. **Migration dry run:** `ADMIN_DELETION_TOKEN=… npx tsx scripts/migrateLegacyMedia.ts --project solotravelsoul-57a9e --worker <production worker> --state <file> --source firebase`. This needs the production Worker with KV/D1 bindings and operator application-default credentials. Review the counts.
-2. **Migration apply** (`--apply`): only after approval. Verify each import with the digest endpoint; the state file records `verified`/`referenced`.
-3. **Source deletion:** a separate approval. Delete only objects whose state is `referenced` (or whose owner account no longer exists), using the owner's credentials. Then run a fresh listing of `profile_images/`, which must show none of them, and record the result in `legacyMediaCleanup/{uid}`. Until then, account deletions for those owners report `blocked` and keep Auth.
+### Legacy media approval packet (prepared; nothing run)
 
-## 7. Counter repair (dry run prepared, not run)
+Each step needs its own approval, and runs only after the production Worker with KV/D1 bindings exists (section 9, item 6). Credentials:
+- the production admin token, held as described in section 10 (DPAPI copy), passed to the process environment only;
+- operator application-default credentials for `solotravelsoul-57a9e`.
 
-`npx tsx scripts/auditCounters.ts --project <project> [--report <local file>]` reads posts, journals, likes, saves, comments, follows, profiles and members, and compares every stored counter with its relationship documents. It prints totals per counter and writes mismatching paths only to the local report file. It has no write path. Run order: staging first, then production with approval. It reads every document once, which counts against Spark's 50,000 reads/day. Repairs are a separate approved step, written from the report.
+| Step | Command (read-only unless stated) | Expected quota | Verification | Rollback |
+|---|---|---|---|---|
+| 0. Inventory | `node scripts/countLegacyStorage.cjs solotravelsoul-57a9e.firebasestorage.app profile_images/` (GCS JSON API list; counts and bytes only) and `npx wrangler r2 bucket info solotravelsoul-images` (bucket metadata: object count and size) | 1 Storage list operation; 1 Cloudflare API call | 2 objects expected under `profile_images/`; the R2 count is recorded | none (read-only) |
+| 1. Dry run | `npx tsx scripts/migrateLegacyMedia.ts --project solotravelsoul-57a9e --worker <production worker> --state <local state file> --source firebase` | a few Firestore reads per object (owner check and reference queries); 2 Storage downloads | Counts per stage: `planned` vs `skipped:<reason>` | none (no writes) |
+| 2. Apply (**writes**) | step 1 plus `--apply` | 2 KV writes, about 6 D1 writes, 1 Firestore transaction per reference | Each item reaches `verified` (the digest endpoint matches the SHA-256), then `referenced`. Spot-check the profile photo in the app as its owner. | Before step 3 only: copy the state file and note each referenced document's field. To revert, put the original Storage URL back into each recorded field in one transaction per document (the source objects still exist). The new media rows become unattached and are swept by maintenance. |
+| 3. Source deletion (**destructive**) | owner credentials: delete only objects whose state is `referenced`, or whose owner account no longer exists | 2 Storage delete operations | A fresh listing of `profile_images/` shows none of them; record `verified_absent` in `legacyMediaCleanup/{uid}` | **none after deletion**. Keep a verification window (for example 7 days) after step 2 and an offline copy of the 2 objects, or accept that step 3 is irreversible. |
+| 4. Legacy R2 | inventory only (step 0) until the owner decides; the same packet with `--source r2` | per object as above | as above | as above |
+
+Accounts whose legacy media is unresolved: deletion ends `blocked` and the account stays in Auth until step 3 is verified.
+
+## 7. Counter audit (staging run 2026-10-10; production prepared)
+
+**Staging (read-only, done 2026-10-10):**
+- Command: `npx tsx scripts/auditCounters.ts --project solotravelsoul-staging --report <local file>`, with temporary application-default credentials from the Firebase CLI login. The credential file was deleted after the run.
+- Result: **358 documents read, 0 mismatches** across all nine counters (`summary: {}`); the report file is `[]`.
+- A count with `scripts/countAuditCollections.cjs` gave the same total, 358, for about 10 reads.
+
+**Production (prepared; not run):**
+1. Sizing: `node scripts/countAuditCollections.cjs solotravelsoul-57a9e`. It runs COUNT aggregations and prints counts only. Cost: about 1 read per 1,000 index entries per collection, i.e. about 10 reads for small collections.
+2. Budget: Spark allows 50,000 Firestore reads per day, shared with app traffic, and the full audit reads every document once. The recommended rule is to run it only if the sizing total is at most 20,000, on a low-traffic day. Above that, the audit needs a smaller scope or a different plan: Firestore export is not available on Spark.
+3. Audit: `npx tsx scripts/auditCounters.ts --project solotravelsoul-57a9e --report <local file outside the repo>` (dry run; no write path).
+4. Repairs: a separate approved step, written from the report.
 
 ## 8. Native and live verification
 
@@ -99,7 +165,7 @@ This list replaces every earlier blocker list in this file and in `docs/release-
 
 **A. Required before release (owner decisions or approvals):**
 1. **Staging admin token: done (2026-10-10).** Rotated, and the encrypted owner copy is stored (section 10). Valid-token, refusal and stalled-fixture checks pass. Production needs its own token (item 6), handled with the same procedure.
-2. **Moderators:** appoint at least two and confirm response targets (App Store 1.2 / Google Play user-generated-content policy). Until then, reports are only auto-hidden at 3 reports.
+2. **Moderation staffing:** the stores require working reporting, blocking, filtering, timely responses and ongoing moderation (Apple 1.2; Google Play user-generated content). They do **not** set a number of moderators. Project recommendation: a primary moderator plus a backup, with the targets in section 11. Until someone is appointed, reports are only auto-hidden at 3.
 3. **Privacy answers** (section 3): confirm the location and push-token rows, and confirm that `privacy@solotravelsoul.app` exists and is monitored.
 4. **Old-client retirement** (section 5): choose a forced update or an adoption window before the production rules deploy.
 5. **Legacy media** (section 6): decide the path; then (each approval-gated):
@@ -389,3 +455,44 @@ $t = [Text.Encoding]::UTF8.GetString([Security.Cryptography.ProtectedData]::Unpr
    ```
    Without the first line, Windows PowerShell 5.1 prefixes U+FEFF and every request is refused.
 4. Check `GET /admin/deletion-status` with the new value: expect 200. Then replace the old file with the new one.
+
+## 11. Moderator onboarding (prepared; nobody appointed, no production roles granted)
+
+**Store requirements (verified 2026-10-10 against the official texts):**
+- **Apple App Review Guideline 1.2** requires, for user-generated content:
+  - a method for filtering objectionable material;
+  - a mechanism to report offensive content, with timely responses to concerns;
+  - the ability to block abusive users;
+  - published contact information.
+
+  It sets no number of moderators and no response time ([developer.apple.com](https://developer.apple.com/app-store/review/guidelines/#user-generated-content)).
+- **Google Play's User Generated Content policy** requires:
+  - acceptance of terms or a user policy before users post;
+  - definitions of objectionable content;
+  - in-app reporting and blocking (blocking for 1:1 interaction);
+  - "robust, effective, and ongoing" moderation.
+
+  It sets no moderator count or hour targets ([support.google.com](https://support.google.com/googleplay/android-developer/answer/9876937)).
+- The app already provides the term filter, reporting with auto-hide at 3, blocking, the moderation queue, removal, suspension and the published contacts. **Staffing and the targets below are project recommendations.**
+
+**Roles (proposed):**
+
+| Role | Who (owner fills in) | Responsibility |
+|---|---|---|
+| Project owner | — | Grants and revokes the moderator role, owns the blocked-term list, approves suspensions over 30 days, handles legal and law-enforcement requests |
+| Primary moderator | — | Works the queue daily, oldest first; records a resolution on every report |
+| Backup moderator | — | Covers the primary's absence; checks the queue age daily |
+
+**Proposed response targets (recommendations):**
+- **Safety:** child safety, credible threats or self-harm within 4 hours.
+- **Abuse:** harassment, hate or sexual content within 24 hours.
+- **Other:** spam, fake profiles and everything else within 72 hours.
+- **Escalation:** anything older than its target goes to the owner. Child sexual abuse material is removed, the account suspended, the report kept and reported to NCMEC (CyberTipline) or the national authority. Imminent danger goes to local emergency services.
+
+**Onboarding steps (existing tools):**
+1. The moderator creates a normal app account. The owner records its UID; it is never sent in chat.
+2. Grant on staging first: `npx tsx scripts/grantModerator.ts --project solotravelsoul-staging --uid <UID>` (dry run), then add `--apply`. Production requires `--production` and is part of the production rollout approval. Revoke with `--revoke`.
+3. Walk through the queue on staging: Profile → Safety & Guidelines → Moderation queue.
+   - Show the reported item, then use Dismiss, Remove (also deletes its photos), Restore, or Suspend author. One decision resolves every open report on that item.
+4. **Lifting a suspension:** there is no in-app screen (an optional feature). The owner deletes `accountSuspensions/{uid}` in the Firebase console, or a moderator calls `unsuspendUser`.
+5. **Web deletion requests:** verify that the requester owns the account email first, then `POST /admin/account-deletion` with the admin token (section 10 procedures).

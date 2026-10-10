@@ -199,8 +199,8 @@ eas submit --platform android --latest
 | Item | Detail |
 |---|---|
 | Minimum SDK | API 24 (Android 7.0) — set via `app.json` → `android.minSdkVersion` |
-| Target SDK | API 35 (Android 15) — EAS default; required by Play Store as of Aug 2024 |
-| Firebase config | `google-services.json` must be present at `apps/mobile/google-services.json` and NOT committed to git |
+| Target SDK | API 36 (Android 16), as built by the preview builds. Google Play requires API 36 for new apps and updates from 31 Aug 2026 ([developer.android.com](https://developer.android.com/google/play/requirements/target-sdk)) |
+| Firebase config | Not a native file: the app uses the Firebase JS SDK, configured by the `EXPO_PUBLIC_FIREBASE_*` EAS variables (see `docs/release-handoff.md` section 4) |
 | Location permission | `ACCESS_COARSE_LOCATION` only (Near Me feature) — fine location not required |
 | Camera/Photos | Accessed only for journal photo uploads — declared in Data Safety |
 
