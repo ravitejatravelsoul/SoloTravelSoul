@@ -24,7 +24,7 @@ Every open decision is in this table. Recommendations come from the code and the
 |---|---|---|---|
 | Moderators and coverage | Name a primary moderator and a backup (project recommendation, not a store rule) and adopt the response targets in section 11 | Without anyone working the queue, the "timely responses" (Apple 1.2) and "robust, ongoing moderation" (Google Play) requirements cannot be met; reports are only auto-hidden at 3 | Who (the accounts to grant later), and confirmation of the targets |
 | Privacy answers | Declare per section 3: no device location, no push token, no analytics; retained items as listed | Store forms must match the shipped build; enabling Mapbox or Foursquare later changes the answers | Confirm section 3, the privacy mailbox, and that Mapbox/Foursquare stay off for release |
-| Old clients | No forced-update gate (no Expo build was ever distributed). Retire the legacy Swift iOS app (bundle `Raviteja.SoloTravelSoul`) before the production rules deploy | The Swift app cannot be force-updated by this app; any installed copies stop writing once the new rules deploy | Was the Swift app ever distributed (TestFlight or App Store), and is any of its production data to be kept? |
+| Old clients | Decide after the owner confirms past distribution. Current EAS history holds only staging previews, so no gate is needed unless older Expo builds were distributed some other way. The legacy Swift iOS app (bundle `Raviteja.SoloTravelSoul`) cannot be force-updated by this app. | Any older client still installed fails closed once the new rules deploy | Were any Expo builds distributed outside the current EAS history? Was the Swift app ever distributed (TestFlight or App Store)? Is any of its production data to be kept? (All unresolved.) |
 | Legacy media | Approve the inventory (section 6), then migrate any of the 2 `profile_images/*.jpg` whose owner still exists and delete the rest, using the packet in section 6 | Until resolved, deletions for those owners end `blocked` and keep the account in Auth | Approval for each step in section 6 |
 | Production counter audit | Approve the sizing count first, then the full read-only audit if the count fits the budget (section 7) | Without it, counters are unverified before the stricter rules | Approval and a low-traffic day |
 | Production rollout | Approve as one change set: production EAS variables, Worker bindings and Durable Object migration, secrets (including a production admin token stored with the section 10 procedure), rules, indexes, cron | Nothing in production changes until then; store review needs a working production backend | Approval and a date |
@@ -48,7 +48,13 @@ Checked against the current code. It differs from the older tables in `docs/PLAY
 | Photos | Yes (optional) | When attached to public posts, journals or the profile | Cloudflare (Worker, KV, D1) | Access is checked on every request; copies already downloaded cannot be recalled |
 | User content (trips, journals, posts, comments, reviews) | Yes | Public posts and journals; trips are private unless published | Firebase | — |
 | Messages (direct and group) | Yes | With the chat participants | Firebase | Kept for the other participants after deletion, shown as "Deleted User" |
-| City, home country, travel destination | Yes, typed by the user | Through the opt-in Nearby Travelers feature only | Firebase | Free text, not coordinates |
+| Profile city and home country | Yes, typed by the user (private `users/{uid}`) | Copied to `publicProfiles/{uid}` (`currentCity`, `homeCountry`). Any signed-in, unblocked user can read them **only while the profile is public**; new profiles default to private | Firebase | Free text, not coordinates |
+| Nearby Travelers entry | Only after the user switches on discovery in Privacy settings (default off) | `nearbyTravelers/{uid}`: name, photo, travel styles, city and current destination. Any signed-in user can read it; switching discovery off deletes it, and so does making the profile private | Firebase | Free text |
+| Location on posts and journals | Yes, optional `location` and `country` text on each post and journal | With the content: any signed-in user while it is public and not archived; always the author and moderators | Firebase | Free text |
+| Destination on public trips | Yes, when a trip is published | `publicTrips`: every signed-in user | Firebase | Free text |
+| Destination on community groups | Yes | `travelGroups`: every signed-in user for public groups; the owner only for private groups | Firebase | Free text |
+| Destination on chat groups | Yes | `groups`: members only | Firebase | Free text |
+| Private trip plans | Yes (destination, itinerary places with their place coordinates) | No: owner only (`users/{uid}/trips`) | Firebase | Place coordinates come from the place catalogue or search, not from the device |
 | Device location (GPS) | **Not collected in the current build** | — | — | `getCurrentLocation()` is reachable only through `hooks/useLocation.ts`, which no screen uses. Foursquare `searchNearby()` has no caller. Mapbox and Foursquare are off unless `EXPO_PUBLIC_MAPBOX_ENABLED` / `EXPO_PUBLIC_FOURSQUARE_ENABLED` are `"true"`, and neither is set for production. **Owner confirmation needed:** if Mapbox is enabled later, maps show the device position through the Mapbox SDK, whose telemetry must then be declared or disabled. The location permissions in `app.json` are declared but unused. |
 | Push token | **Not collected** | — | — | No `getExpoPushTokenAsync`/`getDevicePushTokenAsync` call. Only local notifications are scheduled on the device (trip reminders, join-request alerts). The FCM receive permission comes in through the `expo-notifications` library. |
 | Crash logs, analytics, advertising IDs | **None** | — | — | No Crashlytics, analytics or ad SDK in `apps/mobile/package.json` |
@@ -91,20 +97,20 @@ Other facts:
 ## 5. Old clients: forced update versus adoption window
 
 **Who the old clients are (checked 2026-10-10):**
-- **Expo app (`com.solotravelsoul.app`):** no build was ever distributed. EAS lists only the three staging preview builds (package `com.solotravelsoul.app.staging`), and `app.json` has no version history. So there is no installed base of older versions of this app.
+- **Expo app (`com.solotravelsoul.app`):** the current EAS build history contains only the three staging preview builds (package `com.solotravelsoul.app.staging`, 2026-10-09), and `app.json` carries no version history. Builds made outside this EAS project (local builds, another account, Expo Go sessions) cannot be seen here. Whether older versions were ever distributed is **owner-unconfirmed**.
 - **Legacy native Swift iOS app** (Xcode project at the repository root, bundle `Raviteja.SoloTravelSoul`):
   - It uses the production Firebase project `solotravelsoul-57a9e` (its `GoogleService-Info.plist`) and the collections `users`, `groupChats`, `messages`, `trips`, `requests`, `notifications`, `preferences`, `languages`, `destinations` and `groups`, plus Firebase Storage.
   - The new rules do not allow most of these paths, and Storage uploads are refused. Once the rules deploy, an installed copy fails closed and can no longer write.
-  - Whether it was ever distributed is not recorded here.
+  - Whether it was ever distributed, and whether its production data must be kept, are **unresolved owner decisions**.
 
 | Option | Fits this project? | Cost | Effect |
 |---|---|---|---|
-| Forced-update gate in the Expo app | **No**: there are no older Expo builds to force, and a gate in this app cannot reach the Swift app, which is a different bundle | New code, a remote config value, store review | None for the actual old client |
-| Adoption window (keep the old rules until the old versions fade) | **No**: keeping the old rules would keep the forged-relationship and counter holes open in production for the whole window | Delayed security fixes | Delays the rules for a client the new app does not replace in place |
-| **Retire the legacy Swift app, then deploy the new rules with the first store release (recommended)** | Yes | Owner action only: confirm its distribution; if distributed, expire TestFlight builds or remove it from sale and tell its users | No gate needed; new installs get the new app; old Swift copies fail closed |
+| Forced-update gate in the Expo app | Only if the owner confirms that older Expo builds were distributed. It can never reach the Swift app, which is a different bundle. | New code, a remote config value, store review | Protects only distributed Expo versions |
+| Adoption window (keep the old rules until the old versions fade) | Not preferred: the old rules keep the forged-relationship and counter holes open in production for the whole window | Delayed security fixes | Gives old clients time, at the cost of security |
+| **Deploy the new rules with the first store release; retire any distributed old client first (recommended, pending the owner's answers)** | Yes, once the distribution questions are answered | Owner action: confirm what was distributed. If the Swift app was, expire its TestFlight builds or remove it from sale and tell its users | Old copies fail closed; no gate unless older Expo builds turn out to be distributed |
 
 Before the production rules deploy:
-1. The owner confirms the Swift app's distribution status, and whether its production data (for example `groupChats`, `requests`) must be migrated or may be dropped. Not decided here.
+1. The owner confirms whether older Expo builds or the Swift app were distributed, and whether the Swift app's production data (for example `groupChats`, `requests`) must be migrated or may be dropped. All of this is **unresolved**.
 2. Run the counter audit (section 7).
 3. Deploy the rules together with the production backend (section 9, item 6).
 
