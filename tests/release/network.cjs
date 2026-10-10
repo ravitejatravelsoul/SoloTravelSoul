@@ -1,3 +1,4 @@
+/* global __dirname */
 // Behaviour tests: live connectivity (useNetworkState) and how the offline banner, chat hooks
 // and sync engine react to a disconnect/reconnect while the app stays in the foreground.
 //   node tests/release/network.cjs

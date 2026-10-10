@@ -25,7 +25,7 @@ Every open decision is in this table. Recommendations come from the code and the
 | Moderators and coverage | Name a primary moderator and a backup (project recommendation, not a store rule) and adopt the response targets in section 11 | Without anyone working the queue, the "timely responses" (Apple 1.2) and "robust, ongoing moderation" (Google Play) requirements cannot be met; reports are only auto-hidden at 3 | Who (the accounts to grant later), and confirmation of the targets |
 | Privacy answers | Declare per section 3: no device location, no push token, no analytics; retained items as listed | Store forms must match the shipped build; enabling Mapbox or Foursquare later changes the answers | Confirm section 3, the privacy mailbox, and that Mapbox/Foursquare stay off for release |
 | Old clients | **Answered:** the owner confirmed on 2026-10-10 that neither the Expo app nor the legacy Swift app (`Raviteja.SoloTravelSoul`) was ever distributed. So: no forced-update gate, no adoption window, and nothing to retire for users. Deploy the new rules with the first store release (section 5). | No installed old clients exist to break | None |
-| Legacy data and media | Approve cleanup scope A from the preflight (section 6): Swift-era documents and the Swift user's `profile_images` object. Decide B1 (3 Swift Auth accounts) and B2 (89 demo docs) separately. Keep the mixed account; migrate its R2 photo with the production Worker. | Until scope A is deleted, deletions of those owners end `blocked`. Deleting B2 also clears all 20 counter mismatches. | Approval of A; decisions on B1 and B2 |
+| Legacy data and media | Approve A1 (207 root + 229 subcollection Swift-era Firestore docs) and A2 (1 Storage object) separately. Decide B1 (3 Swift Auth accounts) and B2 (77 demo root docs, plan SHA-256 `ea3b3544…e8cf6d`) separately. Keep the shared account and the 12 demo roots that reference it; migrate its R2 photo with the production Worker. | Until A2 is deleted, a deletion of that owner ends `blocked`. B2 clears all 20 counter mismatches. | Approvals of A1 and A2; decisions on B1 and B2 |
 | Production counter audit | **Done (read-only, 2026-10-10)**: 33 docs, 20 mismatches, all on demo seed docs (section 7) | No repair needed if the demo content is deleted | B2 decision (section 6) |
 | Production rollout | Approve as one change set: production EAS variables, Worker bindings and Durable Object migration, secrets (including a production admin token stored with the section 10 procedure), rules, indexes, cron | Nothing in production changes until then; store review needs a working production backend | Approval and a date |
 | Store accounts and iOS | Android first; iOS only if a paid Apple Developer membership is accepted | iOS stays BLOCKED otherwise | Play Console access and service-account key (kept local); the decision on iOS |
@@ -161,14 +161,36 @@ Target confirmed: Firebase project `solotravelsoul-57a9e` (ACTIVE). Read-only th
 
 ### Cleanup scope requiring approval (prepared; nothing deleted)
 
-The exact manifest lives outside the repository, readable only by the owner account: `%LOCALAPPDATA%\SoloTravelSoul\production-cleanup-manifest-2026-10-10.json`. It holds document and object paths, which are not reproduced here.
+Local files outside the repository, readable only by the owner account, in `%LOCALAPPDATA%\SoloTravelSoul\`. They hold document and object paths or UIDs, which are not reproduced here:
+- `production-cleanup-manifest-2026-10-10.json`: scopes A1, A2, B1, the B2 reference, and the exclusions;
+- `demo-cleanup-plan-2026-10-10.json`: the B2 dry-run manifest;
+- `protected-accounts.json`: the shared account's UID.
 
 | Scope | Contents | Basis | Approval |
 |---|---|---|---|
-| **A. Confirmed Swift-era test data** | `groupChats` 20 docs + 49 subcollection docs. Swift-schema `groups` 20. `notifications` 3. Swift-only `users` 4 + 180 subcollection docs. The 3 `profile_options_*` collections (160). 1 Storage object `profile_images/<swift-only uid>.jpg` (893,727 bytes). | The owner confirmed that Swift data is disposable test data; attribution by Swift-only collection or schema | Required (production delete) |
+| **A1. Confirmed Swift-era Firestore data** | Root documents: `groupChats` 20, Swift-schema `groups` 20, `notifications` 3, Swift-only `users` 4, `profile_options_destinations` 56, `_languages` 50, `_preferences` 54 (207 in total). Subcollection documents: `groupChats/*/messages` 41, `groupChats/*/requests` 8, `users/*/notifications` 151, `users/*/trips` 12, `users/*/saved_places` 17 (229 in total). | The owner confirmed that Swift data is disposable test data; attribution by Swift-only collection or schema | Required, separately from A2 |
+| **A2. Confirmed Swift-era Storage object** | 1 object, `profile_images/<swift-only uid>.jpg` (893,727 bytes) | Same | Required, separately from A1 |
 | B1. Auth accounts of the Swift-only users | 3 accounts (the 4th Swift user doc has none) | Accounts, not data; not covered by the confirmation | Separate decision |
-| B2. Demo seed content | 89 `demo: true` docs (`activityFeed` 30, `publicTrips` 12, `nearbyTravelers` 10, `publicProfiles` 10, `travelGroups` 8, `tripJoinRequests` 6, `direct_chats` 5, `groupJoinRequests` 5, `groups` 3) and their seeded subcollections, via `scripts/cleanupCommunityDemo.ts` | Seed data, not Swift data; all 20 counter mismatches are on these docs | Separate decision |
+| B2. Demo seed content | Dry-run plan (2026-10-10, `scripts/cleanupCommunityDemo.ts`, manifest SHA-256 `ea3b3544884a120bfc2f8c913c1cec4cad9680ab66c91b241f0d7c6545e8cf6d`): **77 root documents deletable**: `activityFeed` 30, `publicTrips` 12, `nearbyTravelers` 10, `publicProfiles` 10, `travelGroups` 8, `tripJoinRequests` 4, `groupJoinRequests` 3. **0 subcollection documents.** These include all 20 docs with counter mismatches. | Seed data (`demo: true`), not Swift data | Separate decision; apply only with that SHA-256 |
+| B2 protected exclusions (kept) | 12 demo roots that reference the shared account are skipped with all their children: `direct_chats` 5 (+ 27 messages), `groups` 3 (+ 15 messages), `tripJoinRequests` 2, `groupJoinRequests` 2. Removing them would change what the shared account sees in its chats and requests. | Protected account | Owner decision later (not in B2) |
 | **Not in scope (keep)** | The mixed account and all its documents; its `profile_images` object; the legacy R2 object (its current photo; needs **migration**, not deletion); every other new-app document | Used by both apps, or new-app data | — |
+
+**Demo cleanup procedure (`scripts/cleanupCommunityDemo.ts`, rewritten 2026-10-10):**
+- **Dry run by default.** It requires `--project` and writes a local manifest (paths and exact update times) with counts. Nothing is deleted.
+- **Apply** requires `--apply --manifest <file> --approve <SHA-256 of that file>`, and `--project` must match the manifest.
+  - Before deleting, it re-reads every item and every parent's full child set, and aborts with nothing deleted if anything changed.
+  - Deletes run children first, each with a `lastUpdateTime` precondition.
+- **What it never deletes:**
+  - unmarked documents (the old "delete every message under a demo parent" fallback is gone);
+  - a parent with any non-demo or nested child (the whole parent is skipped, so nothing is orphaned);
+  - anything that references a protected account (`--protect <uids.json>`).
+- **Tests:** emulator tests in `tests/release/demoCleanup.cjs` (part of `npm run test:rules`) prove this. Non-demo messages, unmarked messages and the shared account's data survive. Missing or wrong approval, the wrong project, a changed item or a new child all refuse or abort.
+- **Production commands** (after approval):
+  ```
+  npx tsx scripts/cleanupCommunityDemo.ts --project solotravelsoul-57a9e --plan <new plan file> --protect %LOCALAPPDATA%\SoloTravelSoul\protected-accounts.json
+  npx tsx scripts/cleanupCommunityDemo.ts --project solotravelsoul-57a9e --apply --manifest <that plan file> --approve <its SHA-256>
+  ```
+  Re-plan right before applying; the approved SHA-256 must match the plan being applied.
 
 **Independence from the new production Worker:**
 - Inventory and the scope A/B deletions need only the owner's Google credentials: the GCS JSON API for the Storage object, Firestore REST or Admin for documents, and the Identity Toolkit admin API for B1. They can run before the production Worker is deployed.
@@ -240,7 +262,7 @@ This list replaces every earlier blocker list in this file and in `docs/release-
 4. **Old clients: decided** (the owner confirmed on 2026-10-10: nothing was distributed). No forced update or adoption window; the rules deploy with the first store release (section 5).
 5. **Legacy media and test data** (section 6): the owner confirmed disposable test data, so they are deleted, not migrated. Each step is approval-gated:
    - inventory done (section 6, "Production read-only preflight");
-   - approve scope A (Swift-era documents and the Swift user's `profile_images` object); decide B1 (Swift Auth accounts) and B2 (demo docs);
+   - approve A1 (Swift-era Firestore docs) and A2 (the Swift user's `profile_images` object) separately; decide B1 (Swift Auth accounts) and B2 (77 demo roots, via the dry-run-by-default cleanup script);
    - the mixed account's `profile_images` object and legacy R2 photo are kept and need migration after the production Worker exists.
 6. **Production rollout** (separate approval):
    - KV/D1 bindings, then the Durable Object binding and migration on the production Worker;
