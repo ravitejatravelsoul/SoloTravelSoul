@@ -25,8 +25,8 @@ Every open decision is in this table. Recommendations come from the code and the
 | Moderators and coverage | Name a primary moderator and a backup (project recommendation, not a store rule) and adopt the response targets in section 11 | Without anyone working the queue, the "timely responses" (Apple 1.2) and "robust, ongoing moderation" (Google Play) requirements cannot be met; reports are only auto-hidden at 3 | Who (the accounts to grant later), and confirmation of the targets |
 | Privacy answers | Declare per section 3: no device location, no push token, no analytics; retained items as listed | Store forms must match the shipped build; enabling Mapbox or Foursquare later changes the answers | Confirm section 3, the privacy mailbox, and that Mapbox/Foursquare stay off for release |
 | Old clients | **Answered:** the owner confirmed on 2026-10-10 that neither the Expo app nor the legacy Swift app (`Raviteja.SoloTravelSoul`) was ever distributed. So: no forced-update gate, no adoption window, and nothing to retire for users. Deploy the new rules with the first store release (section 5). | No installed old clients exist to break | None |
-| Legacy data and media | **Answered:** the owner confirmed on 2026-10-10 that the Swift app's production data is disposable test data. No migration: after the inventory (section 6, step 0), delete the 2 `profile_images/*.jpg` (step 3) and clear the Swift-era test data. Each step is a separate production write. | Until done, deletions for those owners end `blocked` and keep the account in Auth | Approval and a date for the inventory, then for the deletions |
-| Production counter audit | Approve the sizing count first, then the full read-only audit if the count fits the budget (section 7) | Without it, counters are unverified before the stricter rules | Approval and a low-traffic day |
+| Legacy data and media | Approve cleanup scope A from the preflight (section 6): Swift-era documents and the Swift user's `profile_images` object. Decide B1 (3 Swift Auth accounts) and B2 (89 demo docs) separately. Keep the mixed account; migrate its R2 photo with the production Worker. | Until scope A is deleted, deletions of those owners end `blocked`. Deleting B2 also clears all 20 counter mismatches. | Approval of A; decisions on B1 and B2 |
+| Production counter audit | **Done (read-only, 2026-10-10)**: 33 docs, 20 mismatches, all on demo seed docs (section 7) | No repair needed if the demo content is deleted | B2 decision (section 6) |
 | Production rollout | Approve as one change set: production EAS variables, Worker bindings and Durable Object migration, secrets (including a production admin token stored with the section 10 procedure), rules, indexes, cron | Nothing in production changes until then; store review needs a working production backend | Approval and a date |
 | Store accounts and iOS | Android first; iOS only if a paid Apple Developer membership is accepted | iOS stays BLOCKED otherwise | Play Console access and service-account key (kept local); the decision on iOS |
 | Free/Spark ceilings | Accept for launch and monitor with `scripts/stagingUsage.cjs` | Above the ceilings, uploads, deletions or views fail until the next day | Acceptance |
@@ -127,9 +127,61 @@ Read-only inventory, made with the logged-in Firebase CLI account (counts only):
 
 The two `profile_images/*.jpg` objects stay **unresolved** until their deletion is independently verified by a fresh listing.
 
+### Production read-only preflight (2026-10-10)
+
+Target confirmed: Firebase project `solotravelsoul-57a9e` (ACTIVE). Read-only throughout: Cloud Monitoring showed 0 document writes and 0 deletes in production for the day; this preflight used about 300 document reads (estimate; the monitoring data lags), well under 1% of the 50,000 Spark daily reads.
+
+**Storage and R2:**
+
+| Store | Count | Bytes | How |
+|---|---|---|---|
+| Firebase Storage `solotravelsoul-57a9e.firebasestorage.app` (whole bucket) | 2 objects | 912,600 | `node scripts/countLegacyStorage.cjs <bucket> ""` |
+| …of which `profile_images/` | 2 objects | 912,600 | same, prefix `profile_images/` |
+| `solotravelsoul-57a9e.appspot.com` | bucket does not exist (404) | — | same |
+| Legacy R2 `solotravelsoul-images` | 1 object | 341,597 | Cloudflare GraphQL analytics (`r2StorageAdaptiveGroups`): **no R2 operations were spent**. Month-to-date R2 use: 0 Class A and 216 Class B operations (`GetObject`, i.e. the object is being viewed), against free limits of 1M and 10M. |
+
+**Firestore (COUNT aggregations; field names only, never values):**
+- 16 root collections, 305 documents.
+- 89 documents carry `demo: true`: seed data from `scripts/seedCommunityDemo.ts`.
+- Attribution by Swift-only collection name, or by Swift-only document schema:
+
+| Group | Documents | Attribution |
+|---|---|---|
+| `groupChats` | 20 (+ `messages` 41, `requests` 8) | Swift-only collection |
+| `groups` with the Swift schema (`admins`, `creator`, `joinRequests`, `requests`, `activities`) | 20 | Swift schema; the other 4 `groups` docs use the new app's schema (3 of them demo) |
+| `notifications` | 3 | Swift schema (`fromUserId`, `toUserId`, `timestamp`); the new app writes `userId`, `isRead`, `createdAt` |
+| `users` with only Swift fields | 4 (+ `notifications` 151, `trips` 12, `saved_places` 17). 3 of the 4 have an Auth account; they hold a legacy `fcmToken` field | Swift schema; none of the new app's profile fields |
+| `profile_options_destinations` / `_languages` / `_preferences` | 56 / 50 / 54 | Swift-only reference collections |
+| `users` mixing Swift and new-app fields | 1 (+ `notifications` 161, `trips` 13, `saved_places` 5), with an Auth account | **Used by both apps: kept** |
+| Other new-app documents (not demo) | `userLookup` 2, `direct_chats` 1, `travelGroups` 1, `publicProfiles` 1, `nearbyTravelers` 1, `activityFeed` 1, `groups` 1 | Kept |
+
+- Firebase Auth: 4 accounts in total (counted without user info).
+- `profile_images/` owners: one object belongs to a Swift-only user, and one to the mixed account.
+- The mixed account's `users` and `publicProfiles` photo URLs point at the **legacy R2 object**, which is why that object is still being read.
+
+### Cleanup scope requiring approval (prepared; nothing deleted)
+
+The exact manifest lives outside the repository, readable only by the owner account: `%LOCALAPPDATA%\SoloTravelSoul\production-cleanup-manifest-2026-10-10.json`. It holds document and object paths, which are not reproduced here.
+
+| Scope | Contents | Basis | Approval |
+|---|---|---|---|
+| **A. Confirmed Swift-era test data** | `groupChats` 20 docs + 49 subcollection docs. Swift-schema `groups` 20. `notifications` 3. Swift-only `users` 4 + 180 subcollection docs. The 3 `profile_options_*` collections (160). 1 Storage object `profile_images/<swift-only uid>.jpg` (893,727 bytes). | The owner confirmed that Swift data is disposable test data; attribution by Swift-only collection or schema | Required (production delete) |
+| B1. Auth accounts of the Swift-only users | 3 accounts (the 4th Swift user doc has none) | Accounts, not data; not covered by the confirmation | Separate decision |
+| B2. Demo seed content | 89 `demo: true` docs (`activityFeed` 30, `publicTrips` 12, `nearbyTravelers` 10, `publicProfiles` 10, `travelGroups` 8, `tripJoinRequests` 6, `direct_chats` 5, `groupJoinRequests` 5, `groups` 3) and their seeded subcollections, via `scripts/cleanupCommunityDemo.ts` | Seed data, not Swift data; all 20 counter mismatches are on these docs | Separate decision |
+| **Not in scope (keep)** | The mixed account and all its documents; its `profile_images` object; the legacy R2 object (its current photo; needs **migration**, not deletion); every other new-app document | Used by both apps, or new-app data | — |
+
+**Independence from the new production Worker:**
+- Inventory and the scope A/B deletions need only the owner's Google credentials: the GCS JSON API for the Storage object, Firestore REST or Admin for documents, and the Identity Toolkit admin API for B1. They can run before the production Worker is deployed.
+- Only **migration** depends on the Worker (`/admin/media/import`). That covers the mixed account's R2 photo (and its Firebase Storage object, if it is to be kept).
+
+**Verification after any approved deletion:**
+- re-run `scripts/countLegacyStorage.cjs` and the COUNT inventory;
+- each listed path must be absent;
+- the excluded mixed-account data must be unchanged.
+
 ### Legacy media approval packet (prepared; nothing run)
 
-**Owner answer (the owner confirmed on 2026-10-10):** the legacy data is disposable test data. Use steps 0 and 3 only: inventory, then deletion with a fresh listing. Migration (steps 1 and 2) is not needed. Step 3's rollback note then only asks for an offline copy if wanted.
+**Owner answer (the owner confirmed on 2026-10-10):** the Swift app's legacy data is disposable test data. Step 0 is done (preflight above). For the Swift-only `profile_images` object, use step 3 (deletion with a fresh listing). The **mixed account's** `profile_images` object and its **legacy R2 photo** are not covered: they need migration (steps 1–2, which require the production Worker) or an owner decision.
 
 Each step needs its own approval, and runs only after the production Worker with KV/D1 bindings exists (section 9, item 6). Credentials:
 - the production admin token, held as described in section 10 (DPAPI copy), passed to the process environment only;
@@ -152,7 +204,17 @@ Accounts whose legacy media is unresolved: deletion ends `blocked` and the accou
 - Result: **358 documents read, 0 mismatches** across all nine counters (`summary: {}`); the report file is `[]`.
 - A count with `scripts/countAuditCollections.cjs` gave the same total, 358, for about 10 reads.
 
-**Production (prepared; not run):**
+**Production (read-only, run 2026-10-10):**
+- Daily headroom was checked first: Cloud Monitoring showed 0 production document reads for the day.
+- Sizing (`node scripts/countAuditCollections.cjs solotravelsoul-57a9e`): **33 documents**: `publicProfiles` 11, `publicTrips` 12, `travelGroups` 9, `members` 1, all other audited collections 0. The count cost about 10 reads.
+- Audit (`npx tsx scripts/auditCounters.ts --project solotravelsoul-57a9e --report <local file outside the repo>`, temporary application-default credentials deleted afterwards): **33 documents read, 20 mismatches**:
+  - `publicTrips.memberCount`: 12 docs, stored total 20, expected 0;
+  - `travelGroups.memberCount`: 8 docs, stored total 368, expected 0;
+  - none negative.
+- **All 20 are `demo: true` seed documents**: seeded member counts with no member records. There are no counter mismatches on non-demo data.
+- No repair is needed if the demo content is deleted (scope B2 in section 6). If it is kept, a repair is a separate approved write.
+
+**Production procedure (for re-runs):**
 1. Sizing: `node scripts/countAuditCollections.cjs solotravelsoul-57a9e`. It runs COUNT aggregations and prints counts only. Cost: about 1 read per 1,000 index entries per collection, i.e. about 10 reads for small collections.
 2. Budget: Spark allows 50,000 Firestore reads per day, shared with app traffic, and the full audit reads every document once. The recommended rule is to run it only if the sizing total is at most 20,000, on a low-traffic day. Above that, the audit needs a smaller scope or a different plan: Firestore export is not available on Spark.
 3. Audit: `npx tsx scripts/auditCounters.ts --project solotravelsoul-57a9e --report <local file outside the repo>` (dry run; no write path).
@@ -177,14 +239,15 @@ This list replaces every earlier blocker list in this file and in `docs/release-
 3. **Privacy answers** (section 3): confirm the location and push-token rows, and confirm that `privacy@solotravelsoul.app` exists and is monitored.
 4. **Old clients: decided** (the owner confirmed on 2026-10-10: nothing was distributed). No forced update or adoption window; the rules deploy with the first store release (section 5).
 5. **Legacy media and test data** (section 6): the owner confirmed disposable test data, so they are deleted, not migrated. Each step is approval-gated:
-   - delete the 2 production `profile_images/*.jpg` (packet steps 0 and 3; step 1 is optional, steps 2 and 4 are not needed) and verify with a fresh listing;
-   - inventory the legacy R2 bucket.
+   - inventory done (section 6, "Production read-only preflight");
+   - approve scope A (Swift-era documents and the Swift user's `profile_images` object); decide B1 (Swift Auth accounts) and B2 (demo docs);
+   - the mixed account's `profile_images` object and legacy R2 photo are kept and need migration after the production Worker exists.
 6. **Production rollout** (separate approval):
    - KV/D1 bindings, then the Durable Object binding and migration on the production Worker;
    - production secrets (including its own `ADMIN_DELETION_TOKEN`), rules and indexes;
    - the cron decision and monitoring (`scripts/stagingUsage.cjs --script <production>`);
    - then the production account-deletion URL in Play Console (section 2).
-7. **Counter audit** (section 7): dry run, then an approved repair on production before the rules deploy.
+7. **Counter audit** (section 7): done read-only on production (2026-10-10). All 20 mismatches are on demo seed docs; no repair is needed if B2 is approved.
 8. **Store submission:**
    - production builds;
    - replace the `eas.json` `submit.production` placeholders and provide `google-play-key.json` locally (section 4);
