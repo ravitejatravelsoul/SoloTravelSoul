@@ -2,7 +2,8 @@
 // Emulator tests for scripts/cleanupCommunityDemo.ts (run inside `firebase emulators:exec`, see npm run test:rules).
 // Proves: dry run by default, project/approval guards, no deletion of unmarked messages, parents with
 // non-demo or nested children are skipped (no orphans), the protected (shared) account and its data
-// survive, and any change after planning aborts the apply with nothing deleted.
+// survive, retained join requests keep their trips/groups, any change after planning rejects the run in
+// preflight with nothing deleted, and a later batch failure is reported as a partial apply.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -53,7 +54,20 @@ async function seed() {
   // Must survive: demo docs that reference the shared account (array, map key, plain field).
   await w('groups/gShared', { demo: true, members: [SHARED, 'demoA'], memberInfo: { [SHARED]: { name: 'x' } } });
   await w('groups/gShared/messages/s1', { demo: true, text: 'seed' });
-  await w('groupJoinRequests/jrShared', { demo: true, ownerUid: SHARED });
+  await w('groupJoinRequests/jrShared', { demo: true, ownerUid: SHARED, groupId: 'tgSharedTarget' });
+  // Join-request targets: retained requests (protected or non-demo) keep their trip/group; cascades too.
+  await w('travelGroups/tgSharedTarget', { demo: true, ownerUid: 'demoB' });
+  await w('publicTrips/ptProtectedTarget', { demo: true, ownerUid: 'demoB' });
+  await w('tripJoinRequests/jrSharedTrip', { demo: true, tripId: 'ptProtectedTarget', requestorUid: SHARED });
+  await w('travelGroups/tgNonDemoTarget', { demo: true, ownerUid: 'demoB' });
+  await w('groupJoinRequests/realReq', { groupId: 'tgNonDemoTarget', requestorUid: 'realUser' });
+  await w('travelGroups/tgCascade', { demo: true, ownerUid: 'demoB', chatGroupId: 'gChatCascade' });
+  await w('groupJoinRequests/realReq2', { groupId: 'tgCascade', requestorUid: 'realUser' });
+  await w('groups/gChatCascade', { demo: true, members: ['demoB'] });
+  await w('groups/gChatCascade/messages/c1', { demo: true });
+  // Deletable together: a demo trip whose only request is itself demo and deletable.
+  await w('publicTrips/ptDemoOnly', { demo: true, ownerUid: 'demoB' });
+  await w('tripJoinRequests/jrDemoOnly', { demo: true, tripId: 'ptDemoOnly', requestorUid: 'demoA' });
   await w('direct_chats/dcSharedChild', { demo: true, participants: ['demoA', 'demoD'] });
   await w('direct_chats/dcSharedChild/messages/sx', { demo: true, senderId: SHARED });
   // Must survive: nested subcollection under a demo child.
@@ -70,9 +84,11 @@ async function seed() {
 const SURVIVORS = ['direct_chats/dcMixed', 'direct_chats/dcMixed/messages/demoMsg', 'direct_chats/dcMixed/messages/realMsg',
   'groups/gUnmarked', 'groups/gUnmarked/messages/u1', 'groups/gShared', 'groups/gShared/messages/s1', 'groupJoinRequests/jrShared',
   'direct_chats/dcSharedChild', 'direct_chats/dcSharedChild/messages/sx', 'groups/gNested', 'groups/gNested/messages/n1',
-  'groups/gNested/messages/n1/reactions/r1', `users/${SHARED}`, `users/${SHARED}/trips/t1`, `publicProfiles/${SHARED}`, 'activityFeed/real1'];
+  'groups/gNested/messages/n1/reactions/r1', `users/${SHARED}`, `users/${SHARED}/trips/t1`, `publicProfiles/${SHARED}`, 'activityFeed/real1',
+  'travelGroups/tgSharedTarget', 'publicTrips/ptProtectedTarget', 'tripJoinRequests/jrSharedTrip', 'travelGroups/tgNonDemoTarget',
+  'groupJoinRequests/realReq', 'travelGroups/tgCascade', 'groupJoinRequests/realReq2', 'groups/gChatCascade', 'groups/gChatCascade/messages/c1'];
 const DELETABLE = ['publicProfiles/demoA', 'direct_chats/dcDemo', 'direct_chats/dcDemo/messages/m1', 'direct_chats/dcDemo/messages/m2',
-  'travelGroups/tgDemo', 'travelGroups/tgDemo/members/demoA'];
+  'travelGroups/tgDemo', 'travelGroups/tgDemo/members/demoA', 'publicTrips/ptDemoOnly', 'tripJoinRequests/jrDemoOnly'];
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -84,10 +100,11 @@ test('dry run is the default: writes a manifest, deletes nothing, reports distin
   assert.equal(r.status, 0, r.out);
   const report = JSON.parse(r.out.trim().split('\n').pop());
   assert.equal(report.mode, 'dry-run (nothing deleted)');
-  assert.deepEqual(report.wouldDelete.roots, { publicProfiles: 1, travelGroups: 1, direct_chats: 1 });
+  assert.deepEqual(report.wouldDelete.roots, { publicProfiles: 1, publicTrips: 1, travelGroups: 1, tripJoinRequests: 1, direct_chats: 1 });
   assert.deepEqual(report.wouldDelete.subcollections, { 'direct_chats/*/messages': 2, 'travelGroups/*/members': 1 });
-  assert.equal(report.wouldDelete.total, 6);
-  assert.deepEqual(report.skippedRoots, { 'non-demo child in messages': 2, 'references a protected account': 3, 'nested subcollection under messages': 1 });
+  assert.equal(report.wouldDelete.total, 8);
+  assert.deepEqual(report.skippedRoots, { 'non-demo child in messages': 2, 'references a protected account': 4, 'nested subcollection under messages': 1,
+    'referenced by a retained groupJoinRequests': 3, 'referenced by a retained tripJoinRequests': 1, 'referenced by a retained travelGroups': 1 });
   for (const p of [...DELETABLE, ...SURVIVORS]) assert.ok(await exists(p), `dry run must not delete ${p}`);
   assert.ok(!r.out.includes(SHARED), 'protected uid is not printed');
 });
@@ -110,7 +127,7 @@ test('a changed item after planning aborts the apply with nothing deleted', asyn
   await db.doc('publicProfiles/demoA').update({ touched: true });
   const r = cli(['--project', PROJECT, '--apply', '--manifest', mf, '--approve', sha(mf)]);
   assert.notEqual(r.status, 0);
-  assert.match(r.out, /nothing deleted/);
+  assert.match(r.out, /preflight rejected the manifest, nothing deleted/);
   for (const p of DELETABLE) assert.ok(await exists(p), `aborted apply must not delete ${p}`);
 });
 
@@ -130,9 +147,46 @@ test('approved apply deletes exactly the manifest; unmarked messages and shared-
   assert.equal(cli(['--project', PROJECT, '--plan', mf, '--protect', protectFile]).status, 0);
   const r = cli(['--project', PROJECT, '--apply', '--manifest', mf, '--approve', sha(mf)]);
   assert.equal(r.status, 0, r.out);
-  assert.equal(JSON.parse(r.out.trim().split('\n').pop()).deleted, 6);
+  assert.equal(JSON.parse(r.out.trim().split('\n').pop()).deleted, 8);
   for (const p of DELETABLE) assert.ok(!(await exists(p)), `${p} should be deleted`);
   for (const p of SURVIVORS) assert.ok(await exists(p), `${p} must survive`);
+});
+
+test('a join request created after planning that targets a planned trip rejects the run in preflight, nothing deleted', async () => {
+  await seed();
+  const mf = path.join(tmp, 'm6.json');
+  assert.equal(cli(['--project', PROJECT, '--plan', mf, '--protect', protectFile]).status, 0);
+  await db.doc('tripJoinRequests/lateReq').set({ tripId: 'ptDemoOnly', requestorUid: 'realUser' });
+  const r = cli(['--project', PROJECT, '--apply', '--manifest', mf, '--approve', sha(mf)]);
+  assert.notEqual(r.status, 0);
+  assert.match(r.out, /preflight rejected the manifest, nothing deleted/);
+  for (const p of [...DELETABLE, 'tripJoinRequests/lateReq']) assert.ok(await exists(p), `rejected run must not delete ${p}`);
+});
+
+test('a failure in a later batch is reported as a partial apply with exact counts (earlier batches stay applied)', async () => {
+  // Not emulator-bound: the script's apply() with a fake Firestore whose second batch commit fails.
+  const ts = require(path.join(ROOT, 'node_modules/typescript'));
+  const src = ts.transpileModule(fs.readFileSync(path.join(ROOT, 'scripts/cleanupCommunityDemo.ts'), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const mod = { exports: {} };
+  new Function('module', 'exports', 'require', src)(mod, mod.exports, require);
+  const { apply, PartialApplyError } = mod.exports;
+  const N = 450;
+  const items = Array.from({ length: N }, (_, i) => ({ path: `activityFeed/f${i}`, updateTime: '100.000000001', parent: null }));
+  const snap = { exists: true, updateTime: { seconds: 100, nanoseconds: 1 }, get: (k) => (k === 'demo' ? true : undefined) };
+  let commits = 0;
+  const fake = {
+    doc: () => ({ get: async () => snap, listCollections: async () => [] }),
+    collection: () => ({ get: async () => ({ docs: [] }) }),
+    batch: () => ({ delete() {}, commit: async () => { commits++; if (commits === 2) throw new Error('FAILED_PRECONDITION'); } }),
+  };
+  await assert.rejects(apply(fake, { version: 1, project: PROJECT, items, children: {} }), (e) => {
+    assert.ok(e instanceof PartialApplyError);
+    assert.equal(e.deleted, 400);
+    assert.equal(e.remaining, 50);
+    assert.match(e.message, /Re-plan before continuing/);
+    return true;
+  });
 });
 
 (async () => {

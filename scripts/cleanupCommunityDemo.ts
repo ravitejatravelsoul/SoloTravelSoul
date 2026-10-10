@@ -14,10 +14,16 @@
  *   protected account. Skipping the whole root means no retained child is ever orphaned.
  * - Protected accounts come from a JSON file outside the repository: {"uids": ["..."]}. A document
  *   references an account when any string value, array element or map key equals its uid.
+ * - Targets of retained references are kept: a trip or group still referenced by a retained join
+ *   request (protected, non-demo or otherwise skipped), a chat group referenced by a retained
+ *   community group, and a trip referenced by a retained chat group (see REFERENCES; cascades).
  * - Apply refuses unless --project matches the manifest and --approve equals the SHA-256 of the
- *   manifest file. Before deleting anything it re-reads every item (it must exist with the same
- *   update time) and every parent's children (the set must be unchanged); any difference aborts
- *   with nothing deleted. Deletes then run children first, each with a lastUpdateTime precondition.
+ *   manifest file. A preflight then re-reads every item (it must exist with the same update time),
+ *   every parent's children (the set must be unchanged) and every reference to a planned root (none
+ *   may come from outside the manifest). Any problem REJECTS THE RUN WITH NOTHING DELETED.
+ * - Deletion runs children first in batches of up to 400, each delete with a lastUpdateTime
+ *   precondition. Each batch is atomic; the run is not: if a later batch fails, earlier batches stay
+ *   applied (reported as a partial apply with counts). Re-plan before continuing.
  *
  * Credentials: operator application-default credentials, or the Firestore emulator when
  * FIRESTORE_EMULATOR_HOST is set. Output: counts only (paths stay in the local manifest).
@@ -66,6 +72,20 @@ export function referencesAny(value: unknown, uids: Set<string>): boolean {
   return false;
 }
 
+/**
+ * Retained documents in `from` keep their `field` target in `to` alive. Join requests point at the
+ * trip or group they ask to join; community groups point at their chat group; chat groups may point
+ * at a trip. A planned root referenced by any retained document is skipped, and protection cascades.
+ */
+export const REFERENCES: readonly { from: string; field: string; to: string }[] = [
+  { from: 'tripJoinRequests', field: 'tripId', to: 'publicTrips' },
+  { from: 'groupJoinRequests', field: 'groupId', to: 'travelGroups' },
+  { from: 'travelGroups', field: 'chatGroupId', to: 'groups' },
+  { from: 'groups', field: 'tripId', to: 'publicTrips' },
+];
+
+interface Candidate { col: string; root: DocumentSnapshot; kids: DocumentSnapshot[] }
+
 export async function plan(db: Firestore, project: string, protectedUids: string[], collections: readonly string[] = DEMO_COLLECTIONS): Promise<Manifest> {
   const uids = new Set(protectedUids);
   const m: Manifest = { version: 1, project, createdAt: new Date().toISOString(), protectedAccounts: uids.size, items: [], children: {}, skipped: [],
@@ -74,6 +94,8 @@ export async function plan(db: Firestore, project: string, protectedUids: string
     m.skipped.push({ root, reason, childCount });
     m.counts.skippedByReason[reason] = (m.counts.skippedByReason[reason] ?? 0) + 1;
   };
+  // 1. Demo roots whose whole subtree is deletable on its own.
+  const candidates = new Map<string, Candidate>();
   for (const col of collections) {
     const roots = await db.collection(col).where('demo', '==', true).get();
     for (const root of roots.docs) {
@@ -88,23 +110,48 @@ export async function plan(db: Firestore, project: string, protectedUids: string
           else if (referencesAny(child.data(), uids) || uids.has(child.id)) reason = 'references a protected account';
         }
       }
-      if (reason) { skip(root.ref.path, reason, kids.length); continue; }
-      m.children[root.ref.path] = kids.map((k) => k.ref.path).sort();
-      for (const k of kids) {
-        m.items.push({ path: k.ref.path, updateTime: stamp(k), parent: root.ref.path });
-        const key = `${col}/*/${k.ref.parent.id}`;
-        m.counts.subcollections[key] = (m.counts.subcollections[key] ?? 0) + 1;
-      }
-      m.items.push({ path: root.ref.path, updateTime: stamp(root), parent: null });
-      m.counts.roots[col] = (m.counts.roots[col] ?? 0) + 1;
+      if (reason) skip(root.ref.path, reason, kids.length);
+      else candidates.set(root.ref.path, { col, root, kids });
     }
+  }
+  // 2. Keep every target that a retained document (non-demo, or skipped above) still references.
+  const referrers = new Map<string, DocumentSnapshot[]>();
+  for (const r of REFERENCES) if (!referrers.has(r.from)) referrers.set(r.from, (await db.collection(r.from).get()).docs);
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const r of REFERENCES) {
+      for (const d of referrers.get(r.from)!) {
+        if (candidates.has(d.ref.path)) continue; // the referrer itself is being deleted
+        const target = d.get(r.field);
+        const tpath = typeof target === 'string' && target ? `${r.to}/${target}` : null;
+        const c = tpath ? candidates.get(tpath) : undefined;
+        if (!c) continue;
+        candidates.delete(tpath!);
+        skip(tpath!, `referenced by a retained ${r.from}`, c.kids.length);
+        changed = true;
+      }
+    }
+  }
+  // 3. The manifest.
+  for (const { col, root, kids } of candidates.values()) {
+    m.children[root.ref.path] = kids.map((k) => k.ref.path).sort();
+    for (const k of kids) {
+      m.items.push({ path: k.ref.path, updateTime: stamp(k), parent: root.ref.path });
+      const key = `${col}/*/${k.ref.parent.id}`;
+      m.counts.subcollections[key] = (m.counts.subcollections[key] ?? 0) + 1;
+    }
+    m.items.push({ path: root.ref.path, updateTime: stamp(root), parent: null });
+    m.counts.roots[col] = (m.counts.roots[col] ?? 0) + 1;
   }
   return m;
 }
 
 export const sha256 = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 
-/** Re-checks every item and every root's child set; returns the problems found (empty = unchanged). */
+/**
+ * Preflight: re-checks every item, every root's child set, and that no document outside the manifest
+ * references a planned root (e.g. a join request created after planning). Empty result = unchanged.
+ */
 export async function verifyUnchanged(db: Firestore, m: Manifest): Promise<string[]> {
   const problems: string[] = [];
   for (const it of m.items) {
@@ -119,12 +166,32 @@ export async function verifyUnchanged(db: Firestore, m: Manifest): Promise<strin
     now.sort();
     if (now.join('\n') !== expected.join('\n')) problems.push(`children changed: ${root}`);
   }
+  const planned = new Set(m.items.map((i) => i.path));
+  for (const r of REFERENCES) {
+    for (const d of (await db.collection(r.from).get()).docs) {
+      if (planned.has(d.ref.path)) continue;
+      const target = d.get(r.field);
+      if (typeof target === 'string' && target && planned.has(`${r.to}/${target}`)) problems.push(`retained ${r.from} references ${r.to}/${target}`);
+    }
+  }
   return problems;
 }
 
+export class PartialApplyError extends Error {
+  constructor(public deleted: number, public remaining: number, cause: unknown) {
+    super(`apply stopped after ${deleted} deletion(s); ${remaining} not deleted (${String((cause as Error)?.message ?? cause).slice(0, 120)}). Re-plan before continuing.`);
+  }
+}
+
+/**
+ * Preflight first: any problem rejects the run with NOTHING deleted. Deletion then runs in batches of
+ * up to 400 (children first). Each batch is atomic and every delete carries a lastUpdateTime
+ * precondition, but the run as a whole is not: if a later batch fails, earlier batches stay applied
+ * (PartialApplyError reports how many). Re-plan before continuing after a partial apply.
+ */
 export async function apply(db: Firestore, m: Manifest): Promise<{ deleted: number }> {
   const problems = await verifyUnchanged(db, m);
-  if (problems.length) throw Object.assign(new Error(`aborted, nothing deleted: ${problems.length} record(s) changed since planning`), { problems });
+  if (problems.length) throw Object.assign(new Error(`preflight rejected the manifest, nothing deleted: ${problems.length} problem(s)`), { problems });
   const { Timestamp } = await import('firebase-admin/firestore');
   const ordered = [...m.items.filter((i) => i.parent), ...m.items.filter((i) => !i.parent)]; // children first
   let deleted = 0;
@@ -134,7 +201,11 @@ export async function apply(db: Firestore, m: Manifest): Promise<{ deleted: numb
       const [sec, ns] = it.updateTime.split('.').map(Number);
       batch.delete(db.doc(it.path), { lastUpdateTime: new Timestamp(sec, ns) });
     }
-    await batch.commit(); // a precondition failure rejects the whole batch
+    try {
+      await batch.commit(); // atomic per batch only
+    } catch (e) {
+      throw new PartialApplyError(deleted, ordered.length - deleted, e);
+    }
     deleted += Math.min(400, ordered.length - i);
   }
   return { deleted };
@@ -176,6 +247,7 @@ if (process.argv[1] && /cleanupCommunityDemo\.ts$/.test(process.argv[1])) {
   main().catch((e) => {
     console.error(`[cleanup] ${String((e as Error).message ?? e)}`);
     for (const p of ((e as { problems?: string[] }).problems ?? []).slice(0, 20)) console.error(`  - ${p.replace(/\/[A-Za-z0-9]{20,}/g, '/<id>')}`);
+    if (e instanceof PartialApplyError) console.error(JSON.stringify({ mode: 'apply', partial: true, deleted: e.deleted, notDeleted: e.remaining }));
     process.exit(1);
   });
 }
