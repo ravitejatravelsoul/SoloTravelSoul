@@ -1,6 +1,6 @@
 # Release handoff (free tier: Firebase Spark + Workers Free + KV/D1)
 
-Status at commit time: **not store-ready.** Staging is consolidated and live-verified (see below and `docs/release-hardening.md`). Two Android preview APKs were built and tested on an Android 15 emulator (section 10). The second verified the device fixes; one follow-up fix (keyboard while offline) still needs a build. Production is untouched, and the iOS, build and owner items in section 9 are still open. Everything marked *draft* must be confirmed by the app owner before it is entered in a console. No owner, staff member or completed operation is assumed here.
+Status at commit time: **not store-ready.** Staging is consolidated and live-verified (see below and `docs/release-hardening.md`). Three Android preview APKs were built and tested on an Android 15 emulator (section 10); every device defect found so far is fixed and verified there. Production is untouched, and the iOS, build and owner items in section 9 are still open. Everything marked *draft* must be confirmed by the app owner before it is entered in a console. No owner, staff member or completed operation is assumed here.
 
 Technical detail and test evidence: `docs/release-hardening.md` (latest section: "Consolidated staging on the Durable Object host").
 
@@ -86,7 +86,7 @@ The two `profile_images/*.jpg` objects stay **unresolved** until their deletion 
 
 ## 8. Native and live verification
 
-Checklist: `docs/release-hardening.md` → "Live and native verification checklist". The staging backend is deployed and live-verified (section 0). **Android:** the preview APK (build `07c0e312`) was installed and the checklist run on an Android 15 emulator on 2026-10-09: results, defects and evidence are in section 10. A second preview build (`aa5c4b9e`, commit `1cc9600`) verified those fixes on the same emulator. One gap remains: the keyboard while the offline banner shows. It is fixed in code afterwards and needs one more build to verify (section 10). **iOS:** BLOCKED (no macOS; device builds need a paid Apple Developer membership). Builds exported with `expo export` and mocked tests are not proof of native UI behaviour.
+Checklist: `docs/release-hardening.md` → "Live and native verification checklist". The staging backend is deployed and live-verified (section 0). **Android:** the preview APK (build `07c0e312`) was installed and the checklist run on an Android 15 emulator on 2026-10-09: results, defects and evidence are in section 10. A second preview build (`aa5c4b9e`, commit `1cc9600`) verified those fixes on the same emulator. A third build (`161e441d`, commit `9d807ca`) verified the offline-banner keyboard fix and live connectivity detection (section 10). **iOS:** BLOCKED (no macOS; device builds need a paid Apple Developer membership). Builds exported with `expo export` and mocked tests are not proof of native UI behaviour.
 
 ## 9. Consolidated remaining blockers (owner actions)
 
@@ -98,7 +98,7 @@ Checklist: `docs/release-hardening.md` → "Live and native verification checkli
 3. **Builds:** the first Android preview build ran on 2026-10-09 (build `07c0e312`, section 10).
    - **Cost:** EAS Free plan, 2 of 30 builds used in the cycle ending 2026-11-01, $0.
    - **Second build:** `aa5c4b9e` (commit `1cc9600`) verified the device fixes (section 10).
-   - **Next:** the offline-banner keyboard fix (committed after that build) needs one more preview build (owner approval) and a re-check of chat input while offline.
+   - **Third build:** `161e441d` (commit `9d807ca`) verified live connectivity and the offline keyboard; 3 of 30 builds used, $0.
    - **iOS:** device builds need a paid Apple Developer membership, outside the no-paid-plans constraint.
 4. **Device testing:** Android checklist run on an emulator (section 10): all items PASS or have fixed defects. `GET /admin/deletion-status` is BLOCKED until the owner supplies the rotated staging admin token. iOS is BLOCKED (no macOS). A physical Android device run is still advisable before submission.
 5. **Legacy production media:** the 2 `profile_images/*.jpg` objects in production Storage stay unresolved until deleted and verified by a fresh listing (section 6); the legacy R2 inventory is not taken.
@@ -239,7 +239,7 @@ Run interactively instead (without `--non-interactive`) to be asked before the k
 | # | Defect | Result on build `aa5c4b9e` |
 |---|---|---|
 | 1 | Notification bell (Home, Profile) and Saved Posts | **PASS**: all open their screens. |
-| 2 | Keyboard covers inputs | **PASS online**: comments sheet, DM and group inputs sit above the keyboard; send works with the keyboard open. **FAIL while offline:** the global offline banner pushes the screens down, and the chat input sits behind the keyboard by the banner's height. Fixed in code afterwards (the banner now overlays the status-bar area, with a regression check); **not verified natively**, since it needs another build. |
+| 2 | Keyboard covers inputs | **PASS online**: comments sheet, DM and group inputs sit above the keyboard; send works with the keyboard open. **FAIL while offline:** the global offline banner pushes the screens down, and the chat input sits behind the keyboard by the banner's height. Fixed in code afterwards (the banner now overlays the status-bar area, with a regression check); verified on the third build (`161e441d`, below). |
 | 3 | Composer kept the previous post; refused post failed silently | **PASS**: the composer reopens empty after sharing; a refused post shows "Post not shared". |
 | 4 | Profile stats clipped | **PASS**: all six stats are visible. |
 | 5 | Report sheet: first tap; "This message" | **PASS**: the label is "This post". Submit worked on the first tap in all three reports. The keyboard was confirmed showing (`mInputShown=true`) in the two where it was measured. |
@@ -253,7 +253,7 @@ Defect 8, in detail:
 - **After unsuspension:** M lifted the suspension and the app drained again. **None of the refused messages exists on the server**, while a new group message was delivered.
 - **Firestore's own buffer:** if the app is offline but has not noticed (see below), Firestore's client SDK holds the write instead of the app's queue. When the app returned to the foreground it was refused, and the online path removed it the same way.
 
-**Observation (not fixed):** `useNetworkState` re-checks connectivity only on mount and when the app returns to the foreground. While the app stays open, losing the network is not detected: no offline banner appears and sends are not queued by the app (Firestore's own buffer holds them).
+**Observation (fixed in `9d807ca`, verified on the third build below):** `useNetworkState` re-checked connectivity only on mount and when the app returned to the foreground. While the app stays open, losing the network is not detected: no offline banner appears and sends are not queued by the app (Firestore's own buffer holds them).
 
 **Health re-check (analytics, fresh window):**
 - The 12.29 ms front-Worker CPU p99 reported earlier comes from version `e784bd26` (the pre-consolidation worker-mode build) in the hours before 10-09 02:19Z. That window includes the consolidation deploy and the rollback test.
@@ -263,4 +263,36 @@ Defect 8, in detail:
 - Workers Logs could not be read with the local Wrangler OAuth token (Telemetry API "Authentication error"), so the exact request is not proven. No defect was reproduced; nothing was redesigned.
 
 **Admin checks:** `GET /admin/deletion-status` is BLOCKED; no staging admin token is available to this run.
+
+### Third preview build: live connectivity and offline keyboard (2026-10-10)
+
+- **Build:**
+  - EAS build `161e441d-4ea4-4f19-a635-e1682f547a78`, profile `preview`, commit `9d807ca`, built from a clean `git worktree` of the pushed commit: **FINISHED**.
+  - APK: https://expo.dev/artifacts/eas/QSWUn8CpLnivgUWT73t0d8CxFiNdoNdhM0kRHFOIgJY.apk (SHA-256 `743a4183fb6992a34b61d7e2cc73af9e89af74a0aff67ec1fb73d7bf95600557`).
+  - EAS Free usage afterwards: 3 of 30 builds, $0.
+- **Device:** installed with `adb install -r` on the same Android 15 emulator, with app data cleared first. Connectivity was toggled with airplane mode while the app stayed in the foreground.
+- **Fixtures:** A, B, M (moderator), R1–R3. All were deleted afterwards (jobs `completed`). The moderator grant, the group and the A–B DM thread were removed; this run created no reports.
+- **Evidence:** `docs/evidence/native-android-2026-10-10-build3/` (14 screenshots; `logcat-app-sanitized.txt`, with no app crash or exception).
+
+**Changes in this build:**
+- `useNetworkState` now also subscribes to expo-network's live listener. The checks on mount and on return to the foreground and `recheck()` are kept.
+- Every check and event is sequenced, so an older async check can't overwrite a newer event. Both subscriptions are removed on unmount.
+- The status-bar overlay banner (`9db701e`) shows a short, centred "No internet connection" label; the full sentence is its accessibility label.
+- Behaviour tests: `tests/release/network.cjs` (6). They cover:
+  - live disconnect/reconnect;
+  - the stale-check race;
+  - subscription cleanup;
+  - the banner, chat hook and sync engine together: an offline send is queued and delivered exactly once after reconnect, a write already in flight is not queued twice, and a refused queued send is never delivered.
+
+  Five of the six fail on the previous hook.
+
+| Check (build `161e441d`) | Result |
+|---|---|
+| Disconnect while staying in the app | **PASS**: the offline banner appeared within about 1 s and the chat showed "Offline — messages will send when reconnected"; no backgrounding. |
+| Reconnect while staying in the app | **PASS**: the banner disappeared within about 3 s and the queue drained. |
+| Banner | **PASS**: drawn in the status-bar band, readable between the clock and the system icons; screens are not shifted. The Home screen keeps its own inline banner (Home has no text inputs). |
+| Keyboard: DM, group, comments, composer | **PASS online and offline**: the inputs and send controls sit above the keyboard; sending works with the keyboard open. The composer's lowest field (hashtags) moves above the keyboard, and positions are identical online and offline. |
+| Offline messages deliver exactly once | **PASS**: one DM and one group message sent while offline were each stored exactly once after reconnect. Unread counters for the recipient: 2 per chat (no double count). |
+| Refused messages never deliver | **PASS**: B suspended (moderator, client SDK: `live.cjs suspend`), DM and group messages queued offline, reconnect → "2 queued messages were not sent…" and the bubbles cleared. After unsuspension and another disconnect/reconnect, neither refused message exists on the server, while a new group message was delivered once. |
+| `GET /admin/deletion-status` | **BLOCKED**: no staging admin token available. |
 

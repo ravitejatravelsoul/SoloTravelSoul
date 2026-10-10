@@ -14,6 +14,7 @@
 //   accounts <k1,k2,...>    create further disposable accounts (e.g. members for a large group)
 //   delete-user <key>       delete that account with its own token (fixture cleanup)
 //   set-visibility <key>:<postId>:<visibility>   owner changes a post's visibility (no UI for it)
+//   suspend <moderatorKey>:<key>                 moderator suspends an account
 //   unsuspend <moderatorKey>:<key>               moderator lifts a suspension (no UI for it)
 //   verify-deleted <key>    verify that account is fully deleted
 //
@@ -481,6 +482,15 @@ const phases = {
     const s = await session(key);
     await check(`${key}: set post visibility to ${visibility} (owner, client SDK)`, async () => {
       await s.posts.updatePost(postId, s.uid, { visibility });
+      return 'ok';
+    });
+  },
+
+  async suspend(arg = '') {
+    const [modKey, key] = arg.split(':');
+    const m = await session(modKey);
+    await check(`${modKey} suspends ${key} (moderator, client SDK; the UI route is "Suspend author" on a report)`, async () => {
+      await m.moderation.suspendUser(state.users[key].uid, m.uid, 'staging native test');
       return 'ok';
     });
   },
