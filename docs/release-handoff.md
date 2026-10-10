@@ -25,8 +25,8 @@ Every open decision is in this table. Recommendations come from the code and the
 | Moderators and coverage | Name a primary moderator and a backup (project recommendation, not a store rule) and adopt the response targets in section 11 | Without anyone working the queue, the "timely responses" (Apple 1.2) and "robust, ongoing moderation" (Google Play) requirements cannot be met; reports are only auto-hidden at 3 | Who (the accounts to grant later), and confirmation of the targets |
 | Privacy answers | Declare per section 3: no device location, no push token, no analytics; retained items as listed | Store forms must match the shipped build; enabling Mapbox or Foursquare later changes the answers | Confirm section 3, the privacy mailbox, and that Mapbox/Foursquare stay off for release |
 | Old clients | **Answered:** the owner confirmed on 2026-10-10 that neither the Expo app nor the legacy Swift app (`Raviteja.SoloTravelSoul`) was ever distributed. So: no forced-update gate, no adoption window, and nothing to retire for users. Deploy the new rules with the first store release (section 5). | No installed old clients exist to break | None |
-| Legacy data and media | Approve A1 (207 root + 229 subcollection Swift-era Firestore docs) and A2 (1 Storage object) separately. Decide B1 (3 Swift Auth accounts) and B2 (77 demo root docs, revised plan SHA-256 `ef1dff3c…b59b10`; the earlier hash is invalid) separately. Keep the shared account and the 12 demo roots that reference it; migrate its R2 photo with the production Worker. | Until A2 is deleted, a deletion of that owner ends `blocked`. B2 clears all 20 counter mismatches. | Approvals of A1 and A2; decisions on B1 and B2 |
-| Production counter audit | **Done (read-only, 2026-10-10)**: 33 docs, 20 mismatches, all on demo seed docs (section 7) | No repair needed if the demo content is deleted | B2 decision (section 6) |
+| Legacy data and media | **B2 done (2026-10-10):** 77 demo docs deleted, backup kept. A2 is blocked by the Storage billing restriction (section 6). Still open: A1 (207 root + 229 subcollection Swift-era docs) and B1 (3 Swift Auth accounts). Keep the shared account and the 12 demo roots that reference it; migrate its R2 photo with the production Worker. | A2 and the shared account's Storage image stay unreadable without billing | A1 approval; B1 decision; an A2 path (console download or a billing decision) |
+| Production counter audit | **Done (read-only, 2026-10-10)**: 20 mismatches before B2, all on demo docs; **0 mismatches after B2** (section 7) | No repair needed | None |
 | Production rollout | Approve as one change set: production EAS variables, Worker bindings and Durable Object migration, secrets (including a production admin token stored with the section 10 procedure), rules, indexes, cron | Nothing in production changes until then; store review needs a working production backend | Approval and a date |
 | Store accounts and iOS | Android first; iOS only if a paid Apple Developer membership is accepted | iOS stays BLOCKED otherwise | Play Console access and service-account key (kept local); the decision on iOS |
 | Free/Spark ceilings | Accept for launch and monitor with `scripts/stagingUsage.cjs` | Above the ceilings, uploads, deletions or views fail until the next day | Acceptance |
@@ -224,6 +224,20 @@ Local files outside the repository, readable only by the owner account, in `%LOC
   - If the console also refuses, the only routes to A2 are a billing decision (for example, temporarily linking a billing account; owner only, not done here) or leaving the 0.9 MB object in place.
   - Separately, B2 can be re-approved on its own.
 
+### B2 executed (2026-10-10, owner-approved B2 only)
+
+- **Scope:** exactly `demo-cleanup-plan-2026-10-10-r2.json`, SHA-256 `ef1dff3c21b93790997e8033c7db87be4fad39a447d4947cce3e7f6deeb59b10` (verified in full): 77 roots, 0 nested documents, 12 protected skips. A2 was excluded, and no Storage access of any kind was made.
+- **Backup** (before deletion; owner-only; outside the repo): `%LOCALAPPDATA%\SoloTravelSoul\backup-2026-10-10\b2-documents.json`, holding the full REST JSON of all 77 documents. It was re-read from disk and verified: 77 unique planned paths, update times equal to the plan, all `demo: true`. `b2-backup-checks.json` records the file's SHA-256.
+- **Before deletion:**
+  - fresh fingerprint: 790 Firestore paths (306 top-level including 1 missing-parent, 484 nested), 4 Auth accounts; identical to the earlier baseline (0 added, removed or changed);
+  - the script's own preflight against the approved file, without re-planning: **passed, 0 problems**.
+- **Apply:** one run through the script's CLI, which repeats the preflight first. **Deleted 77**; not a partial apply; no retry.
+- **After deletion:**
+  - fingerprint: 713 paths (229 top-level, 484 nested), 4 Auth accounts;
+  - comparison: **77 removed, all of them approved B2 paths; 0 removed outside B2; 0 added; 0 changed**. That covers A1, the shared account and every protected record; all 12 protected roots are present.
+- **Counter audit re-run (read-only):** 3 documents read, **0 mismatches**.
+- **Fingerprints** are stored in `%LOCALAPPDATA%\SoloTravelSoul\ops-2026-10-10\` (owner-only).
+
 **Independence from the new production Worker:**
 - Inventory and the scope A/B deletions need only the owner's Google credentials: the GCS JSON API for the Storage object, Firestore REST or Admin for documents, and the Identity Toolkit admin API for B1. They can run before the production Worker is deployed.
 - Only **migration** depends on the Worker (`/admin/media/import`). That covers the mixed account's R2 photo (and its Firebase Storage object, if it is to be kept).
@@ -266,7 +280,7 @@ Accounts whose legacy media is unresolved: deletion ends `blocked` and the accou
   - `travelGroups.memberCount`: 8 docs, stored total 368, expected 0;
   - none negative.
 - **All 20 are `demo: true` seed documents**: seeded member counts with no member records. There are no counter mismatches on non-demo data.
-- No repair is needed if the demo content is deleted (scope B2 in section 6). If it is kept, a repair is a separate approved write.
+- **After B2 (2026-10-10):** the audit re-run read 3 documents and found **0 mismatches**, so no counter repair is needed.
 
 **Production procedure (for re-runs):**
 1. Sizing: `node scripts/countAuditCollections.cjs solotravelsoul-57a9e`. It runs COUNT aggregations and prints counts only. Cost: about 1 read per 1,000 index entries per collection, i.e. about 10 reads for small collections.
@@ -294,14 +308,16 @@ This list replaces every earlier blocker list in this file and in `docs/release-
 4. **Old clients: decided** (the owner confirmed on 2026-10-10: nothing was distributed). No forced update or adoption window; the rules deploy with the first store release (section 5).
 5. **Legacy media and test data** (section 6): the owner confirmed disposable test data, so they are deleted, not migrated. Each step is approval-gated:
    - inventory done (section 6, "Production read-only preflight");
-   - approve A1 (Swift-era Firestore docs) and A2 (the Swift user's `profile_images` object) separately; decide B1 (Swift Auth accounts) and B2 (77 demo roots, via the dry-run-by-default cleanup script);
+   - **B2 done** (77 demo roots deleted 2026-10-10, backup kept);
+   - A2 is blocked by the Storage billing restriction (console download or a billing decision);
+   - A1 (Swift-era Firestore docs) still needs approval, and B1 (Swift Auth accounts) a decision;
    - the mixed account's `profile_images` object and legacy R2 photo are kept and need migration after the production Worker exists.
 6. **Production rollout** (separate approval):
    - KV/D1 bindings, then the Durable Object binding and migration on the production Worker;
    - production secrets (including its own `ADMIN_DELETION_TOKEN`), rules and indexes;
    - the cron decision and monitoring (`scripts/stagingUsage.cjs --script <production>`);
    - then the production account-deletion URL in Play Console (section 2).
-7. **Counter audit** (section 7): done read-only on production (2026-10-10). All 20 mismatches are on demo seed docs; no repair is needed if B2 is approved.
+7. **Counter audit** (section 7): **done.** 0 mismatches after B2 (2026-10-10); no repair is needed.
 8. **Store submission:**
    - production builds;
    - replace the `eas.json` `submit.production` placeholders and provide `google-play-key.json` locally (section 4);
