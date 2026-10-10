@@ -620,7 +620,7 @@ The front Worker stays at 0–2 ms CPU (p99 2.44 ms in analytics, cold invocatio
 - **Bindings:** KV `staging-MEDIA_KV`, D1 `solotravelsoul-media-staging`, Firebase project `solotravelsoul-staging`, Durable Object class `ApiShard` (migration `v1`, env-scoped).
 - **Active credentials:**
   - **One** staging service-account key (`sts-staging-deleter…`, key ID ending `615e6b`), used only by this Worker's `GOOGLE_SERVICE_ACCOUNT_JSON`. The proof Worker's key (ending `0b4253`) was revoked after that Worker was deleted.
-  - The staging `ADMIN_DELETION_TOKEN` was rotated in this phase for the live checks. **The owner must rotate it again and keep it in a password manager.**
+  - The staging `ADMIN_DELETION_TOKEN` was rotated in this phase for the live checks. **The owner must rotate it again and keep it in a password manager.** (Superseded 2026-10-10: rotated again, with a DPAPI-encrypted owner copy. See `docs/release-handoff.md` section 10, "Staging admin credential".)
 
 ### Rollback (verified live before the proof Worker was retired)
 

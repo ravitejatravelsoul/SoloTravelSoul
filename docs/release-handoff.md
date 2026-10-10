@@ -11,7 +11,7 @@ Technical detail and test evidence: `docs/release-hardening.md` (latest section:
 - **Rollback:** `cd workers/r2-upload-worker && npx wrangler deploy --env staging --var API_HOST_MODE:worker` (verified live); return with `npx wrangler deploy --env staging`.
 - **Active staging credentials:**
   - One service-account key (ID ending `615e6b`) in the Worker secret `GOOGLE_SERVICE_ACCOUNT_JSON`.
-  - The Worker secret `ADMIN_DELETION_TOKEN`, which the owner must rotate and store.
+  - The Worker secret `ADMIN_DELETION_TOKEN`, rotated 2026-10-10. The encrypted owner copy and its procedures are in section 10, "Staging admin credential: encrypted owner copy and procedures".
   - No other user-managed keys exist for `sts-staging-deleter`.
 - **Retired:** the proof Worker `solotravelsoul-api-do-staging` (deleted) and its key (revoked).
 - **Disposable test accounts:** earlier live-test runs left some in staging Auth/Firestore (emails `sts-live-<run>-<key>@example.test`). Delete them when staging testing is finished. The native run of 2026-10-09 removed all of its own (section 10).
@@ -95,10 +95,10 @@ This list replaces every earlier blocker list in this file and in `docs/release-
 **Already done (no action):**
 - Staging host consolidated and live-verified.
 - Three Android preview builds (EAS Free, 3 of 30 used, $0) and the native checklist on an Android 15 emulator: all device defects found are fixed and verified.
-- Admin endpoints refuse missing or wrong credentials (2026-10-10).
+- Staging admin endpoints verified: a valid token is accepted, missing or wrong tokens are refused, and a stalled/unresolved fixture is reported and cleaned up (2026-10-10).
 
 **A. Required before release (owner decisions or approvals):**
-1. **Staging admin token** (staging closure): supply the current staging `ADMIN_DELETION_TOKEN` securely (owner action in section 10, "Staging operational closure"). Without it, the valid-token check of `GET /admin/deletion-status` and the stalled-fixture check stay BLOCKED. Production needs its own token (item 6).
+1. **Staging admin token: done (2026-10-10).** Rotated, and the encrypted owner copy is stored (section 10). Valid-token, refusal and stalled-fixture checks pass. Production needs its own token (item 6), handled with the same procedure.
 2. **Moderators:** appoint at least two and confirm response targets (App Store 1.2 / Google Play user-generated-content policy). Until then, reports are only auto-hidden at 3 reports.
 3. **Privacy answers** (section 3): confirm the location and push-token rows, and confirm that `privacy@solotravelsoul.app` exists and is monitored.
 4. **Old-client retirement** (section 5): choose a forced update or an adoption window before the production rules deploy.
@@ -170,7 +170,7 @@ Run interactively instead (without `--non-interactive`) to be asked before the k
    - A deletes the account (password re-entry; progress shown) and the app signs out.
    - B sees "Deleted User" in chats and comments.
    - Abandon a second account's deletion mid-way (close the app); confirm the staging cron finishes it within about an hour (`GET /admin/deletion-status`).
-9. **Health check afterwards:** `node scripts/stagingUsage.cjs` (with `STS_ADMIN_TOKEN` for stalled deletions).
+9. **Health check afterwards:** `node scripts/stagingUsage.cjs`. For stalled deletions, pass `STS_ADMIN_TOKEN` to that process only, recovered from the encrypted copy (section 10, procedure 2).
 
 ### First Android preview build (2026-10-09)
 
@@ -277,7 +277,7 @@ Defect 8, in detail:
 - The 12.29 ms front-Worker CPU p99 reported earlier comes from version `e784bd26` (the pre-consolidation worker-mode build) in the hours before 10-09 02:19Z. That window includes the consolidation deploy and the rollback test.
   - The script reports the **maximum** of per-status-group p99s over 24 h.
   - Since version `b228b58f` (object mode, from 02:19:23Z) the hourly front p99 is 0.64–2.98 ms, with no Worker errors.
-- The single Durable Object error falls in the 15:00Z hour, with status `clientDisconnected` and no exception recorded in analytics. It coincides with the deliberate force-stop of the app during the abandoned-deletion test (15:13:27Z); the front Worker logged 2 `clientDisconnected` requests in the same hour.
+- The single Durable Object error falls in the 15:00Z hour, with status `clientDisconnected` and no exception recorded in analytics. It **probably** comes from the deliberate force-stop of the app during the abandoned-deletion test (15:13:27Z), which falls in that hour; the front Worker logged 2 `clientDisconnected` requests in the same hour.
 - Workers Logs could not be read with the local Wrangler OAuth token (Telemetry API "Authentication error"), so the exact request is not proven. No defect was reproduced; nothing was redesigned.
 
 **Admin checks:** `GET /admin/deletion-status` is BLOCKED; no staging admin token is available to this run.
@@ -318,17 +318,74 @@ Defect 8, in detail:
 
 | Check | Result |
 |---|---|
-| Admin credentials available to this run | **None**: not in the process, user or machine environment, nor in Windows Credential Manager. The token was not rotated: the owner may hold the only working copy, and storage of a new one could not be confirmed. The Worker secret `ADMIN_DELETION_TOKEN` is set on staging (secret names listed only). |
+| Admin credentials available to this run | **None at the time** (resolved below by rotation): not in the process, user or machine environment, nor in Windows Credential Manager. The token was not rotated: the owner may hold the only working copy, and storage of a new one could not be confirmed. The Worker secret `ADMIN_DELETION_TOKEN` is set on staging (secret names listed only). |
 | Missing / wrong credentials refused | **PASS**: `GET /admin/deletion-status` with no `Authorization`, an empty bearer, a random wrong bearer or a non-Bearer scheme → 403 `{"error":"Forbidden"}` each. `POST /admin/account-deletion` with a wrong bearer → 403. (A 403 rather than 404 also confirms the secret is configured.) |
-| Valid credentials return the status | **BLOCKED** (no token) |
-| Disposable stalled / unresolved fixture reported, then removed | **BLOCKED** (needs the endpoint). No fixture was created. |
+| Valid credentials return the status | BLOCKED at the time; **PASS** below |
+| Disposable stalled / unresolved fixture reported, then removed | BLOCKED at the time; **PASS** below |
 | Read-only job state (not the endpoint) | 0 `in_progress`, 0 `failed`, 0 `blocked` jobs (none older than 6 h); pending-finalization: none. |
-| `node scripts/stagingUsage.cjs` (24 h, sanitized) | Worker requests 827 (0.83% of the Free daily limit), Durable Object requests 755 (0.76%), Durable Object GB-s 243 (1.87%), D1 rows read 14,652 (0.29%) and written 3,118 (3.12%), KV reads 438 (0.44%), writes 202 (20.20%), deletes 185 (18.50%). Worker errors 0; Worker CPU p99 9.16 ms. **1 Durable Object error**: the known `clientDisconnected` event at 10-09 15:00Z from the deliberate force-stop test. Per-version CPU above 10 ms appears only in pre-consolidation hours (`e784bd26`). Stalled deletions not checked (no token). |
+| `node scripts/stagingUsage.cjs` (24 h, sanitized) | Worker requests 827 (0.83% of the Free daily limit), Durable Object requests 755 (0.76%), Durable Object GB-s 243 (1.87%), D1 rows read 14,652 (0.29%) and written 3,118 (3.12%), KV reads 438 (0.44%), writes 202 (20.20%), deletes 185 (18.50%). Worker errors 0; Worker CPU p99 9.16 ms. **1 Durable Object error**: the `clientDisconnected` event at 10-09 15:00Z, **probably** from the deliberate force-stop test (not proven). Per-version CPU above 10 ms appears only in pre-consolidation hours (`e784bd26`). Stalled deletions not checked (no token). |
 
-**Owner action (one, secure):** on this machine, in PowerShell, store the current staging admin token as a user environment variable without displaying it:
+**Admin access recovered (2026-10-10, after the table above):**
 
+The staging `ADMIN_DELETION_TOKEN` was rotated, with your authorization, and every check above that was BLOCKED was then run:
+
+| Check | Result |
+|---|---|
+| Valid token → `GET /admin/deletion-status` | **PASS**: HTTP 200 `{stalled, count, legacyMediaUnresolved, checkedAt}`; baseline `count=0`, 0 unresolved. |
+| Wrong token / token one character off / no `Authorization` | **PASS**: 403 `{"error":"Forbidden"}` each. |
+| Isolated stalled + unresolved fixture | **PASS**. One disposable account received `accountDeletions/{uid}` (`in_progress`, step `directory`, started 7 h earlier, lease held 3 h so the cron skips it) and `legacyMediaCleanup/{uid}` (`unresolved`). The endpoint reported `count=1`: that uid as stalled (status `in_progress`, step `directory`, attempts 1, age 7 h) and as unresolved legacy media. |
+| Fixture removal | **PASS**: exactly those two documents were deleted, then the account was deleted through `POST /account/delete` (`verify-deleted`: job completed, Auth gone, 0 media rows). The endpoint is back to `count=0`, 0 unresolved. |
+| `node scripts/stagingUsage.cjs` with the token (24 h) | Worker requests 884 (0.88%), Durable Object requests 815 (0.81%), Durable Object GB-s 246 (1.89%), D1 rows read 13,672 (0.27%) and written 2,023 (2.02%), KV reads 272 (0.27%), writes 127 (12.70%), deletes 130 (13.00%). Worker errors 0; Worker CPU p99 7.51 ms; **stalled deletions 0; unresolved legacy media 0**. Exit 1 only because of the single Durable Object error, the `clientDisconnected` invocation at 10-09 15:00Z. It is **probably** the deliberate force-stop during the abandoned-deletion test (same hour, a client-disconnect status, no exception), but the exact request was not proven. |
+
+**Rotation incident, kept for the record (no exposure):**
+- The first two uploads stored a UTF-8 byte-order mark (U+FEFF) in front of the token. In Windows PowerShell 5.1, a child process's redirected stdin uses `[Console]::InputEncoding`, whose UTF-8 encoder writes a preamble, even when bytes are written to the base stream. Wrangler trims only trailing whitespace.
+- A local probe that reads stdin the way Wrangler does showed 44 characters starting with U+FEFF. With `[Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)` it received exactly the 43-character token, and the third upload worked.
+- No value was displayed or logged at any point.
+
+### Staging admin credential: encrypted owner copy and procedures
+
+- **Location:** `%APPDATA%\SoloTravelSoul\staging-admin-deletion-token.dpapi`, i.e. `C:\Users\ravit\AppData\Roaming\SoloTravelSoul\staging-admin-deletion-token.dpapi`. It is outside the repository.
+- **Protection:** Windows DPAPI, `CurrentUser` scope. Only the Windows user `ravit` on this PC can decrypt it.
+  - The file ACL has inheritance removed and grants that user read/write; SYSTEM and Administrators keep their default entries, but they cannot decrypt user-scoped DPAPI data without this user's credentials.
+  - Contents: the encrypted UTF-8 bytes of a 43-character base64url token (32 random bytes from the OS CSPRNG). There is no plaintext copy anywhere.
+- **If the Windows profile or PC is lost, the copy is lost.** This is staging only: rotate again with procedure 3. Optionally keep a second copy in your password manager by decrypting it locally (procedure 1) and pasting it there yourself.
+- **Never** put the value in command arguments, persistent environment variables (`setx`, `SetEnvironmentVariable`), logs, chat or the repository.
+
+**1. Recover into memory (nothing is shown):**
+```powershell
+Add-Type -AssemblyName System.Security
+$file = Join-Path $env:APPDATA 'SoloTravelSoul\staging-admin-deletion-token.dpapi'
+$t = [Text.Encoding]::UTF8.GetString([Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes($file), $null, 'CurrentUser'))
+"recovered: length $($t.Length)"   # expect 43; never print $t
 ```
-$t = Read-Host 'Staging ADMIN_DELETION_TOKEN' -AsSecureString; [Environment]::SetEnvironmentVariable('STS_ADMIN_TOKEN', [Net.NetworkCredential]::new('', $t).Password, 'User')
-```
 
-Then the next session runs the two BLOCKED checks. If no working copy exists anywhere, say so instead. Rotation is then safe: the new value is stored in that same `STS_ADMIN_TOKEN` user variable *before* `wrangler secret put ADMIN_DELETION_TOKEN --env staging` replaces the old one.
+**2. Use it** (with `$t` from step 1):
+- **Status check** (prints the response, not the token):
+  ```powershell
+  Invoke-RestMethod -Uri 'https://solotravelsoul-r2-upload-staging.ravitejatravelsoul.workers.dev/admin/deletion-status' -Headers @{ Authorization = "Bearer $t" }
+  ```
+- **Usage check:** the token goes to the child process only.
+  ```powershell
+  $psi = New-Object Diagnostics.ProcessStartInfo 'node', 'scripts/stagingUsage.cjs'
+  $psi.WorkingDirectory = '<repo>'; $psi.UseShellExecute = $false
+  $psi.EnvironmentVariables['STS_ADMIN_TOKEN'] = $t
+  [Diagnostics.Process]::Start($psi).WaitForExit()
+  ```
+- Clear it afterwards: `$t = $null`.
+
+**3. Rotate** (staging only; store first, never discard the only working copy):
+1. Generate 32 random bytes with `[Security.Cryptography.RandomNumberGenerator]` and encode them as base64url. Encrypt with `ProtectedData.Protect(..., 'CurrentUser')` and write to a **new** file. Keep the old file until step 4 passes.
+2. Decrypt the new file in a fresh PowerShell and check the length (procedure 1).
+3. Upload through stdin with **no BOM**:
+   ```powershell
+   [Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
+   $psi = New-Object Diagnostics.ProcessStartInfo 'cmd.exe', '/c npx wrangler secret put ADMIN_DELETION_TOKEN --env staging'
+   $psi.WorkingDirectory = '<repo>\workers\r2-upload-worker'
+   $psi.UseShellExecute = $false; $psi.RedirectStandardInput = $true
+   $p = [Diagnostics.Process]::Start($psi)
+   $b = [Text.Encoding]::UTF8.GetBytes($t)
+   $p.StandardInput.BaseStream.Write($b, 0, $b.Length)
+   $p.StandardInput.Close(); $p.WaitForExit()
+   ```
+   Without the first line, Windows PowerShell 5.1 prefixes U+FEFF and every request is refused.
+4. Check `GET /admin/deletion-status` with the new value: expect 200. Then replace the old file with the new one.
