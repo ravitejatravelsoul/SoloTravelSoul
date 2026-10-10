@@ -191,7 +191,21 @@ Local files outside the repository, readable only by the owner account, in `%LOC
   npx tsx scripts/cleanupCommunityDemo.ts --project solotravelsoul-57a9e --plan <new plan file> --protect %LOCALAPPDATA%\SoloTravelSoul\protected-accounts.json
   npx tsx scripts/cleanupCommunityDemo.ts --project solotravelsoul-57a9e --apply --manifest <that plan file> --approve <its SHA-256>
   ```
-  Re-plan right before applying; the approved SHA-256 must match the plan being applied.
+  Apply exactly the plan file that was approved, by its SHA-256; **do not re-plan in between**. Every plan records its creation time, so a new plan always has a new hash and needs a new approval. The apply preflight already re-checks the approved plan against live data. If the preflight rejects it, nothing is deleted: make a new plan and ask for a new approval.
+
+### Approved A2 + B2 execution (2026-10-10): STOPPED before any deletion
+
+- **Approval** (owner, 2026-10-10): A2 and B2 only; A1, B1 and all protected shared-account data unchanged.
+- **Checks passed:**
+  - project `solotravelsoul-57a9e` ACTIVE;
+  - plan file `demo-cleanup-plan-2026-10-10-r2.json` SHA-256 equal to the approved `ef1dff3c…59b10`;
+  - 77 roots, 0 nested documents, 12 protected skips;
+  - A2 manifest entry: 1 object, 893,727 bytes.
+- **Baseline fingerprint** (read-only): 790 Firestore documents (306 top-level paths, of which 1 is a `groupChats` path with subcollection documents but no document itself, plus 484 nested), 2 Storage objects, 4 Auth accounts. It is stored outside the repo in `%LOCALAPPDATA%\SoloTravelSoul\ops-2026-10-10\`, owner account only.
+- **Stopped at the backup step.** Reading the A2 object's metadata (GCS JSON API `objects.get` with the Firebase CLI owner token) returned **HTTP 403**, although listing the bucket works with the same token. Under the stop conditions (permission failure), the run stopped with no retry.
+- **Nothing was deleted:** no B2 preflight or apply ran and the A2 object was not touched. The backup folder `%LOCALAPPDATA%\SoloTravelSoul\backup-2026-10-10\` is empty.
+- **To resume:** the approved hash is still valid if production is unchanged. The apply preflight re-checks that. The A2 object read permission must be resolved before the backups can be made.
+- **A1 finding:** `groupChats` has one path that holds subcollection documents without a document of its own. It is not counted in the A1 root figures; review it before any A1 approval.
 
 **Independence from the new production Worker:**
 - Inventory and the scope A/B deletions need only the owner's Google credentials: the GCS JSON API for the Storage object, Firestore REST or Admin for documents, and the Identity Toolkit admin API for B1. They can run before the production Worker is deployed.
