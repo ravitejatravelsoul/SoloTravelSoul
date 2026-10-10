@@ -207,6 +207,23 @@ Local files outside the repository, readable only by the owner account, in `%LOC
 - **To resume:** the approved hash is still valid if production is unchanged. The apply preflight re-checks that. The A2 object read permission must be resolved before the backups can be made.
 - **A1 finding:** `groupChats` has one path that holds subcollection documents without a document of its own. It is not counted in the A1 root figures; review it before any A1 approval.
 
+**403 diagnosis (2026-10-10, read-only, one metadata request):**
+- **Credential is fine:** the Firebase CLI owner token is valid and carries `cloud-platform` (plus `firebase` and read-only project scopes). Missing scopes and invalid credentials are ruled out.
+- **The response:** `GET storage/v1/b/solotravelsoul-57a9e.firebasestorage.app/o/<A2 object>` returned **HTTP 403, reason `accountDisabled`**: "The billing account for the owning project is disabled in state absent".
+- **Cause: a Cloud Storage billing restriction, not authentication or IAM.**
+  - The project has no active billing account (Spark), and the bucket now refuses object data access.
+  - Listing objects (metadata) still works, which is why the earlier inventory succeeded.
+  - Downloading, and most likely deleting, the object is blocked the same way.
+  - Nothing about billing, IAM, bucket rules or public access was changed.
+- **Result:** the approved run stopped again before any write. 0 backups were written, B2 did not run, and A2 was not touched.
+- **Consequences beyond A2:**
+  - The shared account's own `profile_images` object is equally unreadable, so its migration is blocked too.
+  - The legacy-media step of account deletion cannot verify or remove Firebase Storage objects while this restriction holds; such deletions end `blocked`.
+  - B2 (Firestore only) does not depend on Storage, but it was approved together with A2 and was therefore not run separately.
+- **Owner action:** in the Firebase console (Storage → `profile_images/`), try **Download** on the A2 object (its name is in the local manifest, `A2_storageSwiftEra`). Save it as `%LOCALAPPDATA%\SoloTravelSoul\backup-2026-10-10\a2-object.bin`.
+  - If the console also refuses, the only routes to A2 are a billing decision (for example, temporarily linking a billing account; owner only, not done here) or leaving the 0.9 MB object in place.
+  - Separately, B2 can be re-approved on its own.
+
 **Independence from the new production Worker:**
 - Inventory and the scope A/B deletions need only the owner's Google credentials: the GCS JSON API for the Storage object, Firestore REST or Admin for documents, and the Identity Toolkit admin API for B1. They can run before the production Worker is deployed.
 - Only **migration** depends on the Worker (`/admin/media/import`). That covers the mixed account's R2 photo (and its Firebase Storage object, if it is to be kept).
