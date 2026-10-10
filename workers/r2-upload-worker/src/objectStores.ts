@@ -22,9 +22,16 @@ export interface LegacyStorage extends PrefixDeleter {
    * 404 for the bucket itself (never provisioned). 401/403 throw LegacyMediaInaccessible.
    */
   bucketExists(beforeCall?: () => Promise<void> | void): Promise<boolean>;
-  /** Deletes single objects (e.g. profile_images/{uid}.jpg); 404 counts as already absent. */
+  /**
+   * Deletes single objects (e.g. profile_images/{uid}.jpg) that an authenticated listing shows to
+   * exist; names the listing does not show are not touched (no DELETE is sent for them).
+   */
   deleteObjects(names: string[], beforeCall?: () => Promise<void> | void): Promise<number>;
-  /** True only when every prefix lists empty and every object returns 404 — proof of absence. */
+  /**
+   * Proof of absence from authenticated listings only: true when every prefix lists empty and no
+   * listing (prefix = the exact name) contains an exact name, across all pages. Denied, failed,
+   * incomplete or malformed listings throw; they are never treated as empty.
+   */
   verifyAbsent(prefixes: string[], names: string[], beforeCall?: () => Promise<void> | void): Promise<boolean>;
 }
 
@@ -64,6 +71,15 @@ export function firebaseStorageDeleter(opts: {
   const auth = async () => ({ Authorization: `Bearer ${await opts.token()}` });
   const denied = (status: number) => status === 401 || status === 403;
 
+  /** Upper bound on pages per listing; reaching it means the listing is not complete (not proof). */
+  const MAX_PAGES = 1000;
+
+  /**
+   * One listing page. Only an authenticated 200 with a well-formed body counts: every item must be
+   * an object with a string name inside the requested prefix, and nextPageToken (if any) a non-empty
+   * string. Denied (401/403) or missing bucket (404) throw LegacyMediaInaccessible; any other
+   * failure or unexpected body throws, so it can never be read as an empty listing.
+   */
   async function list(prefix: string, pageToken: string, beforeCall?: () => Promise<void> | void) {
     await beforeCall?.();
     const qs = `prefix=${encodeURIComponent(prefix)}&maxResults=100&fields=items(name),nextPageToken${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
@@ -72,9 +88,42 @@ export function firebaseStorageDeleter(opts: {
     // A missing bucket is not proof that nothing was stored (wrong name, other
     // project): only the staging no-legacy mode accepts it, via bucketExists().
     if (resp.status === 404) throw new LegacyMediaInaccessible('firebase-storage', 404);
-    if (!resp.ok) throw new Error(`Storage list failed: ${resp.status}`);
-    const body = (await resp.json()) as { items?: { name: string }[]; nextPageToken?: string };
-    return { items: body.items ?? [], nextPageToken: body.nextPageToken ?? '' };
+    if (resp.status !== 200) throw new Error(`Storage list failed: ${resp.status}`);
+    let body: unknown;
+    try { body = await resp.json(); } catch { throw new Error('Storage list returned a non-JSON body'); }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Storage list returned an unexpected body');
+    const { items, nextPageToken } = body as { items?: unknown; nextPageToken?: unknown };
+    if (items !== undefined && !Array.isArray(items)) throw new Error('Storage list returned malformed items');
+    const names: string[] = [];
+    for (const it of (items as unknown[] | undefined) ?? []) {
+      const name = it && typeof it === 'object' ? (it as { name?: unknown }).name : undefined;
+      if (typeof name !== 'string' || !name.startsWith(prefix)) throw new Error('Storage list returned an item outside the requested prefix');
+      names.push(name);
+    }
+    if (nextPageToken !== undefined && (typeof nextPageToken !== 'string' || nextPageToken === '')) throw new Error('Storage list returned a malformed page token');
+    return { items: names, nextPageToken: (nextPageToken as string | undefined) ?? '' };
+  }
+
+  /** Every object name under a prefix, across all pages; throws unless the listing completes. */
+  async function listAll(prefix: string, beforeCall?: () => Promise<void> | void): Promise<string[]> {
+    const names: string[] = [];
+    let pageToken = '';
+    let pages = 0;
+    do {
+      if (++pages > MAX_PAGES) throw new Error('Storage list did not complete');
+      const page = await list(prefix, pageToken, beforeCall);
+      names.push(...page.items);
+      pageToken = page.nextPageToken;
+    } while (pageToken);
+    return names;
+  }
+
+  /** Objects that authenticated listings show: everything under the prefixes plus exact-name matches. */
+  async function present(prefixes: string[], names: string[], beforeCall?: () => Promise<void> | void): Promise<string[]> {
+    const found: string[] = [];
+    for (const prefix of prefixes) found.push(...(await listAll(prefix, beforeCall)));
+    for (const name of names) if ((await listAll(name, beforeCall)).includes(name)) found.push(name);
+    return found;
   }
 
   async function del(name: string, beforeCall?: () => Promise<void> | void): Promise<boolean> {
@@ -96,13 +145,17 @@ export function firebaseStorageDeleter(opts: {
       if (!resp.ok) throw new Error(`Storage bucket lookup failed: ${resp.status}`);
       return true;
     },
+    // Only objects a listing shows are deleted; a listing that is empty means no DELETE is sent at
+    // all (on Spark, object-level calls fail with a billing 403 even for absent objects).
     async deletePrefixes(prefixes, beforePage) {
       let deleted = 0;
       for (const prefix of prefixes) {
         let pageToken = '';
+        let pages = 0;
         do {
+          if (++pages > MAX_PAGES) throw new Error('Storage list did not complete');
           const page = await list(prefix, pageToken, beforePage);
-          for (const item of page.items) if (await del(item.name, beforePage)) deleted++;
+          for (const name of page.items) if (await del(name, beforePage)) deleted++;
           pageToken = page.nextPageToken;
         } while (pageToken);
       }
@@ -110,18 +163,11 @@ export function firebaseStorageDeleter(opts: {
     },
     async deleteObjects(names, beforeCall) {
       let deleted = 0;
-      for (const name of names) if (await del(name, beforeCall)) deleted++;
+      for (const name of await present([], names, beforeCall)) if (await del(name, beforeCall)) deleted++;
       return deleted;
     },
     async verifyAbsent(prefixes, names, beforeCall) {
-      for (const prefix of prefixes) if ((await list(prefix, '', beforeCall)).items.length) return false;
-      for (const name of names) {
-        await beforeCall?.();
-        const resp = await f(`${objectsUrl}/${encodeURIComponent(name)}?fields=name`, { headers: await auth() });
-        if (denied(resp.status)) throw new LegacyMediaInaccessible('firebase-storage', resp.status);
-        if (resp.status !== 404) return false;
-      }
-      return true;
+      return (await present(prefixes, names, beforeCall)).length === 0;
     },
   };
 }

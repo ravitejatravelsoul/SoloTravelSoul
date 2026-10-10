@@ -335,7 +335,7 @@ Consolidated owner handoff (privacy drafts, deletion URL, placeholders, old clie
   - The Worker refuses this mode for the production project (`legacyModeFor`; deletion answers 503 and nothing runs). It also refuses unknown values.
   - In this mode an unbound R2 store is accepted.
   - Firebase Storage counts as empty **only** when an authenticated lookup of the configured bucket returns 404 (never provisioned). The proof is recorded as `legacyMediaCleanup/{uid}` = `verified_absent`, `proof: 'bucket-not-provisioned'`.
-  - If the bucket exists, its objects are deleted and verified normally (`proof: 'listing-and-lookup'`). A 401/403 still blocks.
+  - If the bucket exists, its objects are deleted and verified normally (`proof: 'listing'`, authenticated listings only since 2026-10-10). A 401/403 still blocks.
 - **Binding guards (all modes):**
   - Missing KV/D1 media bindings now block deletion (`media-bindings-missing`) instead of counting as "no media".
   - Without no-legacy mode, an unbound R2 store blocks deletion (`legacy-r2-unbound`), and a Storage bucket answering 404 blocks it as unresolved (`inaccessible (404)`).

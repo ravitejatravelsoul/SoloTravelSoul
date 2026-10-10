@@ -238,6 +238,43 @@ Local files outside the repository, readable only by the owner account, in `%LOC
 - **Counter audit re-run (read-only):** 3 documents read, **0 mismatches**.
 - **Fingerprints** are stored in `%LOCALAPPDATA%\SoloTravelSoul\ops-2026-10-10\` (owner-only).
 
+### Legacy Storage deletion on Spark: listing-based proof (2026-10-10)
+
+**Risk fixed:**
+- Account deletion used to send an unconditional `DELETE profile_images/{uid}.jpg`, then an object metadata GET, to prove absence.
+- On this Spark project, object-level calls fail with a billing 403 (`accountDisabled`, section 6) even when the object does not exist. Every production deletion would therefore have ended `blocked`, with Auth kept, although nothing remained.
+- The late-media sweep sent the same DELETEs and counted an inaccessible store as swept.
+
+**Fix** (`workers/r2-upload-worker/src/objectStores.ts`, `accountDeletion.ts`):
+- **Proof of absence** comes only from authenticated listings: each owned prefix (`profile_photos/{uid}/`, `trip_covers/{uid}/`, `journals/{uid}/`), plus the exact legacy name (listed with the name as prefix, exact match), across all pages.
+- **What counts as a listing:** only an authenticated 200 with a well-formed body. Every item must be a named object inside the requested prefix, with valid page tokens and a page cap.
+- **What never counts:** a denied (401/403), missing-bucket (404), failed, incomplete or malformed listing. These throw and are never treated as empty.
+- **Deletion:** only objects a listing shows are deleted, and a fresh listing must then show them gone (`verified_absent`, proof `listing`).
+- **Spark behaviour:** when nothing is listed, no object-level request is sent at all. A listed object that cannot be deleted (billing 403) records the objects as `unresolved` and keeps the deletion `blocked` with Auth kept, as before.
+- **The late-media sweep** uses the same listing-based calls. A denied listing, or a listed object that cannot be deleted, is now a failed job (reported as `deletion_sweep_failed` and retried next pass), not a silent success.
+- **Unchanged:** barriers, leases, continuation, quotas and the staging-only no-legacy mode. There is no static exclusion list, and production `LEGACY_MEDIA_MODE=none` stays refused.
+
+**Evidence:**
+- **Regressions first** (`tests/release/accountDeletion.cjs`, 4 new tests on the real adapter with a fake GCS: listings work, object calls return 403 `accountDisabled`). 3 of 4 failed before the fix; "existing object stays blocked" already held. They show that:
+  - deletion completes with zero object calls when listings are empty;
+  - an existing object stays blocked (Auth kept, unresolved recorded);
+  - a denied, failed, incompletely paginated, non-JSON, malformed, foreign-prefix or nameless listing never proves absence;
+  - the sweep makes no object calls for empty jobs and does not count an undeletable object as swept.
+- **Suites:**
+  - `npm run test:release` passes (account deletion 69/69 in memory);
+  - `npm run test:rules` passes (account deletion 56/56 on the Firestore emulator, end-to-end 7/7 with the Storage emulator, demo cleanup 7/7);
+  - the Worker typecheck is clean.
+- **Live, read-only check on production** (the owner's Firebase CLI token; only GET listings; 8 requests, 0 others):
+  - the new `verifyAbsent` proved a random, never-used UID absent;
+  - it correctly detected the Swift-only user's existing `profile_images` object, under the current billing restriction.
+
+**Remaining limitations:**
+- **Accounts that do own a legacy Storage object stay `blocked`** while billing is absent, because their object cannot be deleted. Today that is the Swift-only user (A2) and the shared account.
+- **Proof relies on Cloud Storage listings being strongly consistent and complete.** It covers the known owned prefixes and the exact legacy filename; objects stored under other, unknown paths would not be found.
+- **The production Worker's service account does not exist yet.** It needs `storage.objects.list` on the bucket (and `storage.objects.delete` for any object it should remove). The live check used the owner's credentials.
+- **Legacy R2** handling is unchanged.
+- **If production listings are ever denied** (for example, missing IAM), deletions block with `unresolved` and the sweep warns on every pass. That is by design: the warning signals the problem rather than hiding it.
+
 **Independence from the new production Worker:**
 - Inventory and the scope A/B deletions need only the owner's Google credentials: the GCS JSON API for the Storage object, Firestore REST or Admin for documents, and the Identity Toolkit admin API for B1. They can run before the production Worker is deployed.
 - Only **migration** depends on the Worker (`/admin/media/import`). That covers the mixed account's R2 photo (and its Firebase Storage object, if it is to be kept).

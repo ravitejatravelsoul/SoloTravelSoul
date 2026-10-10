@@ -571,12 +571,17 @@ const deleteR2Media: Step['run'] = async ({ uid, deps, heartbeat }) => {
 };
 
 /**
- * Legacy Firebase Storage. The step completes only when a fresh listing and
- * object lookup prove absence (recorded as `verified_absent`). If Storage is
- * inaccessible (Spark projects lost access in 2026) the objects are recorded
- * as UNRESOLVED for operators and the step stays incomplete (LegacyMediaBlocked):
- * Auth is kept and every later slice or cron run retries, so the deletion
- * finishes once access returns. An `unresolved` record is never evidence of deletion.
+ * Legacy Firebase Storage. Proof of absence comes from authenticated listings
+ * only: every owned prefix and the exact legacy name (listed with the name as
+ * prefix) must list empty across all pages (recorded as `verified_absent`,
+ * proof 'listing'). Only objects a listing shows are deleted, then a fresh
+ * listing must show them gone. On Spark projects object-level calls (DELETE,
+ * metadata) fail with a billing 403 even for absent objects, so none are sent
+ * when nothing is listed. A denied listing, or a listed object that cannot be
+ * deleted, records the objects as UNRESOLVED and keeps the step incomplete
+ * (DeletionBlocked): Auth is kept and later slices or cron runs retry. A denied,
+ * failed, incomplete or malformed listing is never treated as empty, and an
+ * `unresolved` record is never evidence of deletion.
  */
 const deleteFirebaseMedia: Step['run'] = async ({ uid, deps, store, work, flags }) => {
   const fs = deps.firebaseStorage;
@@ -607,7 +612,7 @@ const deleteFirebaseMedia: Step['run'] = async ({ uid, deps, store, work, flags 
     flags.legacyMediaUnresolved = true;
     throw new DeletionBlocked('legacy-media-inaccessible');
   }
-  await record({ status: 'verified_absent', store: fs.name, reason: null, proof: 'listing-and-lookup' });
+  await record({ status: 'verified_absent', store: fs.name, reason: null, proof: 'listing' });
   flags.legacyMediaUnresolved = false;
 };
 
@@ -934,12 +939,11 @@ export async function sweepRecentlyDeletedMedia(deps: DeletionDeps, windowMs = S
           await purgePending(deps.media.db, deps.media.kv, { owner: uid, limit });
         }
         if (deps.r2) await deps.r2.deletePrefixes(r2Prefixes(uid));
-        try {
-          await deps.firebaseStorage.deletePrefixes(storagePrefixes(uid), () => work(1));
-          await deps.firebaseStorage.deleteObjects(legacyStorageObjects(uid), () => work(1));
-        } catch (e) {
-          if (!(e instanceof LegacyMediaInaccessible)) throw e; // such jobs never reach mediaClearedAtMs now
-        }
+        // Listing-based like the deletion step: only listed objects are deleted. A denied listing or
+        // a listed object that cannot be deleted (e.g. Spark billing 403) is a failed job for this
+        // pass (reported and retried), never a silent success.
+        await deps.firebaseStorage.deletePrefixes(storagePrefixes(uid), () => work(1));
+        await deps.firebaseStorage.deleteObjects(legacyStorageObjects(uid), () => work(1));
         swept++;
         deps.budget?.markProgress();
       } catch (e) {

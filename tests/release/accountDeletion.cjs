@@ -2021,7 +2021,7 @@ test('staging no-legacy mode: completes only with proof the bucket was never pro
   assert.equal(r.status, 'deleted');
   assert.ok(!h.storage.objects.has(`profile_images/${ME}.jpg`) && h.storage.objects.has(`profile_images/${BOB}.jpg`));
   rec = (await store.get(`legacyMediaCleanup/${ME}`)).data;
-  assert.deepEqual([rec.status, rec.proof], ['verified_absent', 'listing-and-lookup']);
+  assert.deepEqual([rec.status, rec.proof], ['verified_absent', 'listing']);
   // Access denied: blocked, Auth kept.
   store = await newStore(); await seed(store); h = harness(store);
   h.storage.inaccessible = true;
@@ -2238,6 +2238,116 @@ test('lease fast path: a foreign write between this attempt\'s writes is detecte
   assert.equal(job.attemptId, 'other-attempt', "the other attempt's ownership was not overwritten");
   assert.equal(h.authCalls.length, 0);
 }, 'memory');
+
+// ── Spark legacy Storage: listing works, object DELETE/metadata return 403 (accountDisabled) ──────────
+// Real firebaseStorageDeleter against a fake GCS that models a Spark project: authenticated listings
+// succeed (paginated), every object-level call is refused with a billing 403.
+function sparkStorage(objects, mode = {}) {
+  const calls = { lists: [], objectOps: [] };
+  const deny = () => new Response(JSON.stringify({ error: { code: 403, errors: [{ reason: 'accountDisabled' }],
+    message: 'The billing account for the owning project is disabled in state absent' } }), { status: 403 });
+  const fetchImpl = async (input, init = {}) => {
+    const u = new URL(typeof input === 'string' ? input : input.url);
+    if (u.pathname.includes('/o/')) { // object-level: metadata GET or DELETE
+      calls.objectOps.push(`${init.method ?? 'GET'} ${decodeURIComponent(u.pathname.split('/o/')[1])}`);
+      if (mode.objectOpsAllowed) {
+        const name = decodeURIComponent(u.pathname.split('/o/')[1]);
+        if (init.method === 'DELETE') return new Response(null, { status: objects.delete(name) ? 204 : 404 });
+        return objects.has(name) ? Response.json({ name }) : new Response(null, { status: 404 });
+      }
+      return deny();
+    }
+    if (!u.pathname.endsWith('/o')) return Response.json({ name: 'bucket' }); // bucket metadata
+    const prefix = u.searchParams.get('prefix') ?? '';
+    const pageToken = u.searchParams.get('pageToken') ?? '';
+    calls.lists.push(prefix);
+    if (mode.listDenied) return deny();
+    if (mode.listError) return new Response('{"error":{"code":500}}', { status: 500 });
+    if (mode.emptyPageThenFail) return pageToken ? new Response('{"error":{"code":503}}', { status: 503 }) : Response.json({ items: [], nextPageToken: 'p2' });
+    if (mode.badBody === 'not-json') return new Response('ok', { status: 200 });
+    if (mode.badBody === 'items-not-array') return Response.json({ items: 'nothing' });
+    if (mode.badBody === 'foreign-name') return Response.json({ items: [{ name: `elsewhere/${prefix}x` }] });
+    if (mode.badBody === 'nameless-item') return Response.json({ items: [{ size: '1' }] });
+    const all = [...objects].filter((k) => k.startsWith(prefix)).sort();
+    const start = Number(pageToken || 0), size = 2;
+    const page = all.slice(start, start + size);
+    return Response.json({ ...(page.length ? { items: page.map((name) => ({ name })) } : {}), ...(start + size < all.length ? { nextPageToken: String(start + size) } : {}) });
+  };
+  return { fetch: fetchImpl, calls, objects };
+}
+const sparkDeleter = (spark) => worker('objectStores').firebaseStorageDeleter({ bucket: 'bucket', token: async () => 'sa', fetch: spark.fetch });
+const OWNED = [`profile_photos/${ME}/`, `trip_covers/${ME}/`, `journals/${ME}/`];
+
+test('Spark: listings prove every owned path empty, so deletion finishes without any object DELETE or metadata call', async () => {
+  const store = await newStore(); await seed(store);
+  const h = harness(store);
+  // Other users' objects and a near-miss name exist; nothing of ME. Pages of 2 exercise pagination.
+  const spark = sparkStorage(new Set([`profile_images/${BOB}.jpg`, `trip_covers/${BOB}/a.jpg`, `trip_covers/${BOB}/b.jpg`, `trip_covers/${BOB}/c.jpg`, `profile_images/${ME}.jpgx`]));
+  h.deps.firebaseStorage = sparkDeleter(spark);
+  assert.deepEqual(await deletion.deleteAccount({ uid: ME, email: null }, h.deps), { status: 'deleted' });
+  assert.deepEqual(spark.calls.objectOps, [], 'no object-level call (each would have been a billing 403)');
+  for (const p of [...OWNED, `profile_images/${ME}.jpg`]) assert.ok(spark.calls.lists.includes(p), `listed ${p}`);
+  const rec = (await store.get(`legacyMediaCleanup/${ME}`)).data;
+  assert.deepEqual([rec.status, rec.proof], ['verified_absent', 'listing']);
+  assert.equal(h.authCalls.length, 1, 'Auth removed after proof of absence');
+  assert.equal(spark.objects.size, 5, 'nothing deleted, including the near-miss name');
+});
+
+test('Spark: an existing legacy object cannot be deleted, so deletion stays blocked, Auth remains and unresolved media is recorded', async () => {
+  for (const name of [`profile_images/${ME}.jpg`, `journals/${ME}/t1/e.jpg`]) {
+    const store = await newStore(); await seed(store);
+    const h = harness(store);
+    const spark = sparkStorage(new Set([name, `profile_images/${BOB}.jpg`]));
+    h.deps.firebaseStorage = sparkDeleter(spark);
+    const r = await deletion.deleteAccount({ uid: ME, email: null }, h.deps);
+    assert.deepEqual([r.status, r.step], ['blocked', 'firebaseMedia'], name);
+    assert.equal(h.authCalls.length, 0, `${name}: Auth kept`);
+    assert.ok(spark.objects.has(name), `${name}: still present`);
+    assert.deepEqual(spark.calls.objectOps, [`DELETE ${name}`], `${name}: only the confirmed-present object was attempted`);
+    const rec = (await store.get(`legacyMediaCleanup/${ME}`)).data;
+    assert.deepEqual([rec.status, rec.reason], ['unresolved', 'inaccessible (403)'], name);
+    assert.equal((await store.get(`accountDeletions/${ME}`)).data.legacyMediaUnresolved, true, name);
+  }
+});
+
+test('Spark: listing denial, failure, incomplete pagination or an unexpected response never counts as proof of absence', async () => {
+  const cases = [['listing denied (403)', { listDenied: true }], ['listing fails (500)', { listError: true }],
+    ['empty first page, next page fails', { emptyPageThenFail: true }], ['non-JSON body', { badBody: 'not-json' }],
+    ['items not an array', { badBody: 'items-not-array' }], ['item outside the requested prefix', { badBody: 'foreign-name' }],
+    ['item without a name', { badBody: 'nameless-item' }]];
+  for (const [label, mode] of cases) {
+    const store = await newStore(); await seed(store);
+    const h = harness(store);
+    const spark = sparkStorage(new Set(), mode);
+    h.deps.firebaseStorage = sparkDeleter(spark);
+    let outcome;
+    try { outcome = await deletion.deleteAccount({ uid: ME, email: null }, h.deps); } catch (e) { outcome = { error: e.step ?? e.name }; }
+    assert.notEqual(outcome.status, 'deleted', `${label}: deletion must not complete`);
+    assert.equal(h.authCalls.length, 0, `${label}: Auth kept`);
+    const rec = (await store.get(`legacyMediaCleanup/${ME}`))?.data;
+    assert.ok(!rec || rec.status !== 'verified_absent', `${label}: never recorded as verified absent`);
+    assert.deepEqual(spark.calls.objectOps, [], `${label}: no object calls`);
+  }
+});
+
+test('Spark late-media sweep: empty listings need no object calls; a present object that cannot be deleted is not counted as swept', async () => {
+  const store = await newStore();
+  const now = Date.now();
+  for (const uid of ['swEmpty', 'swLate']) {
+    await store.commit([{ kind: 'update', path: `accountDeletions/${uid}`, mustExist: false, set: { uid, status: 'completed', pendingFinalization: false, mediaClearedAtMs: now - 60_000, completedSteps: [] } }]);
+  }
+  const spark = sparkStorage(new Set(['journals/swLate/late.jpg', `profile_images/${BOB}.jpg`]));
+  const deps = { store, legacyMode: 'required', media: undefined, firebaseStorage: sparkDeleter(spark), deleteAuthUser: async () => {}, authUserExists: async () => false, now: () => now };
+  const warn = console.warn; const warnings = [];
+  console.warn = (m) => warnings.push(String(m));
+  try {
+    const swept = await deletion.sweepRecentlyDeletedMedia(deps);
+    assert.equal(swept, 1, 'only the job with proven-empty paths counts as swept');
+    assert.deepEqual(spark.calls.objectOps, ['DELETE journals/swLate/late.jpg'], 'object calls only for the confirmed-present object');
+    assert.ok(spark.objects.has('journals/swLate/late.jpg'), 'not deleted (billing 403)');
+    assert.ok(warnings.some((w) => w.includes('deletion_sweep_failed')), 'the failure is reported');
+  } finally { console.warn = warn; }
+});
 
 (async () => {
   let passed = 0;
