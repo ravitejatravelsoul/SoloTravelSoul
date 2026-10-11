@@ -22,14 +22,14 @@ Every open decision is in this table. Recommendations come from the code and the
 
 | Decision | Recommendation | Consequence | Required input |
 |---|---|---|---|
-| Moderators and coverage | Name a primary moderator and a backup (project recommendation, not a store rule) and adopt the response targets in section 11 | Without anyone working the queue, the "timely responses" (Apple 1.2) and "robust, ongoing moderation" (Google Play) requirements cannot be met; reports are only auto-hidden at 3 | Who (the accounts to grant later), and confirmation of the targets |
-| Privacy answers | Declare per section 3: no device location, no push token, no analytics; retained items as listed | Store forms must match the shipped build; enabling Mapbox or Foursquare later changes the answers | Confirm section 3, the privacy mailbox, and that Mapbox/Foursquare stay off for release |
+| Moderators and coverage | **Owner decision 2026-10-11:** primary moderator is the owner (Teja). Backup: **not decided**. Response targets (section 11): **pending the owner's confirmation** that they can be met. | Without anyone working the queue, the "timely responses" (Apple 1.2) and "robust, ongoing moderation" (Google Play) requirements cannot be met; reports are only auto-hidden at 3 | A backup (optional but recommended); confirmation or adjustment of the targets |
+| Privacy answers | Declare per section 3: no device location, no push token, no analytics; retained items as listed. **Owner decision 2026-10-11:** Mapbox and Foursquare stay **off** for the first release. The privacy and support mailbox is `ravitejatravelsoul@gmail.com`, working and checked daily. | **Contact mismatch:** the app and the deletion page publish `privacy@`, `safety@` and `legal@solotravelsoul.app`, but `solotravelsoul.app` does not exist in DNS (checked 2026-10-11), so those addresses bounce | How to fix the published addresses (see section 3); the remaining section 3 confirmations (retained media metadata, production logs) |
 | Old clients | **Answered:** the owner confirmed on 2026-10-10 that neither the Expo app nor the legacy Swift app (`Raviteja.SoloTravelSoul`) was ever distributed. So: no forced-update gate, no adoption window, and nothing to retire for users. Deploy the new rules with the first store release (section 5). | No installed old clients exist to break | None |
 | Legacy data and media | **B2 done (2026-10-10):** 77 demo docs deleted, backup kept. A2 is blocked by the Storage billing restriction (section 6). Still open: A1 (207 root + 229 subcollection Swift-era docs) and B1 (3 Swift Auth accounts). Keep the shared account and the 12 demo roots that reference it; migrate its R2 photo with the production Worker. | A2 and the shared account's Storage image stay unreadable without billing | A1 approval; B1 decision; an A2 path (console download or a billing decision) |
 | Production counter audit | **Done (read-only, 2026-10-10)**: 20 mismatches before B2, all on demo docs; **0 mismatches after B2** (section 7) | No repair needed | None |
 | Production rollout | Approve as one change set: production EAS variables, Worker bindings and Durable Object migration, secrets (including a production admin token stored with the section 10 procedure), rules, indexes, cron | Nothing in production changes until then; store review needs a working production backend | Approval and a date |
-| Store accounts and iOS | Android first; iOS only if a paid Apple Developer membership is accepted | iOS stays BLOCKED otherwise | Play Console access and service-account key (kept local); the decision on iOS |
-| Free/Spark ceilings | Accept for launch and monitor with `scripts/stagingUsage.cjs` | Above the ceilings, uploads, deletions or views fail until the next day | Acceptance |
+| Store accounts and iOS | **Owner decision 2026-10-11: Android first.** iOS is out of scope for the first release. | iOS stays BLOCKED (no paid Apple membership) | Play Console access and service-account key (kept local) |
+| Free/Spark ceilings | **Owner decision 2026-10-11: accepted** for the initial launch, with regular usage checks (`scripts/stagingUsage.cjs` against production). **No paid upgrade without the owner's separate approval.** | Above the ceilings, uploads, deletions or views fail until the next day | None (decided) |
 
 ## 2. Account-deletion URL
 
@@ -80,7 +80,12 @@ Other facts:
 - Encrypted in transit: yes (HTTPS to Firebase and the Worker).
 - No data is sold; no advertising SDKs.
 
-**Owner confirmation needed:** that `privacy@solotravelsoul.app` exists and is monitored.
+**Contact addresses (Owner decision 2026-10-11):**
+- The working privacy and support mailbox is `ravitejatravelsoul@gmail.com`, monitored daily.
+- **Problem:** the app publishes `privacy@solotravelsoul.app` (privacy screen, account-deletion web page), `safety@solotravelsoul.app` (privacy and Safety & Guidelines screens) and `legal@solotravelsoul.app` (Terms). The domain `solotravelsoul.app` does not resolve (NXDOMAIN, checked 2026-10-11), so all of them bounce. Both stores expect working published contact details.
+- **Fix options** (the owner chooses):
+  1. **Change the published addresses** to the working mailbox. This touches `apps/mobile/app/privacy.tsx`, `apps/mobile/app/(app)/profile/safety.tsx`, `apps/mobile/app/terms.tsx` and `workers/r2-upload-worker/src/deletionPage.ts`; it needs a new app build and a Worker deploy.
+  2. **Register the domain** and route those aliases to the mailbox. No code change, but it needs a domain purchase, which is a paid action needing separate approval.
 
 ## 4. Store configuration and credentials still missing (no values requested here)
 
@@ -358,8 +363,11 @@ This list replaces every earlier blocker list in this file and in `docs/release-
 
 **A. Required before release (owner decisions or approvals):**
 1. **Staging admin token: done (2026-10-10).** Rotated, and the encrypted owner copy is stored (section 10). Valid-token, refusal and stalled-fixture checks pass. Production needs its own token (item 6), handled with the same procedure.
-2. **Moderation staffing:** the stores require working reporting, blocking, filtering, timely responses and ongoing moderation (Apple 1.2; Google Play user-generated content). They do **not** set a number of moderators. Project recommendation: a primary moderator plus a backup, with the targets in section 11. Until someone is appointed, reports are only auto-hidden at 3.
-3. **Privacy answers** (section 3): confirm the location and push-token rows, and confirm that `privacy@solotravelsoul.app` exists and is monitored.
+2. **Moderation staffing:** the stores require working reporting, blocking, filtering, timely responses and ongoing moderation (Apple 1.2; Google Play user-generated content). They do **not** set a number of moderators. **Owner decision 2026-10-11:** the owner (Teja) is the primary moderator; the backup is not decided; the response targets in section 11 await the owner's confirmation. Granting the production moderator role is part of the production rollout.
+3. **Privacy answers and contact addresses** (section 3):
+   - **Decided:** the working mailbox is `ravitejatravelsoul@gmail.com`, and Mapbox and Foursquare stay off.
+   - **Open (required):** the published `@solotravelsoul.app` addresses bounce (the domain does not exist), so fix them before submission.
+   - **Open:** confirm the retained media metadata and the production logs items.
 4. **Old clients: decided** (the owner confirmed on 2026-10-10: nothing was distributed). No forced update or adoption window; the rules deploy with the first store release (section 5).
 5. **Legacy media and test data** (section 6): the owner confirmed disposable test data, so they are deleted, not migrated. Each step is approval-gated:
    - inventory done (section 6, "Production read-only preflight");
@@ -378,9 +386,9 @@ This list replaces every earlier blocker list in this file and in `docs/release-
    - replace the `eas.json` `submit.production` placeholders and provide `google-play-key.json` locally (section 4);
    - store listings.
    No submission has been made.
-9. **Physical-device check:** one run of section 10's checklist on a real Android phone before submission; so far only an emulator has been used.
-10. **iOS:** only if iOS is in scope. It needs macOS and a paid Apple Developer membership, which is outside the no-paid-plans constraint; it is BLOCKED otherwise.
-11. **Free/Spark ceilings:** accept them or plan for them: about 1,000 uploads/day (KV writes), about 1,000 media deletions/day (KV deletes; the excess completes the next day), about 17,000–25,000 media views/day (Firestore reads), 100,000 API calls/day.
+9. **Physical-device check:** one run of section 10's checklist on a real Android phone before submission; so far only an emulator has been used. The owner has a phone available; its Android version is not yet recorded (it must be Android 7.0 / API 24 or newer for this app).
+10. **iOS:** out of scope for the first release (**Owner decision 2026-10-11: Android first**). It would need macOS and a paid Apple Developer membership.
+11. **Free/Spark ceilings: accepted for launch** (Owner decision 2026-10-11), with regular usage checks; no paid upgrade without separate approval. The ceilings are about 1,000 uploads/day (KV writes), about 1,000 media deletions/day (KV deletes; the excess completes the next day), about 17,000–25,000 media views/day (Firestore reads), and 100,000 API calls/day.
 
 **B. Staging housekeeping (not release-blocking):**
 - Delete the disposable `sts-live-*` accounts left by earlier live-test runs. The native runs removed their own.
@@ -676,10 +684,10 @@ $t = [Text.Encoding]::UTF8.GetString([Security.Cryptography.ProtectedData]::Unpr
 | Role | Who (owner fills in) | Responsibility |
 |---|---|---|
 | Project owner | — | Grants and revokes the moderator role, owns the blocked-term list, approves suspensions over 30 days, handles legal and law-enforcement requests |
-| Primary moderator | — | Works the queue daily, oldest first; records a resolution on every report |
-| Backup moderator | — | Covers the primary's absence; checks the queue age daily |
+| Primary moderator | Teja (owner), decided 2026-10-11 | Works the queue daily, oldest first; records a resolution on every report |
+| Backup moderator | Not decided | Covers the primary's absence; checks the queue age daily |
 
-**Proposed response targets (recommendations):**
+**Proposed response targets (recommendations; the owner is still confirming whether they can be met):**
 - **Safety:** child safety, credible threats or self-harm within 4 hours.
 - **Abuse:** harassment, hate or sexual content within 24 hours.
 - **Other:** spam, fake profiles and everything else within 72 hours.
