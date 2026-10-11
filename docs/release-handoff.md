@@ -275,6 +275,24 @@ Local files outside the repository, readable only by the owner account, in `%LOC
 - **Legacy R2** handling is unchanged.
 - **If production listings are ever denied** (for example, missing IAM), deletions block with `unresolved` and the sweep warns on every pass. That is by design: the warning signals the problem rather than hiding it.
 
+### Staging deployment of the Storage deletion fix (2026-10-11)
+
+- **Deployed:** commit `7a03695` to staging only (`npx wrangler deploy --env staging`), on the existing Durable Object host (`src/edge.ts`, `ApiShard`, 8 shards, `*/5` cron). **Version `b8392e10-5149-47d1-9a11-a2375eaa43be`**, live from 21:55:20Z. Secrets were unchanged.
+- **Rollback target:** the previous version `3362ef45`.
+- **Limitation:** staging runs `LEGACY_MEDIA_MODE = "none"` and its Storage bucket was never provisioned, so the Firebase Storage step proves absence through the existing bucket-not-provisioned lookup. **The new listing-based path is not exercised on staging.** It is covered by the regression suites and by the read-only production listing check (section 6).
+
+**End-to-end check** (disposable accounts V and B, `tests/staging/live.cjs`):
+
+| Check | Result |
+|---|---|
+| Upload media | `seed-large v`: 20 photo uploads and posts, plus 1 more from `start-user`. V also has 15 likes and 25 comments on B's posts, mutual follows, a DM and a group with B. B viewed every V image (40/40 authorized views). |
+| Start deletion, continue across slices | First call limited to one slice → 202 `in_progress` (step `likes`, 0 completed). Continued with V's own token → 200 `deleted`. Job `completed` after 11 attempts, 25/25 steps. |
+| Owned data, media and Auth removed | `verify-deleted v` PASS: job completed, Auth sign-in refused, data removed, **21 media rows purged** (KV deletes done). V's profile, public profile and lookup entry are gone; 0 posts, likes or follows (either direction); 0 live comments. Legacy record `verified_absent` (`bucket-not-provisioned`). B now gets **404 for all 20** of V's image URLs. |
+| Second account unchanged | All **30** of B's documents remain (profile, public profile, lookup, 15 posts, group, DM with 10 messages). The only field changes are the intended relationship releases: likes on B's posts 15 → 0, comments 25 → 0, B's followers 1 → 0 and following 1 → 0, V removed from B's group (2 → 1 members), DM participant shown as "Deleted User". B still signs in. |
+| deletion-status | `GET /admin/deletion-status` (token recovered from the DPAPI copy, never displayed): 200, `count=0`, 0 stalled, 0 unresolved. Wrong, one-character-off and missing tokens → 403. |
+| Worker errors since deploy | Front Worker (version `b8392e10`): 93 requests, **0 errors**, hourly CPU p99 ≤ 2.79 ms (one `clientDisconnected` request, not an error). Durable Objects: 127 requests, **0 errors**. |
+| Cleanup | B deleted through `POST /account/delete` and verified (`verify-deleted b` PASS). No fixture from this run remains. |
+
 **Independence from the new production Worker:**
 - Inventory and the scope A/B deletions need only the owner's Google credentials: the GCS JSON API for the Storage object, Firestore REST or Admin for documents, and the Identity Toolkit admin API for B1. They can run before the production Worker is deployed.
 - Only **migration** depends on the Worker (`/admin/media/import`). That covers the mixed account's R2 photo (and its Firebase Storage object, if it is to be kept).
