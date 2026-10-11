@@ -277,7 +277,7 @@ Create `apps/mobile/app/(app)/profile/safety.tsx` — a static screen with commu
 - "How to report" section with step-by-step
 - "How to block" section
 - Privacy policy link
-- Support email: `safety@solotravelsoul.app`
+- Support email: `ravitejatravelsoul@gmail.com`
 
 **Affected files:**
 - `apps/mobile/app/(app)/profile/safety.tsx` (create)

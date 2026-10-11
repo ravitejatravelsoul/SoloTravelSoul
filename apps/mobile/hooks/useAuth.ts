@@ -15,6 +15,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { setSyncPaused } from '@/hooks/useSyncEngine';
 import { requestAccountDeletion, clearLocalUserData, type DeletionOutcome, type DeletionProgress } from '@/utils/accountDeletion';
+import { CONTACT_EMAIL } from '@/constants/contact';
 
 function deletionErrorMessage(code: string): string {
   switch (code) {
@@ -28,7 +29,7 @@ function deletionErrorMessage(code: string): string {
     case 'deletion/in-progress':
       return 'Deletion is already in progress. Please try again in a few minutes.';
     case 'deletion/unavailable':
-      return 'Account deletion is temporarily unavailable. Contact privacy@solotravelsoul.app.';
+      return `Account deletion is temporarily unavailable. Contact ${CONTACT_EMAIL}.`;
     case 'deletion/network':
     case 'auth/network-request-failed':
       return 'Network error. Deletion may already have started — please reconnect and try again to make sure it completes.';
@@ -164,8 +165,8 @@ export function useAuth() {
         outcome === 'deleted'
           ? 'Your account has been deleted.'
           : outcome === 'blocked'
-            ? 'Your data has been deleted except older photos stored with a provider we cannot reach right now. Your account stays locked and is removed automatically once they are deleted; contact privacy@solotravelsoul.app with questions.'
-            : 'Account deletion has started and continues automatically. Your account is locked meanwhile; contact privacy@solotravelsoul.app if it is not removed.',
+            ? `Your data has been deleted except older photos stored with a provider we cannot reach right now. Your account stays locked and is removed automatically once they are deleted; contact ${CONTACT_EMAIL} with questions.`
+            : `Account deletion has started and continues automatically. Your account is locked meanwhile; contact ${CONTACT_EMAIL} if it is not removed.`,
         outcome === 'deleted' ? 'success' : 'info'
       );
       router.replace('/(auth)/login');

@@ -254,6 +254,36 @@ test('native Android findings (staging APK, 2026-10-09) stay fixed', () => {
   // Chat sends refused by the rules: behaviour tests in tests/release/chatQueue.cjs.
 });
 
+test('published contact addresses are the working mailbox; no @solotravelsoul.app address (the domain does not exist)', () => {
+  const MAILBOX = 'ravitejatravelsoul@gmail.com';
+  const contact = fs.readFileSync(path.join(root, 'apps/mobile/constants/contact.ts'), 'utf8');
+  assert.match(contact, new RegExp(`export const CONTACT_EMAIL = '${MAILBOX}';`));
+  const page = fs.readFileSync(path.join(root, 'workers/r2-upload-worker/src/deletionPage.ts'), 'utf8');
+  assert.match(page, new RegExp(`const CONTACT = '${MAILBOX}';`));
+  // Every shipped source file: no address at the unregistered domain, and any literal address is the mailbox.
+  const files = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (['node_modules', 'dist', 'android', 'ios', '.expo'].includes(e.name)) continue;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.(tsx?|js)$/.test(e.name)) files.push(p);
+    }
+  };
+  for (const d of ['apps/mobile/app', 'apps/mobile/components', 'apps/mobile/hooks', 'apps/mobile/constants', 'apps/mobile/utils', 'apps/mobile/stores', 'apps/mobile/services', 'apps/mobile/lib', 'workers/r2-upload-worker/src']) {
+    if (fs.existsSync(path.join(root, d))) walk(path.join(root, d));
+  }
+  assert.ok(files.length > 20);
+  for (const f of files) {
+    const src = fs.readFileSync(f, 'utf8');
+    assert.ok(!/@solotravelsoul\.app/.test(src), `${path.relative(root, f)} publishes an @solotravelsoul.app address`);
+    for (const m of src.matchAll(/mailto:([^'"`?$)\s]+)/g)) assert.equal(m[1], MAILBOX, path.relative(root, f));
+  }
+  // The Safety screen's mailto target and its label are the same constant.
+  const safety = fs.readFileSync(path.join(root, 'apps/mobile/app/(app)/profile/safety.tsx'), 'utf8');
+  assert.match(safety, /Linking\.openURL\(`mailto:\$\{CONTACT_EMAIL\}`\)[\s\S]{0,400}<Text style=\{styles\.linkLabel\}>\{CONTACT_EMAIL\}<\/Text>/);
+});
+
 (async () => {
   let passed = 0;
   for (const t of tests) {

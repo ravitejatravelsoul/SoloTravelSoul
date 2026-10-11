@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Text, Divider } from '@/components/ui';
 import { Colors, Spacing } from '@/constants/theme';
+import { CONTACT_EMAIL } from '@/constants/contact';
 
 const SECTIONS = [
   {
@@ -31,7 +32,7 @@ const SECTIONS = [
   },
   {
     title: '7. Changes',
-    body: 'We may update these terms. Continued use after changes constitutes acceptance. We will notify you of material changes via the app.\n\nLast updated: October 2026\n\nContact: legal@solotravelsoul.app',
+    body: 'We may update these terms. Continued use after changes constitutes acceptance. We will notify you of material changes via the app.\n\nLast updated: October 2026\n\nContact: ' + CONTACT_EMAIL,
   },
 ];
 

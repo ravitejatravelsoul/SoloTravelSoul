@@ -136,7 +136,7 @@ Enforced by `firestore.rules` / `storage.rules` and the Worker, not by the app U
 | Harassment, hate, sexual content (`harassment`, `inappropriate`) | Within 24 hours (project target; Apple 1.2 asks for "timely responses" without a figure). |
 | Spam, fake profiles, other | Within 72 hours. |
 
-Escalation: child sexual abuse material is never reviewed further or forwarded internally — remove it, suspend the account, preserve the report record, and report to NCMEC (CyberTipline) or the national authority; imminent danger goes to local emergency services; legal/law-enforcement requests go to the project owner (privacy@ / safety@solotravelsoul.app). Review the queue age daily; anything older than its target is escalated to the owner.
+Escalation: child sexual abuse material is never reviewed further or forwarded internally — remove it, suspend the account, preserve the report record, and report to NCMEC (CyberTipline) or the national authority; imminent danger goes to local emergency services; legal/law-enforcement requests go to the project owner (`ravitejatravelsoul@gmail.com`). Review the queue age daily; anything older than its target is escalated to the owner.
 
 ### Stalled deletion runbook
 

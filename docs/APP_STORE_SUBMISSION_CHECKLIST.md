@@ -21,7 +21,7 @@
   - **Subtitle:** Plan trips. Journal memories.
   - **Primary category:** Travel
   - **Secondary category:** Lifestyle
-  - **Support URL:** (your support page or email — e.g., `mailto:support@solotravelsoul.app`)
+  - **Support URL:** `mailto:ravitejatravelsoul@gmail.com` (the domain `solotravelsoul.app` is not registered; do not use addresses at it)
   - **Privacy Policy URL:** (host the privacy policy text publicly, e.g., `https://solotravelsoul.app/privacy`)
   - **Marketing URL:** (optional)
   - **Age rating:** 4+ (no objectionable content)

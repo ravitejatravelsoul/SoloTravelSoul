@@ -123,7 +123,7 @@ Community (tab — V1.1)
 - How to report (tappable link to report flow)
 - How to block
 - Link to full Privacy Policy
-- Contact email for safety issues: `safety@solotravelsoul.app`
+- Contact email for safety issues: `ravitejatravelsoul@gmail.com`
 
 ---
 

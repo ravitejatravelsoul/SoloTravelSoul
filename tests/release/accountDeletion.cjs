@@ -455,6 +455,7 @@ test('client: wrong password / server failure keep local data; success clears ca
     '@solotravelsoul/shared': { getUserInitials: () => 'A' },
     '@/stores/authStore': { useAuthStore: (sel) => sel({ user: { uid: ME }, profile: null, loading: false, setLoading() {} }) },
     '@/stores/uiStore': { useUIStore: (sel) => sel({ addToast: (m, t) => toasts.push(t) }) },
+    '@/constants/contact': { CONTACT_EMAIL: 'ravitejatravelsoul@gmail.com' },
     '@/hooks/useSyncEngine': { setSyncPaused: (uid, p) => paused.push(p) },
     '@/utils/accountDeletion': local,
   });
@@ -761,6 +762,7 @@ test('client failure toast describes possible partial deletion', async () => {
     '@solotravelsoul/shared': { getUserInitials: () => 'A' },
     '@/stores/authStore': { useAuthStore: (sel) => sel({ user: { uid: ME }, profile: null, loading: false, setLoading() {} }) },
     '@/stores/uiStore': { useUIStore: (sel) => sel({ addToast: (m) => toasts.push(m) }) },
+    '@/constants/contact': { CONTACT_EMAIL: 'ravitejatravelsoul@gmail.com' },
     '@/hooks/useSyncEngine': { setSyncPaused() {} },
     '@/utils/accountDeletion': {
       requestAccountDeletion: async () => { throw Object.assign(new Error('x'), { code: 'deletion/failed' }); },
@@ -1132,7 +1134,7 @@ test('entry point: GET /account-deletion serves the web deletion request page', 
   const html = await resp.text();
   assert.equal(resp.status, 200);
   assert.match(resp.headers.get('Content-Type'), /text\/html/);
-  for (const needle of ['SoloTravelSoul', 'mailto:privacy@solotravelsoul.app', 'Delete account', 'What is deleted', 'What is kept']) {
+  for (const needle of ['SoloTravelSoul', 'mailto:ravitejatravelsoul@gmail.com', 'Delete account', 'What is deleted', 'What is kept']) {
     assert.ok(html.includes(needle), needle);
   }
 }, 'memory');

@@ -23,7 +23,7 @@ Every open decision is in this table. Recommendations come from the code and the
 | Decision | Recommendation | Consequence | Required input |
 |---|---|---|---|
 | Moderators and coverage | **Owner decision 2026-10-11:** primary moderator is the owner (Teja). Backup: **not decided**. Response targets (section 11): **pending the owner's confirmation** that they can be met. | Without anyone working the queue, the "timely responses" (Apple 1.2) and "robust, ongoing moderation" (Google Play) requirements cannot be met; reports are only auto-hidden at 3 | A backup (optional but recommended); confirmation or adjustment of the targets |
-| Privacy answers | Declare per section 3: no device location, no push token, no analytics; retained items as listed. **Owner decision 2026-10-11:** Mapbox and Foursquare stay **off** for the first release. The privacy and support mailbox is `ravitejatravelsoul@gmail.com`, working and checked daily. | **Contact mismatch:** the app and the deletion page publish `privacy@`, `safety@` and `legal@solotravelsoul.app`, but `solotravelsoul.app` does not exist in DNS (checked 2026-10-11), so those addresses bounce | How to fix the published addresses (see section 3); the remaining section 3 confirmations (retained media metadata, production logs) |
+| Privacy answers | Declare per section 3: no device location, no push token, no analytics; retained items as listed. **Owner decision 2026-10-11:** Mapbox and Foursquare stay **off** for the first release. The privacy and support mailbox is `ravitejatravelsoul@gmail.com`, working and checked daily. | **Contact addresses fixed in code (2026-10-11):** the app and the deletion page now publish only `ravitejatravelsoul@gmail.com`; the bouncing `@solotravelsoul.app` addresses are gone. The fix reaches users with the next app build and Worker deploy. | The remaining section 3 confirmations (retained media metadata, production logs) |
 | Old clients | **Answered:** the owner confirmed on 2026-10-10 that neither the Expo app nor the legacy Swift app (`Raviteja.SoloTravelSoul`) was ever distributed. So: no forced-update gate, no adoption window, and nothing to retire for users. Deploy the new rules with the first store release (section 5). | No installed old clients exist to break | None |
 | Legacy data and media | **B2 done (2026-10-10):** 77 demo docs deleted, backup kept. A2 is blocked by the Storage billing restriction (section 6). Still open: A1 (207 root + 229 subcollection Swift-era docs) and B1 (3 Swift Auth accounts). Keep the shared account and the 12 demo roots that reference it; migrate its R2 photo with the production Worker. | A2 and the shared account's Storage image stay unreadable without billing | A1 approval; B1 decision; an A2 path (console download or a billing decision) |
 | Production counter audit | **Done (read-only, 2026-10-10)**: 20 mismatches before B2, all on demo docs; **0 mismatches after B2** (section 7) | No repair needed | None |
@@ -36,7 +36,7 @@ Every open decision is in this table. Recommendations come from the code and the
 - Served by the Worker at `GET /account-deletion` (in-app steps, email request, what is deleted and kept). Operator fulfilment: `POST /admin/account-deletion` with the `ADMIN_DELETION_TOKEN` secret.
 - Production URL to enter in Play Console: `https://<production worker host>/account-deletion`. It must be reachable on the production Worker **after** the Worker with KV/D1 bindings is deployed. Verify it on a phone browser first.
 - Staging URL (for testing only, live): `https://solotravelsoul-r2-upload-staging.ravitejatravelsoul.workers.dev/account-deletion`.
-- Privacy contact used in the app and page: `privacy@solotravelsoul.app`. Confirm that the mailbox exists and is monitored.
+- Contact on the page and in the app: `ravitejatravelsoul@gmail.com` (owner-confirmed working mailbox, checked daily). Not live yet: the staging Worker still serves the old address until its next deploy, and the installed preview APK still shows it until the next build (neither was done in this phase).
 
 ## 3. Store privacy answers (draft from code, 2026-10-10)
 
@@ -82,10 +82,13 @@ Other facts:
 
 **Contact addresses (Owner decision 2026-10-11):**
 - The working privacy and support mailbox is `ravitejatravelsoul@gmail.com`, monitored daily.
-- **Problem:** the app publishes `privacy@solotravelsoul.app` (privacy screen, account-deletion web page), `safety@solotravelsoul.app` (privacy and Safety & Guidelines screens) and `legal@solotravelsoul.app` (Terms). The domain `solotravelsoul.app` does not resolve (NXDOMAIN, checked 2026-10-11), so all of them bounce. Both stores expect working published contact details.
-- **Fix options** (the owner chooses):
-  1. **Change the published addresses** to the working mailbox. This touches `apps/mobile/app/privacy.tsx`, `apps/mobile/app/(app)/profile/safety.tsx`, `apps/mobile/app/terms.tsx` and `workers/r2-upload-worker/src/deletionPage.ts`; it needs a new app build and a Worker deploy.
-  2. **Register the domain** and route those aliases to the mailbox. No code change, but it needs a domain purchase, which is a paid action needing separate approval.
+- **Previous problem:** the app published `privacy@`, `safety@` and `legal@solotravelsoul.app`. The domain `solotravelsoul.app` does not resolve (NXDOMAIN, checked 2026-10-11), so those addresses bounced.
+- **Fixed in code (2026-10-11): every published address is now `ravitejatravelsoul@gmail.com`.** No domain was bought.
+  - App: one constant, `CONTACT_EMAIL` in `apps/mobile/constants/contact.ts`. It is used by the privacy policy (data deletion and contact sections), Terms (contact line), Safety & Guidelines (the mailto link and its label are the same constant) and the three account-deletion messages in `hooks/useAuth.ts`.
+  - Deletion web page: `CONTACT` in `workers/r2-upload-worker/src/deletionPage.ts` (both mailto links and the displayed address).
+  - Regression check: `tests/release/app.cjs` fails on any `@solotravelsoul.app` address or any mailto target other than the mailbox in the shipped app and Worker sources.
+  - Verified locally: release suites pass; mobile and Worker typecheck pass; the Android export bundle contains the mailbox and no old address; the locally rendered deletion page shows the mailbox and both of its mailto links point to it.
+  - Not live yet: the staging Worker still serves the old address until its next deploy, and the installed preview APK still shows it until the next build (neither was done in this phase).
 
 ## 4. Store configuration and credentials still missing (no values requested here)
 
@@ -366,7 +369,7 @@ This list replaces every earlier blocker list in this file and in `docs/release-
 2. **Moderation staffing:** the stores require working reporting, blocking, filtering, timely responses and ongoing moderation (Apple 1.2; Google Play user-generated content). They do **not** set a number of moderators. **Owner decision 2026-10-11:** the owner (Teja) is the primary moderator; the backup is not decided; the response targets in section 11 await the owner's confirmation. Granting the production moderator role is part of the production rollout.
 3. **Privacy answers and contact addresses** (section 3):
    - **Decided:** the working mailbox is `ravitejatravelsoul@gmail.com`, and Mapbox and Foursquare stay off.
-   - **Open (required):** the published `@solotravelsoul.app` addresses bounce (the domain does not exist), so fix them before submission.
+   - **Fixed in code (2026-10-11):** the published addresses are now `ravitejatravelsoul@gmail.com`. It ships with the production build and Worker deploy; check the deletion page and the Safety, Privacy and Terms screens on the release build.
    - **Open:** confirm the retained media metadata and the production logs items.
 4. **Old clients: decided** (the owner confirmed on 2026-10-10: nothing was distributed). No forced update or adoption window; the rules deploy with the first store release (section 5).
 5. **Legacy media and test data** (section 6): the owner confirmed disposable test data, so they are deleted, not migrated. Each step is approval-gated:

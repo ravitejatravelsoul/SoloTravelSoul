@@ -1,7 +1,8 @@
 // GET /account-deletion — the web resource Google Play requires for account
 // deletion requests from people who no longer have the app installed.
 
-const CONTACT = 'privacy@solotravelsoul.app';
+// Same address as the app (apps/mobile/constants/contact.ts).
+const CONTACT = 'ravitejatravelsoul@gmail.com';
 
 export function accountDeletionPage(): Response {
   const subject = encodeURIComponent('Delete my SoloTravelSoul account');

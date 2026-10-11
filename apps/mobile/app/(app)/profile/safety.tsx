@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { CONTACT_EMAIL } from '@/constants/contact';
 
 const GUIDELINES = [
   {
@@ -125,11 +126,11 @@ export default function SafetyScreen() {
           <View style={styles.divider} />
           <TouchableOpacity
             style={styles.linkRow}
-            onPress={() => Linking.openURL('mailto:safety@solotravelsoul.app')}
+            onPress={() => Linking.openURL(`mailto:${CONTACT_EMAIL}`)}
             activeOpacity={0.7}
           >
             <Ionicons name="mail-outline" size={18} color={Colors.primary} />
-            <Text style={styles.linkLabel}>safety@solotravelsoul.app</Text>
+            <Text style={styles.linkLabel}>{CONTACT_EMAIL}</Text>
             <Ionicons name="chevron-forward" size={14} color={Colors.placeholder} />
           </TouchableOpacity>
         </View>
