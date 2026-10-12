@@ -775,6 +775,36 @@ test('client failure toast describes possible partial deletion', async () => {
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'apps/mobile/app/privacy.tsx'), 'utf8'), /nothing was lost/i);
 }, 'memory');
 
+test('client deletion messages that name a contact use the working mailbox', async () => {
+  const MAILBOX = 'ravitejatravelsoul@gmail.com';
+  const contact = mobile('apps/mobile/constants/contact.ts', {});
+  assert.equal(contact.CONTACT_EMAIL, MAILBOX);
+  const toasts = [];
+  let request = async () => 'deleted';
+  const hook = mobile('apps/mobile/hooks/useAuth.ts', {
+    react: { useCallback: (f) => f }, 'zustand/react/shallow': { useShallow: (f) => f },
+    'expo-router': { router: { replace() {} } },
+    '@solotravelsoul/firebase': { signIn() {}, signUp() {}, signOut: async () => {}, resetPassword() {}, reauthenticate: async () => {}, createUserProfile() {}, upsertUserLookup() {} },
+    '@solotravelsoul/shared': { getUserInitials: () => 'A' },
+    '@/stores/authStore': { useAuthStore: (sel) => sel({ user: { uid: ME }, profile: null, loading: false, setLoading() {} }) },
+    '@/stores/uiStore': { useUIStore: (sel) => sel({ addToast: (m, t) => toasts.push({ m, t }) }) },
+    '@/constants/contact': contact,
+    '@/hooks/useSyncEngine': { setSyncPaused() {} },
+    '@/utils/accountDeletion': { requestAccountDeletion: () => request(), clearLocalUserData: async () => {} },
+  });
+  request = async () => { throw Object.assign(new Error('x'), { code: 'deletion/unavailable' }); };
+  assert.equal(await hook.useAuth().deleteAccount('pw'), false);
+  request = async () => 'blocked';
+  assert.equal(await hook.useAuth().deleteAccount('pw'), true);
+  request = async () => 'in_progress';
+  assert.equal(await hook.useAuth().deleteAccount('pw'), true);
+  assert.deepEqual(toasts.map((x) => x.t), ['error', 'info', 'info']);
+  assert.equal(toasts[0].m, `Account deletion is temporarily unavailable. Contact ${MAILBOX}.`);
+  assert.match(toasts[1].m, new RegExp(`except older photos[\\s\\S]*contact ${MAILBOX} with questions\\.$`));
+  assert.match(toasts[2].m, new RegExp(`continues automatically[\\s\\S]*contact ${MAILBOX} if it is not removed\\.$`));
+  for (const { m } of toasts) assert.doesNotMatch(m, /@solotravelsoul\.app/);
+}, 'memory');
+
 // ── Final bookkeeping failure: durable recovery ───────────────────────────────
 
 // Fails every job write that would mark the job completed (the final write).

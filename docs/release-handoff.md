@@ -7,6 +7,7 @@ Technical detail and test evidence: `docs/release-hardening.md` (latest section:
 ## 0. Current staging state
 
 - **API/media host:** `https://solotravelsoul-r2-upload-staging.ravitejatravelsoul.workers.dev`, one Worker. A thin front forwards to SQLite-backed Durable Objects, which authenticate and run the handlers. The same origin serves media URLs, the EAS `preview` Worker URL and the app's token attachment.
+- **Current version:** `fdce6651-d034-462f-a36e-61b8e32b2c95` (commit `3766425`, contact addresses, deployed 2026-10-11). Previous version (version rollback target): `b8392e10-5149-47d1-9a11-a2375eaa43be`.
 - **Maintenance:** one schedule, `*/5 * * * *`, via an internal RPC to a fixed maintenance object.
 - **Rollback:** `cd workers/r2-upload-worker && npx wrangler deploy --env staging --var API_HOST_MODE:worker` (verified live); return with `npx wrangler deploy --env staging`.
 - **Active staging credentials:**
@@ -36,7 +37,7 @@ Every open decision is in this table. Recommendations come from the code and the
 - Served by the Worker at `GET /account-deletion` (in-app steps, email request, what is deleted and kept). Operator fulfilment: `POST /admin/account-deletion` with the `ADMIN_DELETION_TOKEN` secret.
 - Production URL to enter in Play Console: `https://<production worker host>/account-deletion`. It must be reachable on the production Worker **after** the Worker with KV/D1 bindings is deployed. Verify it on a phone browser first.
 - Staging URL (for testing only, live): `https://solotravelsoul-r2-upload-staging.ravitejatravelsoul.workers.dev/account-deletion`.
-- Contact on the page and in the app: `ravitejatravelsoul@gmail.com` (owner-confirmed working mailbox, checked daily). Not live yet: the staging Worker still serves the old address until its next deploy, and the installed preview APK still shows it until the next build (neither was done in this phase).
+- Contact on the page and in the app: `ravitejatravelsoul@gmail.com` (owner-confirmed working mailbox, checked daily). **Live on staging** (Worker version `fdce6651`) and in preview build `bc55069f` (2026-10-11; section 10, "Fourth preview build: contact addresses"). Production gets it with the production build and Worker deploy.
 
 ## 3. Store privacy answers (draft from code, 2026-10-10)
 
@@ -88,7 +89,7 @@ Other facts:
   - Deletion web page: `CONTACT` in `workers/r2-upload-worker/src/deletionPage.ts` (both mailto links and the displayed address).
   - Regression check: `tests/release/app.cjs` fails on any `@solotravelsoul.app` address or any mailto target other than the mailbox in the shipped app and Worker sources.
   - Verified locally: release suites pass; mobile and Worker typecheck pass; the Android export bundle contains the mailbox and no old address; the locally rendered deletion page shows the mailbox and both of its mailto links point to it.
-  - Not live yet: the staging Worker still serves the old address until its next deploy, and the installed preview APK still shows it until the next build (neither was done in this phase).
+  - **Live on staging** (Worker version `fdce6651`) and in preview build `bc55069f` (2026-10-11; section 10, "Fourth preview build: contact addresses"). Production gets it with the production build and Worker deploy.
 
 ## 4. Store configuration and credentials still missing (no values requested here)
 
@@ -361,7 +362,7 @@ This list replaces every earlier blocker list in this file and in `docs/release-
 
 **Already done (no action):**
 - Staging host consolidated and live-verified.
-- Three Android preview builds (EAS Free, 3 of 30 used, $0) and the native checklist on an Android 15 emulator: all device defects found are fixed and verified.
+- Four Android preview builds (EAS Free, 4 of 30 used this billing period, $0) and the native checklist on an Android 15 emulator: all device defects found are fixed and verified.
 - Staging admin endpoints verified: a valid token is accepted, missing or wrong tokens are refused, and a stalled/unresolved fixture is reported and cleaned up (2026-10-10).
 
 **A. Required before release (owner decisions or approvals):**
@@ -586,6 +587,28 @@ Defect 8, in detail:
 | Offline messages deliver exactly once | **PASS**: one DM and one group message sent while offline were each stored exactly once after reconnect. Unread counters for the recipient: 2 per chat (no double count). |
 | Refused messages never deliver | **PASS**: B suspended (moderator, client SDK: `live.cjs suspend`), DM and group messages queued offline, reconnect → "2 queued messages were not sent…" and the bubbles cleared. After unsuspension and another disconnect/reconnect, neither refused message exists on the server, while a new group message was delivered once. |
 | `GET /admin/deletion-status` | **BLOCKED**: no staging admin token available. |
+
+### Fourth preview build: contact addresses (2026-10-11)
+
+- **Source:** commit `3766425`. **Staging Worker:** version `fdce6651-d034-462f-a36e-61b8e32b2c95` (`npx wrangler deploy --env staging`; the previous version `b8392e10` is the rollback target). Bindings unchanged; the long-standing `r2_buckets` warning is expected (staging has no R2).
+- **EAS build:** `bc55069f-621d-4b13-9fa9-84f19d3edd70` (profile `preview`, FINISHED 2026-10-12T00:42:56Z). APK: https://expo.dev/artifacts/eas/HcpeKC9Cv4a0gESJhIjpNy3VoHqThspoSLvrN3MYyaA.apk (SHA-256 `207b3e3494d85726caaf4eb9e3c9ef8330073db56b6ddcb0c222fe9df897a18`), package `com.solotravelsoul.app.staging` 1.0.0 (1).
+- **EAS Free usage:** checked before building with `eas account:usage` (plan Free, 3 of 30 used, overage 0). Afterwards 4 of 30, $0.
+
+| Check | Result |
+|---|---|
+| Deployed deletion page (`GET /account-deletion` on staging) | 200 `text/html`. Displays `ravitejatravelsoul@gmail.com`; both links are `mailto:ravitejatravelsoul@gmail.com` (one with the subject "Delete my SoloTravelSoul account"); no `@solotravelsoul.app` text. |
+| APK installed on the emulator (Android 15, `sts_api35`) | `adb install -r` succeeded over the previous preview (lastUpdateTime 2026-10-11 19:43). |
+| Privacy Policy (opened from Create account) | Data deletion: "...contact ravitejatravelsoul@gmail.com..." and "...email ravitejatravelsoul@gmail.com."; Contact: "For privacy questions, safety concerns and account deletion requests: ravitejatravelsoul@gmail.com". |
+| Terms (opened from Create account) | "Contact: ravitejatravelsoul@gmail.com". |
+| Safety & Guidelines (signed in, disposable staging account) | Legal & Support row shows `ravitejatravelsoul@gmail.com`. |
+| Tap on Safety's email row | Android started Gmail `ComposeActivityGmailExternal` with `act=VIEW dat=mailto:ravitejatravelsoul@gmail.com`, `launchedFromPackage=com.solotravelsoul.app.staging` (from `dumpsys activity`). Gmail has no account on the emulator, so it showed its welcome tour instead of a compose screen; the recipient was read from the intent. |
+| Deletion messages | `tests/release/accountDeletion.cjs`, "client deletion messages that name a contact use the working mailbox": the real `useAuth` hook with the real `constants/contact.ts` produces the unavailable, blocked and in-progress messages, each naming `ravitejatravelsoul@gmail.com`. 70/70 deletion checks; all release suites pass. |
+| Cleanup | The disposable account was deleted through the app's Delete account flow (app returned to sign-in). Staging Auth lookup by its email: 0 users. |
+
+**Notes:**
+- An emulator "System UI isn't responding" dialog appeared once at launch (emulator load, not the app) and was dismissed with Wait; adb went offline once briefly and reconnected.
+- The staging feed still shows posts by "Live B" from earlier live-test runs; these are the leftover disposable accounts listed in section 0, not data from this run.
+- One sign-in attempt for the disposable account went by mistake to **production** Auth (`apps/mobile/.env` holds the production config). It was read-only, returned `INVALID_LOGIN_CREDENTIALS`, and changed nothing; the staging check above is the real result.
 
 ### Staging operational closure (2026-10-10, commit `9aa1db3`)
 
