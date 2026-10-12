@@ -15,6 +15,7 @@ Technical detail and test evidence: `docs/release-hardening.md` (latest section:
   - The Worker secret `ADMIN_DELETION_TOKEN`, rotated 2026-10-10. The encrypted owner copy and its procedures are in section 10, "Staging admin credential: encrypted owner copy and procedures".
   - No other user-managed keys exist for `sts-staging-deleter`.
 - **Retired:** the proof Worker `solotravelsoul-api-do-staging` (deleted) and its key (revoked).
+- **Demo feed (seed `sts-demo-feed-v1`, 2026-10-11):** 8 fictional "(Demo)" travelers plus a private QA viewer, 24 photo posts, 4 photo journals, follows, likes and comments, for phone testing. Section 10, "Staging demo feed".
 - **Disposable test accounts:** earlier live-test runs left some in staging Auth/Firestore (emails `sts-live-<run>-<key>@example.test`). Delete them when staging testing is finished. The native run of 2026-10-09 removed all of its own (section 10).
 
 ## 1. Owner decisions (one table, 2026-10-10)
@@ -685,6 +686,56 @@ $t = [Text.Encoding]::UTF8.GetString([Security.Cryptography.ProtectedData]::Unpr
    ```
    Without the first line, Windows PowerShell 5.1 prefixes U+FEFF and every request is refused.
 4. Check `GET /admin/deletion-status` with the new value: expect 200. Then replace the old file with the new one.
+
+### Staging demo feed (2026-10-11, seed `sts-demo-feed-v1`)
+
+A realistic feed for physical-phone testing, on staging only.
+
+**What it is**
+- 8 fictional travelers, each named "… (Demo)" with a bio starting "Demo profile (fictional).", public profiles and generated initials avatars.
+- 24 photo posts (4 two-photo carousels) across 24 places in 11 countries; 4 photo journals (cover plus 2 gallery photos each). Every post and journal carries `#demo`; journals end with "This is a demo journal written for testing the app. The traveler is fictional."
+- 27 follows, 96 likes (84 on posts, 12 on journals) and 25 comments (6 of them replies), all between demo accounts.
+- 1 QA viewer account ("QA Viewer (Demo)", private profile, no content) for emulator checks.
+- 48 photos (40 scene photos, 8 avatars) generated locally by `scripts/stagingFeedImages.py`; each carries a "DEMO · <place>" label. No third-party photos, no named or rated businesses (no reviews), no real people.
+
+**How it is written:** `scripts/seedStagingFeed.cjs`, content in `scripts/stagingFeedContent.cjs`.
+- Every write goes through the app's own `packages/firebase` modules with the client SDK, signed in as the demo account (real security rules). Photos go through the staging Worker's `POST /media/upload` (real KV/D1 media; views use the normal access rules).
+- Before every run it checks: the staging section of `wrangler.toml` (Worker name and `FIREBASE_PROJECT_ID = solotravelsoul-staging`), `scripts/checkStagingIsolation.cjs`, the Firebase web config fetched for `solotravelsoul-staging`, each signed-in token's `aud`, and that the staging Worker is serving. It never reads `apps/mobile/.env`.
+- The Firebase CLI owner login is used read-only (Auth lookup by email, Firestore REST reads); D1 is read with `wrangler d1 execute`.
+- State, outside the repo, in `%LOCALAPPDATA%\SoloTravelSoul\staging-demo-feed\`: `manifest.json` (every account, document path and media ID, keyed by stable content keys), `credentials.json` (generated passwords, 0600, never printed) and `images\`.
+- Reruns are idempotent. Accounts, posts, journals, likes, follows and comments are skipped when the manifest has them; posts, journals and comments carry `demoKey` = `sts-demo-feed-v1:<key>` so an interrupted run adopts what it already created; likes and follows use the app's fixed document IDs. An account that exists in Auth but not in the manifest stops the run. Journal text is synced in place.
+
+**Commands** (from the repo root):
+
+```
+node --no-warnings scripts/seedStagingFeed.cjs plan            # dry run
+node --no-warnings scripts/seedStagingFeed.cjs seed --apply    # create or complete
+node --no-warnings scripts/seedStagingFeed.cjs verify          # read-only checks + media views
+node --no-warnings scripts/seedStagingFeed.cjs cleanup         # dry run of cleanup
+node --no-warnings scripts/seedStagingFeed.cjs cleanup --apply --confirm sts-demo-feed-v1
+```
+
+Cleanup deletes only the manifest's 9 accounts, each through the app's account deletion (`POST /account/delete` with that account's own token), which removes their posts, journals, likes, follows, comments and media. It then checks every manifest document and media row and the Auth accounts. A deletion that does not complete stops the run and is not retried automatically. Likes, follows or comments that other accounts (yours included) leave on demo content go with it.
+
+**Results (2026-10-11)**
+
+| Check | Result |
+|---|---|
+| Quota before seeding (`scripts/stagingUsage.cjs`, 24 h) | Every Free limit ≤ 2.3% used; 0 errors. The seed added about 48 KV writes (~5% of the daily limit) and about 500 Firestore writes (~2.5%). |
+| Targeted tests | `tests/release/stagingFeed.cjs` 5/5 (now part of `npm run test:release`); release suites all pass; `npm run test:rules` all pass (82 rule checks, 56 deletion, 11 media, 7 end-to-end, 7 demo-cleanup). |
+| Seed | Created 9 accounts, 48 media, 24 posts, 4 journals, 27 follows, 96 likes, 25 comments. `verify` PASS: every counter matches (likes, comments, followers, following), all 48 media rows active, the viewer gets 48/48 photos (posts and journals `private, max-age=300`), anonymous 401, no deletion barrier on any demo account. |
+| Rerun | Nothing new created; Firestore holds exactly 24 posts, 4 journals and 25 comments with the seed key (no duplicates). |
+| Cleanup dry run | Would delete 9 accounts, 194 documents and 48 media items. `--apply` without `--confirm` is refused. Not run: the feed stays for phone testing. |
+| Emulator, preview `bc55069f`, signed in as the QA viewer | **Feed:** photos, avatars, captions, `#demo` tags, like/comment counts and the carousel indicator render; scrolling reaches the end after 20 posts (see note on limits). **Like:** heart fills, post screen shows 2 → 3. **Comment:** posted and shown as "QA Viewer (Demo)"; deleted again ("(Comment deleted)" placeholder); the like was removed again, and `verify` passed afterwards. **Profile:** a demo traveler's profile opens with avatar, bio, styles, interests and countries. **Journal:** cover photo, title, author, likes, text and tags render. **Explore:** Trending Destinations and Popular Journals show demo content. **Moderation controls:** "Report or block" on posts, REPORT / BLOCK on profiles. |
+
+**Notes from the UI check (app behaviour, not changed in this phase):**
+- **Home feed limits:** up to 50 posts from followed travelers plus the 20 most-liked public posts; no cursor pagination ("load more"). Explore lists the 30 newest. The app has **no follow button** and no screen listing another traveler's posts, so an account that follows nobody sees the top 20 trending posts.
+- Counts on feed cards and the post screen are read once; they update after a refresh or reopening.
+- Journal gallery photos (`images`) are attached and authorized but the journal screen shows only the cover (the app's own journal composer saves no gallery photos).
+- Journal bodies are plain text in the app (no Markdown rendering), so the demo journals use plain text.
+- Explore's "PT · 36 posts" tile is leftover live-test content (section 0), not the demo feed.
+
+**Refreshing the feed on a phone** (preview APK, signed in to your staging account): pull down on the Feed to refresh; Explore reloads when the tab opens; if counts or text look stale, close the app fully and reopen it.
 
 ## 11. Moderator onboarding (prepared; nobody appointed, no production roles granted)
 
