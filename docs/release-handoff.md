@@ -15,7 +15,7 @@ Technical detail and test evidence: `docs/release-hardening.md` (latest section:
   - The Worker secret `ADMIN_DELETION_TOKEN`, rotated 2026-10-10. The encrypted owner copy and its procedures are in section 10, "Staging admin credential: encrypted owner copy and procedures".
   - No other user-managed keys exist for `sts-staging-deleter`.
 - **Retired:** the proof Worker `solotravelsoul-api-do-staging` (deleted) and its key (revoked).
-- **Firestore rules on staging are older than the repo** (2026-10-17): the travel-compatibility and join-request rule changes (section 10, "Travel compatibility onboarding") are verified in the emulator but not deployed. Deploy them to staging before testing that build on a phone.
+- **Firestore rules and Worker on staging match commit `ffa6af3`** (deployed 2026-10-18): ruleset `1d5285d9-0f5a-46d0-af48-4ceef6a16611`, Worker version `603c9c0e-6cef-4166-b1ca-4ce87e544ed3`. Rollback: Worker `fdce6651-d034-462f-a36e-61b8e32b2c95`; rules: re-release ruleset `12ac24a4-b1fb-4a52-bbf3-6324434edfc4` (released 2026-10-05; copy saved locally as `%LOCALAPPDATA%\SoloTravelSoul\staging-rollback\firestore.rules.ruleset-12ac24a4`). Section 10, "Staging compatibility verification".
 - **Demo feed (seed `sts-demo-feed-v1`, 2026-10-11):** 8 fictional "(Demo)" travelers plus a private QA viewer, 24 photo posts, 4 photo journals, follows, likes and comments, for phone testing. Section 10, "Staging demo feed".
 - **Disposable test accounts:** earlier live-test runs left some in staging Auth/Firestore (emails `sts-live-<run>-<key>@example.test`). Delete them when staging testing is finished. The native run of 2026-10-09 removed all of its own (section 10).
 
@@ -795,6 +795,35 @@ Helps travelers find suitable companions for a specific trip from preferences th
 - **Local verification switch.** Development bundles started with `EXPO_PUBLIC_FIREBASE_EMULATOR_HOST` connect to the local Firestore (8188) and Auth (9189) emulators; release bundles never do (export checked).
 - **Tests:** `compatibility.cjs` 23 checks; `rules.cjs` 98 (+6: direct-SDK withdrawal/opt-out/private refused, interrupted settings write leaves everything unchanged, atomic withdrawal/trip removal/opt-out/private, shared-trip edit/archive, join-request bypass sequence, valid transitions and immutable identity). All release and emulator suites, typechecks, lint (no errors) and the Android export pass.
 - **UI (Expo Go, local emulators, not the native APK):** "Dates don't overlap" with "Strong preference match" shown separately; switching trips recomputed dates; blocking a traveler removed the card without a refetch; a refused settings write showed "Could not update discovery settings. Nothing was changed" with the switch rolled back and the server unchanged; withdrawal succeeded atomically; editing the shared trip's destination updated the record; deleting it cleared the trip choice and details with consent kept; going private removed the record and turned discovery off. **Native APK verification: BLOCKED** (needs a new build); staging still runs the older rules.
+
+### Staging compatibility verification (2026-10-18)
+
+**Before:** HEAD `ffa6af3`; `checkStagingIsolation` passed (configuration and resource ownership, with the EAS preview environment and the staging web-app config). The preview environment and `eas.json` contain no emulator setting (the emulator switch also requires a development bundle); the exported bundle contains no emulator address. Note `.firebaserc` default is **production**: every command named `--project solotravelsoul-staging`.
+
+**Deployed (staging only):**
+- Firestore rules: `firebase deploy --only firestore:rules --project solotravelsoul-staging` → ruleset `1d5285d9-0f5a-46d0-af48-4ceef6a16611` (previous `12ac24a4…`, released 2026-10-05, saved locally for rollback).
+- Worker: `wrangler deploy --env staging` → version `603c9c0e-6cef-4166-b1ca-4ce87e544ed3` (previous `fdce6651…`). Health afterwards: 0 Worker or Durable Object errors, CPU p99 2.99 ms.
+
+**Deployed-rules checks** (`tests/staging/live.cjs compat-verify`, two disposable accounts, 6/6 PASS): atomic opt-in; direct SDK withdrawal/opt-out/private/trip-clear refused (4/4, nothing changed); atomic consent withdrawal; shared trip destination edit → record updated, deletion → trip choice and details removed, consent kept; going private → record removed and discovery off; join → cancel → join again → organizer rejects; cancelling or reopening the rejected request and flipping the decision refused (3/3); identity change refused.
+
+**Preview build:** EAS `6246c5ab-f1d4-4517-b56d-4fea2d97fa21` from `ffa6af3` (FINISHED 2026-10-18T15:25Z), APK https://expo.dev/artifacts/eas/ZgebicajoOLKugmsMG-AFiLcWg0sIwNjj8OY5UyWRCo.apk (SHA-256 `c9b975124c398ec0d7b5279b4174db3521b90e08aa0bfb1ffefeb47cae187a5b`). EAS Free: 4 of 30 used before (plan Free, no overage), 5 after, $0. Installed over the previous preview on the Android 15 emulator.
+
+**In the APK (staging):**
+| Check | Result |
+|---|---|
+| Sign-up → optional setup | Step 1 of 7; three answers; left via Community; "Finish your travel preferences" resumed at step 4; question skipped; finished (sharing off, no discovery record) |
+| Editing later | Edit Profile saved schedule and group size |
+| Matching explanations | Viewer fixture: "Strong match", "Dates overlap: 6 days", "Preferences: Strong preference match" with reasons and a difference; second traveler "Dates don't overlap" + "Preferences: Not enough information" + "Not provided" |
+| Authenticated photos | Fixture profile photos uploaded through the Worker and demo-feed photos load |
+| Destination edit, same trip | Lisbon → Porto in Edit Trip: matching showed Porto (no travelers) without refresh; back to Lisbon: Lisbon matches returned |
+| Date-only edit | End date moved to Nov 21: overlapping traveler became "Dates don't overlap"; discovery record dates updated (Nov 17–21) |
+| Blocking | Blocking a traveler removed the card; others stayed |
+| Consent withdrawal | Privacy switch: sharing off and pace/schedule/group size removed from the staging record in one write |
+| Join / cancel / again | Request to Join → pending; Cancel → cancelled; Request again → pending (verified on staging) |
+
+**Deletion step:** deleting a discoverable fixture with one slice removed its discovery record while the job was still in progress (the profile document still existed); the deletion then completed.
+
+**Cleanup:** all seven verification accounts (4 matching fixtures, the sign-up account, 2 rules-check accounts) deleted through account deletion and confirmed (`verify-deleted`: job completed, Auth gone, data and 4 fixture photos purged). Demo feed unchanged (`seedStagingFeed verify` PASS, 48/48 photos). No production operation.
 
 ## 11. Moderator onboarding (prepared; nobody appointed, no production roles granted)
 

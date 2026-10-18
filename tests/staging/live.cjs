@@ -489,7 +489,15 @@ const phases = {
     for (const [k, f] of Object.entries(FIX)) {
       await check(`compat fixture ${k}: ${f.name}`, async () => {
         const s = state.users[k] ? await session(k) : await newUser(k);
-        await s.firestore.updateUserProfile(s.uid, { name: f.name, city: 'Porto', country: 'Portugal', ...f.prefs, profileVisibility: 'public', showInNearbyTravelers: true, shareCompatibility: f.share });
+        // Optional real profile photo through the Worker (authenticated media), from STS_AVATAR_DIR.
+        const avatar = process.env.STS_AVATAR_DIR && path.join(process.env.STS_AVATAR_DIR, `${k}.jpg`);
+        if (avatar && fs.existsSync(avatar) && !state.ids[`${k}Photo`]) {
+          const up = await upload(s, 'profile', fs.readFileSync(avatar), 'image/jpeg');
+          assert(up.status === 200, `photo upload ${up.status}`);
+          state.ids[`${k}Photo`] = up.body.photoURL; save();
+        }
+        await s.firestore.updateUserProfile(s.uid, { name: f.name, city: 'Porto', country: 'Portugal', ...f.prefs, profileVisibility: 'public', showInNearbyTravelers: true, shareCompatibility: f.share,
+          ...(state.ids[`${k}Photo`] ? { photoURL: state.ids[`${k}Photo`] } : {}) });
         if (!state.ids[`${k}Trip`]) {
           state.ids[`${k}Trip`] = await s.firestore.createTrip(s.uid, { destination: 'Lisbon, Portugal', startDate: day(f.trip[0]), endDate: day(f.trip[1]), notes: '', coverPhotoURL: null });
           save();
@@ -507,6 +515,81 @@ const phases = {
         return `discoverable; trip ${f.shareTrip ? 'shared' : 'private'}; consent ${f.share ? 'on' : 'off'}${f.publicTrip ? '; public trip' : ''}`;
       });
     }
+  },
+
+  // Deployed-rules verification for compatibility (staging): consent atomicity, private
+  // profile, shared-trip sync and the join-request state machine, with two disposable
+  // accounts (va = traveler/requester, vo = organizer). Remove with `delete-user va|vo`.
+  async 'compat-verify'() {
+    state.run = state.run || crypto.randomBytes(3).toString('hex');
+    const day = (n) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + n); return d; };
+    const denied = async (p) => { try { await p; return false; } catch (e) { return e.code === 'permission-denied'; } };
+    const va = state.users.va ? await session('va') : await newUser('va');
+    const vo = state.users.vo ? await session('vo') : await newUser('vo');
+    const profile = async () => va.firestore.getUserProfile(va.uid);
+    const rec = () => adminGet(`nearbyTravelers/${va.uid}`);
+    const user = () => adminGet(`users/${va.uid}`);
+    const lisbon = { destination: 'Lisbon, Portugal', startDate: day(30), endDate: day(36) };
+    await check('opt in atomically: settings and discovery record written together', async () => {
+      state.ids.vaTrip = state.ids.vaTrip || await va.firestore.createTrip(va.uid, { ...lisbon, notes: '', coverPhotoURL: null });
+      save();
+      await va.firestore.setDiscoverySettings(va.uid, await profile(), { showInNearbyTravelers: true, shareCompatibility: true, travelPace: 'relaxed', discoveryTripId: state.ids.vaTrip }, lisbon);
+      const r = await rec();
+      assert(r && r.travelPace === 'relaxed' && r.destinationKey === 'lisbon', JSON.stringify(r && { pace: r.travelPace, key: r.destinationKey }));
+      return 'record with pace and Lisbon trip';
+    });
+    await check('direct SDK writes cannot withdraw consent, opt out or go private while shared data remains', async () => {
+      const ref = sdkFs.doc(va.db, 'users', va.uid);
+      const results = [await denied(sdkFs.updateDoc(ref, { shareCompatibility: false })), await denied(sdkFs.updateDoc(ref, { showInNearbyTravelers: false })),
+        await denied(sdkFs.updateDoc(ref, { profileVisibility: 'private' })), await denied(sdkFs.updateDoc(ref, { discoveryTripId: null }))];
+      const u = await user();
+      assert(results.every(Boolean) && u.shareCompatibility === true && (await rec()).travelPace === 'relaxed', JSON.stringify(results));
+      return '4/4 refused; nothing changed';
+    });
+    await check('consent withdrawal is atomic', async () => {
+      await va.firestore.setDiscoverySettings(va.uid, await profile(), { shareCompatibility: false }, lisbon);
+      const [u, r] = [await user(), await rec()];
+      assert(u.shareCompatibility === false && r.travelPace === null && r.travelSchedule === null && r.groupSizePreference === null && r.destinationKey === 'lisbon', JSON.stringify({ share: u.shareCompatibility, pace: r.travelPace }));
+      return 'consent off and pace/schedule/group removed in one write';
+    });
+    await check('shared trip: destination edit updates and deletion removes discovery details; consent kept', async () => {
+      const p = await profile();
+      await va.firestore.updateTrip(va.uid, state.ids.vaTrip, { destination: 'Porto' }, { profile: p, sharedTrip: { ...lisbon, destination: 'Porto' } });
+      const afterEdit = (await rec()).destinationKey;
+      await va.firestore.archiveTrip(va.uid, state.ids.vaTrip, { profile: await profile() });
+      const [u, r] = [await user(), await rec()];
+      assert(afterEdit === 'porto' && u.discoveryTripId === null && r.destinationKey === null && u.shareCompatibility === false && u.showInNearbyTravelers === true,
+        JSON.stringify({ afterEdit, tripId: u.discoveryTripId, key: r.destinationKey }));
+      return 'edit → porto; delete → trip cleared; consent unchanged';
+    });
+    await check('going private is atomic: record removed and discovery off', async () => {
+      await va.firestore.updateProfileVisibility(va.uid, await profile(), 'private');
+      const u = await user();
+      assert(u.profileVisibility === 'private' && u.showInNearbyTravelers === false && !(await rec()), JSON.stringify({ vis: u.profileVisibility, nearby: u.showInNearbyTravelers }));
+      return 'private, discovery off, no record';
+    });
+    await check('join requests: join, cancel, request again; rejected request cannot be cancelled or reopened; decisions final; identity fixed', async () => {
+      const trip = state.ids.voTrip || (state.ids.voTrip = await vo.firestore.createTrip(vo.uid, { destination: 'Lisbon, Portugal', startDate: day(31), endDate: day(35), notes: '', coverPhotoURL: null }));
+      save();
+      const voProfile = await vo.firestore.getUserProfile(vo.uid);
+      await vo.firestore.setTripVisibility(vo.uid, trip, 'public', { title: 'Compat verify trip (Test)', destination: 'Lisbon, Portugal', startDate: day(31), endDate: day(35),
+        description: 'Disposable verification trip.', tags: ['test'], maxMembers: 4, isAcceptingMembers: true, coverPhotoURL: null, ownerName: voProfile.name, ownerPhotoURL: null, memberCount: 1 });
+      const me = await profile();
+      const t = { ownerUid: vo.uid, destination: 'Lisbon, Portugal', title: 'Compat verify trip (Test)' };
+      const id = `${trip}_${va.uid}`;
+      const status = () => va.firestore.getTripJoinRequestStatus(trip, va.uid);
+      const steps = [];
+      await va.firestore.submitTripJoinRequest(trip, t, me, 'hello'); steps.push(await status());
+      await va.firestore.cancelTripJoinRequest(id, va.uid); steps.push(await status());
+      await va.firestore.submitTripJoinRequest(trip, t, me, 'again'); steps.push(await status());
+      const identity = await denied(sdkFs.updateDoc(sdkFs.doc(va.db, 'tripJoinRequests', id), { status: 'cancelled', ownerUid: va.uid }));
+      await sdkFs.updateDoc(sdkFs.doc(vo.db, 'tripJoinRequests', id), { status: 'rejected', updatedAt: sdkFs.serverTimestamp() }); steps.push(await status());
+      const bypass = [await denied(va.firestore.cancelTripJoinRequest(id, va.uid)), await denied(va.firestore.submitTripJoinRequest(trip, t, me, 'please')),
+        await denied(sdkFs.updateDoc(sdkFs.doc(vo.db, 'tripJoinRequests', id), { status: 'approved' }))];
+      assert(JSON.stringify(steps) === JSON.stringify(['pending', 'cancelled', 'pending', 'rejected']) && identity && bypass.every(Boolean) && (await status()) === 'rejected',
+        JSON.stringify({ steps, identity, bypass }));
+      return 'pending → cancelled → pending → rejected; bypass 3/3 refused; identity change refused';
+    });
   },
 
   async accounts(keys = '') {
