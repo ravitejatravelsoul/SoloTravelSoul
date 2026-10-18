@@ -35,6 +35,17 @@ export interface UserProfile {
   journalsCount?: number;
   coverPhotoURL?: string | null;
   badges?: import('./Reputation').BadgeType[];
+
+  // ── Travel compatibility preferences (all optional; missing = not provided) ──
+  travelPace?: import('../preferences').TravelPace | null;
+  travelSchedule?: import('../preferences').TravelSchedule | null;
+  groupSizePreference?: import('../preferences').GroupSizePreference | null;
+  /** Consent: include pace, schedule and group size in the discovery record. Default off. */
+  shareCompatibility?: boolean;
+  /** Optional preference setup progress (resume after skip/exit). */
+  preferenceSetup?: import('../preferences').PreferenceSetupProgress;
+  /** The user's own trip shared in traveler discovery (destination and dates only), if any. */
+  discoveryTripId?: string | null;
 }
 
 // Ported from Swift's computed `initials` property

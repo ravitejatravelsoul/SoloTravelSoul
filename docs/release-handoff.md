@@ -15,6 +15,7 @@ Technical detail and test evidence: `docs/release-hardening.md` (latest section:
   - The Worker secret `ADMIN_DELETION_TOKEN`, rotated 2026-10-10. The encrypted owner copy and its procedures are in section 10, "Staging admin credential: encrypted owner copy and procedures".
   - No other user-managed keys exist for `sts-staging-deleter`.
 - **Retired:** the proof Worker `solotravelsoul-api-do-staging` (deleted) and its key (revoked).
+- **Firestore rules on staging are older than the repo** (2026-10-17): the travel-compatibility and join-request rule changes (section 10, "Travel compatibility onboarding") are verified in the emulator but not deployed. Deploy them to staging before testing that build on a phone.
 - **Demo feed (seed `sts-demo-feed-v1`, 2026-10-11):** 8 fictional "(Demo)" travelers plus a private QA viewer, 24 photo posts, 4 photo journals, follows, likes and comments, for phone testing. Section 10, "Staging demo feed".
 - **Disposable test accounts:** earlier live-test runs left some in staging Auth/Firestore (emails `sts-live-<run>-<key>@example.test`). Delete them when staging testing is finished. The native run of 2026-10-09 removed all of its own (section 10).
 
@@ -736,6 +737,53 @@ Cleanup deletes only the manifest's 9 accounts, each through the app's account d
 - Explore's "PT · 36 posts" tile is leftover live-test content (section 0), not the demo feed.
 
 **Refreshing the feed on a phone** (preview APK, signed in to your staging account): pull down on the Feed to refresh; Explore reloads when the tab opens; if counts or text look stale, close the app fully and reopen it.
+
+### Travel compatibility onboarding (2026-10-17)
+
+Helps travelers find suitable companions for a specific trip from preferences they chose to state. Built on the existing profile, discovery (`nearbyTravelers`), public-trip, join-request and chat flows; no new collections, services or paid APIs.
+
+**Flows**
+- **Sign-up → optional setup** (`app/(app)/profile/preferences.tsx`): 7 short steps (travel styles, interests, languages, pace, schedule, group size, sharing), progress "Step n of 7 · optional", Back, Skip (question) and "Skip setup for now". Every step saves, so leaving and returning resumes at the saved step. Existing users and part-way users see "Set up / Finish your travel preferences" on Community; finished or skipped setups are not offered again.
+- **Editing later**: Edit Profile shows the same questions (shared `PreferenceField` component and `sanitizePreferences()`); Privacy Settings links to the setup.
+- **New preferences only where missing**: pace (relaxed/balanced/active), schedule (planned/spontaneous), group size (one companion / small group / larger group). Styles, interests and languages are the existing profile fields. Destination, dates and budget stay on trips.
+- **Find travel companions** (`app/(app)/community/companions.tsx`; entry from Community, from your own trip, and from Nearby Travelers): pick one of your upcoming trips; see travelers who shared a trip to the same destination and public trips there, ranked by date overlap first, then stated preferences. Each card shows a level ("Strong match", "Good match", "Some overlap", "Not enough information"), the reasons, real differences, and "Not provided: …". Missing answers are never a mismatch. Actions are the existing **View profile** and **View trip → Request to Join**; nothing is sent automatically. Destination-only browsing (Nearby Travelers) stays, now with the same explanations per card.
+- **Matching** (`packages/shared/src/compatibility.ts`): deterministic and documented; runs on the device; no scores shown, no inference, no safety judgement.
+
+**Data, consent and privacy**
+- Stored on the user's own `users/{uid}`: `travelPace`, `travelSchedule`, `groupSizePreference`, `shareCompatibility` (default off), `preferenceSetup` (status, step), `discoveryTripId`.
+- The discovery record `nearbyTravelers/{uid}` exists only while the profile is public **and** discovery is on (unchanged opt-in). It now also holds interests and languages (already public on the profile), pace/schedule/group size **only with `shareCompatibility`**, and the destination and dates of **one trip the user chose** in Privacy Settings ("Trip shown in discovery"). Never itinerary, notes, exact location or contact details. Withdrawing consent, choosing "Don't show a trip", going private or turning discovery off rewrites or removes the record at once (verified in the app).
+- Privacy policy text updated (community features and data deletion).
+
+**Rules** (`firestore.rules`, verified in the emulator, **not deployed**)
+- `users/{uid}`: new preference fields validated when they change (allowed values, list sizes, setup record); older profiles with legacy values keep saving other fields.
+- `nearbyTravelers/{uid}`: only listed fields; owner-only; requires public profile + discovery opt-in on the owner's user document; pace/schedule/group size require `shareCompatibility`; a shared trip must be complete (key, destination, both dates, end ≥ start); `updatedAt` = request time; text filter; reads by query capped at `limit ≤ 50`; delete by the owner or a moderator.
+- `publicTrips`: optional `destinationKey` (≤ 80 chars), written on publish.
+- **Join requests (existing flow, fixed)**: the app read the organizer's block list before every request, which the rules forbid, so every "Request to Join" failed and showed "Already requested". Blocking (either direction) is now enforced by the rules on create; the client no longer reads the block list; "Already requested" is shown only when a pending request exists, otherwise "Request not sent". Cancelling on the trip screen now cancels on the server (before, only the screen changed), and a requester may ask again after cancelling (not after a rejection).
+
+**Deletion, suspension, blocking**
+- Account deletion: new first step `discovery` removes `nearbyTravelers/{uid}` as soon as deletion starts (the final `privateData` step still removes it and `users/{uid}` with the new fields). The Worker change needs a deploy to take effect on staging.
+- Moderator suspension (`suspendUser`) also removes the discovery record; suspended and deleting accounts cannot write it back.
+- Blocked users and yourself are hidden from candidates; opening a profile still enforces blocking in the rules; join requests to/from blocked users are refused.
+
+**Reads and writes (Spark)**
+- Companion screen, per open or refresh (one-shot, no listeners): 1 query ≤ 30 discovery records + 1 query ≤ 20 public trips + 1 batched `in` query ≤ 30 owner records = **≤ 80 document reads, 3 queries** (an empty result still counts 1 read per query). About 600 worst-case loads use the 50,000 daily reads.
+- Nearby Travelers destination search: unchanged listener, limit 50, now an equality on `destinationKey` (single-field index; no new composite index).
+- Writes: one `users` update per setup step (≤ 7), plus a public-profile and discovery upsert when public/discoverable; privacy toggles 2 writes. Rules: discovery writes add 1 `get(users)`; join-request creates add 2 block `exists()`.
+
+**Verification**
+- `tests/release/compatibility.cjs` (17 checks, part of `npm run test:release`): matching, missing/partial answers, date overlap, ranking, determinism, skip/resume/edit, old and demo profiles, consent and record contents, rules/app option parity, bounded reads, blocked/self/deleting/suspended guards, join-request fixes, privacy text.
+- `tests/release/rules.cjs` (emulator, 92 checks): +10 for preferences, discovery opt-in/consent/withdrawal, field and trip validation, query limit, suspended/deleting writers, moderator removal, public-trip key, and join requests (create, blocking both ways, deleting organizer, cancel, ask again, rejection stands).
+- All release and emulator suites, mobile and Worker typechecks, lint (no new findings) and the Android export pass.
+- **UI** (2026-10-17): the app ran in **Expo Go** on the Android 15 emulator against **staging** (EAS preview environment pulled to a scratch file, `checkStagingIsolation` passed including resource ownership, `.env` loading disabled). Verified: sign-up → setup step 1 of 7; three answers; leaving mid-way; Community "Finish your travel preferences" resumed at step 4; skip a question; finish (sharing off, no discovery record); edit schedule and group size in Edit Profile (saved); companions for a Lisbon trip: "Strong match" with 6-day overlap and reasons plus one difference, "Not enough information" with dates not overlapping and "Not provided" (consent off), public trip with organizer preferences; Request to Join created on staging, cancel reached the server, asking again showed "Request not sent" (staging still has the old rules); consent withdrawal and "Don't show a trip" cleared the record; own-trip "Find travel companions" row; Nearby Travelers explanations.
+- **Native (preview APK) verification: BLOCKED** — needs an updated binary (no EAS build in this phase). In Expo Go, photos return 401 and push is unavailable (Expo Go limitations, not this feature).
+- Fixtures: four discoverable test accounts with Lisbon trips (`tests/staging/live.cjs compat`) plus the sign-up test account; all five removed with `delete-user` and confirmed with `verify-deleted`. Demo feed untouched.
+
+**Not changed (listed for later)**
+- Public trips published before this change have no `destinationKey`, so companion matching does not find them (destination browsing still does); no backfill was run.
+- The discovery record is refreshed when profile, preferences or privacy settings are saved; editing a shared trip's dates does not refresh it until the next such save.
+- Firestore list rules cannot hide travelers who blocked you from discovery lists (profile opening is refused); unchanged.
+- Trip details reads the join-request status once per visit.
+- Expo Go: authenticated media returns 401 (the preview APK loads them).
 
 ## 11. Moderator onboarding (prepared; nobody appointed, no production roles granted)
 

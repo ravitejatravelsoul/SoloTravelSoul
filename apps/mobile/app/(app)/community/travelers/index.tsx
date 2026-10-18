@@ -12,10 +12,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Avatar, Button, Chip } from '@/components/ui';
 import { subscribeNearbyTravelers, subscribeDestinationTravelers } from '@solotravelsoul/firebase';
-import type { NearbyTraveler } from '@solotravelsoul/shared';
+import type { NearbyTraveler, TravelPreferences } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useBlockStore } from '@/stores/blockStore';
-import { getUserInitials } from '@solotravelsoul/shared';
+import { getUserInitials, compareTravelers, preferencesOf, LEVEL_LABELS, TRAVEL_STYLE_LABELS } from '@solotravelsoul/shared';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 
 export default function DiscoverTravelersScreen() {
@@ -28,6 +28,7 @@ export default function DiscoverTravelersScreen() {
   const unsubRef = useRef<(() => void) | null>(null);
 
   const isOptedIn = profile?.showInNearbyTravelers ?? false;
+  const me = preferencesOf(profile);
 
   useEffect(() => {
     if (!isOptedIn) { setLoading(false); return; }
@@ -76,6 +77,14 @@ export default function DiscoverTravelersScreen() {
       <NavBar />
 
       <View style={styles.filterBar}>
+        <TouchableOpacity
+          style={styles.matchLink}
+          onPress={() => router.push('/(app)/community/companions' as never)}
+          accessibilityRole="button"
+        >
+          <Ionicons name="git-compare-outline" size={16} color={Colors.primary} />
+          <Text style={styles.matchLinkText}>Match with one of my trips</Text>
+        </TouchableOpacity>
         <View style={styles.searchBox}>
           <Ionicons name="location-outline" size={16} color={Colors.placeholder} />
           <TextInput
@@ -105,7 +114,7 @@ export default function DiscoverTravelersScreen() {
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           ItemSeparatorComponent={() => <View style={{ height: Spacing.md }} />}
-          renderItem={({ item }) => <TravelerCard traveler={item} />}
+          renderItem={({ item }) => <TravelerCard traveler={item} me={me} />}
         />
       )}
     </SafeAreaView>
@@ -124,7 +133,9 @@ function NavBar() {
   );
 }
 
-function TravelerCard({ traveler }: { traveler: NearbyTraveler }) {
+function TravelerCard({ traveler, me }: { traveler: NearbyTraveler; me: TravelPreferences }) {
+  // Explained on the device from what both travelers chose to share; no extra reads.
+  const result = compareTravelers(me, traveler);
   return (
     <TouchableOpacity
       style={styles.travelerCard}
@@ -142,9 +153,12 @@ function TravelerCard({ traveler }: { traveler: NearbyTraveler }) {
         </View>
         {traveler.travelStyles.length > 0 && (
           <View style={styles.chips}>
-            {traveler.travelStyles.slice(0, 3).map((s) => <Chip key={s} label={s} />)}
+            {traveler.travelStyles.slice(0, 3).map((s) => <Chip key={s} label={TRAVEL_STYLE_LABELS[s] ?? s} />)}
           </View>
         )}
+        <Text style={styles.matchLevel}>{LEVEL_LABELS[result.level]}</Text>
+        {result.reasons.slice(0, 2).map((r) => <Text key={r} style={styles.reason}>✓ {r}</Text>)}
+        {result.differences.slice(0, 1).map((d) => <Text key={d} style={styles.reason}>↔ {d}</Text>)}
       </View>
       <Ionicons name="chevron-forward" size={16} color={Colors.placeholder} />
     </TouchableOpacity>
@@ -207,4 +221,8 @@ const styles = StyleSheet.create({
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   locationText: { fontSize: FontSize.sm, color: Colors.textSecondary },
   chips: { flexDirection: 'row', gap: Spacing.xs },
+  matchLevel: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.primary, marginTop: 2 },
+  reason: { fontSize: FontSize.xs, color: Colors.textSecondary },
+  matchLink: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginBottom: Spacing.sm },
+  matchLinkText: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: FontWeight.semibold },
 });

@@ -13,7 +13,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui';
 import { useProfile } from '@/hooks/useProfile';
 import { useAuthStore } from '@/stores/authStore';
-import { updateProfileVisibility, upsertNearbyTraveler, deleteNearbyTraveler } from '@solotravelsoul/firebase';
+import { updateProfileVisibility } from '@solotravelsoul/firebase';
+import type { UserProfile } from '@solotravelsoul/shared';
+import { useTripStore } from '@/stores/tripStore';
+import { syncDiscovery, leaveDiscovery, upcomingTrips } from '@/utils/discovery';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 
 export default function PrivacySettingsScreen() {
@@ -24,11 +27,36 @@ export default function PrivacySettingsScreen() {
   const [discoverable, setDiscoverable] = useState(profile?.showInNearbyTravelers ?? false);
   const [savingVisibility, setSavingVisibility] = useState(false);
   const [savingDiscovery, setSavingDiscovery] = useState(false);
+  const [shareCompat, setShareCompat] = useState(profile?.shareCompatibility === true);
+  const [savingShare, setSavingShare] = useState(false);
+  const trips = useTripStore((s) => s.trips);
+  const shareableTrips = upcomingTrips(trips);
+  const sharedTripId = profile?.discoveryTripId ?? null;
 
   useEffect(() => {
     setIsPublic(profile?.profileVisibility === 'public');
     setDiscoverable(profile?.showInNearbyTravelers ?? false);
-  }, [profile?.profileVisibility, profile?.showInNearbyTravelers]);
+    setShareCompat(profile?.shareCompatibility === true);
+  }, [profile?.profileVisibility, profile?.showInNearbyTravelers, profile?.shareCompatibility]);
+
+  /** Saves a discovery-related setting, then rewrites the discovery record from the new profile. */
+  const saveAndSync = async (patch: Partial<UserProfile>) => {
+    if (!user || !profile) return;
+    await updateProfile(patch);
+    await syncDiscovery(user.uid, { ...profile, ...patch } as UserProfile, trips).catch(() => {});
+  };
+
+  const handleShareToggle = async (value: boolean) => {
+    if (savingShare) return;
+    setSavingShare(true);
+    setShareCompat(value);
+    try { await saveAndSync({ shareCompatibility: value }); } finally { setSavingShare(false); }
+  };
+
+  const handleSharedTrip = async (tripId: string | null) => {
+    if (tripId === sharedTripId) return;
+    await saveAndSync({ discoveryTripId: tripId });
+  };
 
   const handleVisibilityToggle = async (value: boolean) => {
     if (!user || !profile || savingVisibility) return;
@@ -51,9 +79,9 @@ export default function PrivacySettingsScreen() {
     try {
       await updateProfile({ showInNearbyTravelers: value });
       if (value) {
-        await upsertNearbyTraveler(user.uid, profile);
+        await syncDiscovery(user.uid, { ...profile, showInNearbyTravelers: true }, trips);
       } else {
-        await deleteNearbyTraveler(user.uid);
+        await leaveDiscovery(user.uid);
       }
     } catch {
       setDiscoverable(!value);
@@ -123,7 +151,7 @@ export default function PrivacySettingsScreen() {
               <View style={styles.rowText}>
                 <Text style={styles.rowTitle}>Show me to other travelers</Text>
                 <Text style={styles.rowSubtitle}>
-                  Appear in the Nearby Travelers list for your city
+                  Appear to travelers in your city, and for the trip you choose below
                 </Text>
               </View>
             </View>
@@ -147,6 +175,80 @@ export default function PrivacySettingsScreen() {
               </Text>
             </View>
           )}
+        </View>
+
+        {/* Travel compatibility */}
+        <Text style={styles.sectionLabel}>TRAVEL COMPATIBILITY</Text>
+        <View style={styles.card}>
+          <View style={styles.row}>
+            <View style={styles.rowLeft}>
+              <View style={[styles.iconBox, { backgroundColor: Colors.primary + '15' }]}>
+                <Ionicons name="options-outline" size={18} color={Colors.primary} />
+              </View>
+              <View style={styles.rowText}>
+                <Text style={styles.rowTitle}>Share pace, schedule and group size</Text>
+                <Text style={styles.rowSubtitle}>Shown to travelers who can find you in discovery</Text>
+              </View>
+            </View>
+            {savingShare ? (
+              <ActivityIndicator size="small" color={Colors.primary} />
+            ) : (
+              <Switch
+                value={shareCompat}
+                onValueChange={handleShareToggle}
+                trackColor={{ false: Colors.border, true: Colors.primary }}
+                thumbColor={Colors.white}
+                accessibilityLabel="Share pace, schedule and group size"
+              />
+            )}
+          </View>
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => router.push({ pathname: '/(app)/profile/preferences', params: { from: 'privacy' } } as never)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.rowLeft}>
+              <View style={[styles.iconBox, { backgroundColor: Colors.accent + '15' }]}>
+                <Ionicons name="list-outline" size={18} color={Colors.accent} />
+              </View>
+              <View style={styles.rowText}>
+                <Text style={styles.rowTitle}>Travel preferences</Text>
+                <Text style={styles.rowSubtitle}>Styles, interests, languages, pace, schedule, group size</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={Colors.placeholder} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Trip shown in discovery */}
+        <Text style={styles.sectionLabel}>TRIP SHOWN IN DISCOVERY</Text>
+        <View style={styles.card}>
+          {[{ id: null as string | null, label: "Don't show a trip", sub: 'Only your city is shown' },
+            ...shareableTrips.map((t) => ({ id: t.id as string | null, label: t.destination, sub: `${t.startDate.toLocaleDateString()} – ${t.endDate.toLocaleDateString()}` }))]
+            .map((o) => (
+              <TouchableOpacity
+                key={o.id ?? 'none'}
+                style={styles.row}
+                onPress={() => handleSharedTrip(o.id)}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: sharedTripId === o.id }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name={sharedTripId === o.id ? 'radio-button-on' : 'radio-button-off'} size={20} color={sharedTripId === o.id ? Colors.primary : Colors.placeholder} />
+                <View style={styles.rowText}>
+                  <Text style={styles.rowTitle}>{o.label}</Text>
+                  <Text style={styles.rowSubtitle}>{o.sub}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          <View style={styles.infoCard}>
+            <Ionicons name="information-circle-outline" size={16} color={Colors.textSecondary} />
+            <Text style={styles.infoText}>
+              {discoverable
+                ? 'Only the destination and dates of the chosen trip are shown, so travelers going there can find you. Your itinerary, notes and exact location stay private.'
+                : 'Takes effect when traveler discovery is on. Only the destination and dates are ever shown.'}
+            </Text>
+          </View>
         </View>
 
         {/* Blocked Users */}

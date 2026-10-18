@@ -470,6 +470,45 @@ const phases = {
     });
   },
 
+  // Companion-matching fixtures (staging): a viewer with a Lisbon trip and three discoverable
+  // travelers covering overlap, no overlap with partial answers and no consent, and a public
+  // trip organizer. Labelled "(Test)". Remove with `delete-user <key>` for cv, c1, c2, c3.
+  async compat() {
+    state.run = state.run || crypto.randomBytes(3).toString('hex');
+    const day = (n) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + n); return d; };
+    const FIX = {
+      cv: { name: 'Compat Viewer (Test)', share: true, trip: [30, 40], shareTrip: true,
+        prefs: { travelStyles: ['solo', 'cultural'], interests: ['hiking', 'food', 'art'], languages: ['English'], travelPace: 'balanced', travelSchedule: 'planned', groupSizePreference: 'small' } },
+      c1: { name: 'Ana Overlap (Test)', share: true, trip: [35, 45], shareTrip: true,
+        prefs: { travelStyles: ['cultural'], interests: ['hiking', 'food'], languages: ['English', 'Portuguese'], travelPace: 'balanced', travelSchedule: 'spontaneous', groupSizePreference: 'small' } },
+      c2: { name: 'Ben Later (Test)', share: false, trip: [60, 65], shareTrip: true,
+        prefs: { travelStyles: ['budget'], interests: [], languages: [], travelPace: 'active', travelSchedule: null, groupSizePreference: null } },
+      c3: { name: 'Cleo Organizer (Test)', share: true, trip: [32, 38], shareTrip: false, publicTrip: 'Lisbon walking week (Test)',
+        prefs: { travelStyles: ['solo', 'adventure'], interests: ['hiking', 'photography'], languages: ['English'], travelPace: 'active', travelSchedule: 'planned', groupSizePreference: 'pair' } },
+    };
+    for (const [k, f] of Object.entries(FIX)) {
+      await check(`compat fixture ${k}: ${f.name}`, async () => {
+        const s = state.users[k] ? await session(k) : await newUser(k);
+        await s.firestore.updateUserProfile(s.uid, { name: f.name, city: 'Porto', country: 'Portugal', ...f.prefs, profileVisibility: 'public', showInNearbyTravelers: true, shareCompatibility: f.share });
+        if (!state.ids[`${k}Trip`]) {
+          state.ids[`${k}Trip`] = await s.firestore.createTrip(s.uid, { destination: 'Lisbon, Portugal', startDate: day(f.trip[0]), endDate: day(f.trip[1]), notes: '', coverPhotoURL: null });
+          save();
+        }
+        if (f.shareTrip) await s.firestore.updateUserProfile(s.uid, { discoveryTripId: state.ids[`${k}Trip`] });
+        const profile = await s.firestore.getUserProfile(s.uid);
+        await s.firestore.upsertPublicProfile(s.uid, profile);
+        await s.firestore.upsertNearbyTraveler(s.uid, profile, f.shareTrip ? { destination: 'Lisbon, Portugal', startDate: day(f.trip[0]), endDate: day(f.trip[1]) } : null);
+        if (f.publicTrip) {
+          await s.firestore.setTripVisibility(s.uid, state.ids[`${k}Trip`], 'public', { title: f.publicTrip, destination: 'Lisbon, Portugal', startDate: day(f.trip[0]), endDate: day(f.trip[1]),
+            description: 'Test fixture for companion matching.', tags: ['test'], maxMembers: 4, isAcceptingMembers: true, coverPhotoURL: null, ownerName: f.name, ownerPhotoURL: null, memberCount: 1 });
+        }
+        const rec = await adminGet(`nearbyTravelers/${s.uid}`);
+        assert(rec && rec.destinationKey === (f.shareTrip ? 'lisbon' : null) && (rec.travelPace !== null) === f.share, JSON.stringify({ key: rec && rec.destinationKey, pace: rec && rec.travelPace }));
+        return `discoverable; trip ${f.shareTrip ? 'shared' : 'private'}; consent ${f.share ? 'on' : 'off'}${f.publicTrip ? '; public trip' : ''}`;
+      });
+    }
+  },
+
   async accounts(keys = '') {
     state.run = state.run || crypto.randomBytes(3).toString('hex');
     for (const k of keys.split(',').filter(Boolean)) {

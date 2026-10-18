@@ -94,7 +94,8 @@ export function useAuth() {
         await createUserProfile(firebaseUser.uid, { email, name });
         const initials = getUserInitials(name) || name[0]?.toUpperCase() || 'T';
         await upsertUserLookup(firebaseUser.uid, name, email, initials).catch(() => {});
-        router.replace('/(app)/home');
+        // Optional travel-preference setup; every step can be skipped.
+        router.replace({ pathname: '/(app)/profile/preferences', params: { from: 'signup' } } as never);
       } catch (err: unknown) {
         const code = (err as { code?: string }).code ?? '';
         addToast(friendlyAuthError(code), 'error');

@@ -17,6 +17,7 @@ import {
   where,
   limit,
   Timestamp,
+  writeBatch,
 } from 'firebase/firestore';
 import type { ReportTargetType } from '@solotravelsoul/shared';
 import { db } from './firestore';
@@ -132,13 +133,20 @@ export async function removeComment(commentId: string, moderatorUid: string): Pr
   });
 }
 
-/** Suspended accounts can no longer write or upload anything (same barrier as deletion). */
+/**
+ * Suspended accounts can no longer write or upload anything (same barrier as deletion).
+ * The suspension also removes the account from traveler discovery; the suspended
+ * account cannot add itself back (rules refuse its writes).
+ */
 export async function suspendUser(uid: string, moderatorUid: string, reason: string): Promise<void> {
-  await setDoc(doc(db, 'accountSuspensions', uid), {
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'accountSuspensions', uid), {
     suspendedBy: moderatorUid,
     reason: reason.slice(0, 500),
     createdAt: serverTimestamp(),
   });
+  batch.delete(doc(db, 'nearbyTravelers', uid));
+  await batch.commit();
 }
 
 export async function unsuspendUser(uid: string): Promise<void> {

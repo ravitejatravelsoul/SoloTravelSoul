@@ -77,6 +77,8 @@ export interface PublicTrip {
   maxMembers: number | null;
   isAcceptingMembers: boolean;
   coverPhotoURL: string | null;
+  /** Normalized destination for companion matching; absent on trips published before it existed. */
+  destinationKey?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -185,9 +187,18 @@ export interface NearbyTraveler {
   photoURL: string | null;
   currentCity: string;
   travelStyles: TravelStyle[];
+  /** Destination of the trip the traveler chose to share in discovery (city-level text). */
   destination: string | null;
+  /** Normalized destination for matching (see destinationKey()). */
+  destinationKey?: string | null;
   destinationStartDate: Date | null;
   destinationEndDate: Date | null;
+  interests?: Interest[];
+  languages?: string[];
+  /** Present only when the traveler consented to share compatibility answers. */
+  travelPace?: import('../preferences').TravelPace | null;
+  travelSchedule?: import('../preferences').TravelSchedule | null;
+  groupSizePreference?: import('../preferences').GroupSizePreference | null;
   updatedAt: Date;
 }
 

@@ -9,8 +9,12 @@ let sharedModule;
 function loadShared() {
   if (!sharedModule) {
     sharedModule = { exports: {} };
-    const code = ts.transpileModule(fs.readFileSync(path.join(root, 'packages/shared/src/moderation.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-    new Function('module', 'exports', code)(sharedModule, sharedModule.exports);
+    for (const f of ['moderation', 'preferences']) {
+      const m = { exports: {} };
+      const code = ts.transpileModule(fs.readFileSync(path.join(root, `packages/shared/src/${f}.ts`), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+      new Function('module', 'exports', 'require', code)(m, m.exports, require);
+      Object.assign(sharedModule.exports, m.exports);
+    }
   }
   return sharedModule.exports;
 }
@@ -408,6 +412,136 @@ function client(file, db) {
       await sdk.updateDoc(gdoc(bobDb, 'groups/bobGroup'), { members: sdk.arrayUnion('dave'), 'memberInfo.dave': { name: 'Dave' }, 'unreadCounts.dave': 0 });
       await sdk.updateDoc(gdoc(carolDb, 'groups/bobGroup'), { 'unreadCounts.bob': 2, lastMessage: { senderId: 'carol', text: 'hi' }, updatedAt: sdk.serverTimestamp() });
       await sdk.setDoc(gdoc(bobDb, 'groups/n3'), { name: 'n', createdBy: 'bob', members: ['bob'], pendingMembers: ['erin'], memberInfo: { bob: { name: 'Bob' }, erin: { name: 'Erin' } }, unreadCounts: { bob: 0, erin: 0 } });
+    });
+    // ── Travel preferences and traveler discovery (compatibility onboarding) ──
+    await env.withSecurityRulesDisabled(async ctx => {
+      const adb = ctx.firestore();
+      for (const [p, data] of Object.entries({
+        'users/pia': { name: 'Pia', profileVisibility: 'public', showInNearbyTravelers: true, shareCompatibility: false },
+        'users/quin': { name: 'Quin', profileVisibility: 'private', showInNearbyTravelers: false },
+        'users/legacy': { name: 'Old', travelStyles: ['backpacker'], interests: ['surfing'] },
+        'users/sus': { name: 'Sus', profileVisibility: 'public', showInNearbyTravelers: true },
+        'accountSuspensions/sus': { suspendedBy: 'mod', reason: 'r', createdAt: sdk.Timestamp.now() },
+        'users/gone': { name: 'Gone', profileVisibility: 'public', showInNearbyTravelers: true },
+        'nearbyTravelers/sus': { uid: 'sus', displayName: 'Sus', currentCity: '', travelStyles: [], updatedAt: sdk.Timestamp.now() },
+        'nearbyTravelers/gone': { uid: 'gone', displayName: 'Gone', currentCity: '', travelStyles: [], updatedAt: sdk.Timestamp.now() },
+        'moderators/mod': { grantedBy: 'owner' },
+      })) await sdk.setDoc(sdk.doc(adb, p), data);
+    });
+    const piaDb = env.authenticatedContext('pia').firestore();
+    const quinDb = env.authenticatedContext('quin').firestore();
+    const legacyDb = env.authenticatedContext('legacy').firestore();
+    const pia = client('packages/firebase/src/firestore.ts', piaDb);
+    const record = (extra = {}) => ({ uid: 'pia', displayName: 'Pia', photoURL: null, currentCity: 'Lisbon', travelStyles: ['solo'], interests: ['hiking'], languages: ['English'],
+      travelPace: null, travelSchedule: null, groupSizePreference: null, destination: null, destinationKey: null, destinationStartDate: null, destinationEndDate: null,
+      updatedAt: sdk.serverTimestamp(), ...extra });
+    const nt = (d, id) => sdk.doc(d, `nearbyTravelers/${id}`);
+    await check('preferences: valid answers save; invalid values, setup records and lists are refused by the rules', async () => {
+      await sdk.updateDoc(sdk.doc(piaDb, 'users/pia'), { travelPace: 'relaxed', travelSchedule: 'planned', groupSizePreference: 'small', travelStyles: ['solo', 'eco'],
+        interests: ['hiking'], languages: ['English'], preferenceSetup: { status: 'in_progress', step: 3, updatedAtMs: 1 } });
+      await sdk.updateDoc(sdk.doc(piaDb, 'users/pia'), { travelPace: null }); // clearing an answer is allowed
+      await assertFails(sdk.updateDoc(sdk.doc(piaDb, 'users/pia'), { travelPace: 'frantic' }));
+      await assertFails(sdk.updateDoc(sdk.doc(piaDb, 'users/pia'), { groupSizePreference: 12 }));
+      await assertFails(sdk.updateDoc(sdk.doc(piaDb, 'users/pia'), { shareCompatibility: 'yes' }));
+      await assertFails(sdk.updateDoc(sdk.doc(piaDb, 'users/pia'), { preferenceSetup: { status: 'done', step: 1, updatedAtMs: 1 } }));
+      await assertFails(sdk.updateDoc(sdk.doc(piaDb, 'users/pia'), { preferenceSetup: { status: 'in_progress', step: 9, updatedAtMs: 1 } }));
+      await assertFails(sdk.updateDoc(sdk.doc(piaDb, 'users/pia'), { travelStyles: ['solo', 'party-animal'] }));
+      await assertFails(sdk.updateDoc(sdk.doc(piaDb, 'users/pia'), { interests: ['hiking', 'religion'] }));
+      await assertFails(sdk.updateDoc(sdk.doc(piaDb, 'users/pia'), { languages: Array.from({ length: 13 }, (_, i) => `L${i}`) }));
+      await assertFails(sdk.updateDoc(sdk.doc(quinDb, 'users/pia'), { travelPace: 'active' })); // nobody else
+    });
+    await check('preferences: older profiles with legacy values keep saving other fields', async () => {
+      await sdk.updateDoc(sdk.doc(legacyDb, 'users/legacy'), { bio: 'still works', travelPace: 'balanced' });
+      await assertFails(sdk.updateDoc(sdk.doc(legacyDb, 'users/legacy'), { travelStyles: ['backpacker', 'solo'] }));
+    });
+    await check('discovery: a record needs a public profile and the discovery opt-in; only its owner writes it', async () => {
+      await assertFails(sdk.setDoc(nt(quinDb, 'quin'), record({ uid: 'quin', displayName: 'Quin' }))); // private, not opted in
+      await assertFails(sdk.setDoc(nt(quinDb, 'pia'), record()));
+      await sdk.setDoc(nt(piaDb, 'pia'), record());
+    });
+    await check('discovery: pace, schedule and group size need the sharing consent; withdrawal removes them', async () => {
+      await assertFails(sdk.setDoc(nt(piaDb, 'pia'), record({ travelPace: 'relaxed' })));
+      await sdk.updateDoc(sdk.doc(piaDb, 'users/pia'), { shareCompatibility: true });
+      await sdk.setDoc(nt(piaDb, 'pia'), record({ travelPace: 'relaxed', travelSchedule: 'planned', groupSizePreference: 'small' }));
+      // Withdraw consent: the app rewrites the record without them (and a record with them is refused).
+      await sdk.updateDoc(sdk.doc(piaDb, 'users/pia'), { shareCompatibility: false });
+      await assertFails(sdk.setDoc(nt(piaDb, 'pia'), record({ travelPace: 'relaxed' })));
+      await sdk.updateDoc(sdk.doc(piaDb, 'users/pia'), { travelPace: 'active', shareCompatibility: false });
+      const me = { id: 'pia', name: 'Pia', city: 'Lisbon', profileVisibility: 'public', showInNearbyTravelers: true, travelStyles: ['solo'], travelPace: 'active', shareCompatibility: false };
+      await pia.upsertNearbyTraveler('pia', me, null);
+      const stored = (await sdk.getDoc(nt(piaDb, 'pia'))).data();
+      assert.equal(stored.travelPace, null);
+      assert.equal(stored.groupSizePreference, null);
+    });
+    await check('discovery: only listed fields; a shared trip is destination + dates as a complete, ordered set', async () => {
+      await assertFails(sdk.setDoc(nt(piaDb, 'pia'), record({ email: 'pia@example.test' })));
+      await assertFails(sdk.setDoc(nt(piaDb, 'pia'), record({ itinerary: ['day 1'] })));
+      await assertFails(sdk.setDoc(nt(piaDb, 'pia'), record({ destination: 'Lisbon', destinationKey: 'lisbon' })));
+      await assertFails(sdk.setDoc(nt(piaDb, 'pia'), record({ destination: 'Lisbon', destinationKey: 'lisbon',
+        destinationStartDate: sdk.Timestamp.fromDate(new Date('2026-06-10')), destinationEndDate: sdk.Timestamp.fromDate(new Date('2026-06-01')) })));
+      await assertFails(sdk.setDoc(nt(piaDb, 'pia'), record({ uid: 'someone-else' })));
+      await assertFails(sdk.setDoc(nt(piaDb, 'pia'), record({ updatedAt: sdk.Timestamp.fromDate(new Date('2020-01-01')) })));
+      const me = { id: 'pia', name: 'Pia', city: 'Lisbon', profileVisibility: 'public', showInNearbyTravelers: true };
+      await pia.upsertNearbyTraveler('pia', me, { destination: 'Lisbon, Portugal', startDate: new Date('2026-06-01'), endDate: new Date('2026-06-10') });
+      const stored = (await sdk.getDoc(nt(piaDb, 'pia'))).data();
+      assert.equal(stored.destinationKey, 'lisbon');
+    });
+    await check('discovery: candidate queries are bounded (limit ≤ 50) and use the bounded client helpers', async () => {
+      await assertFails(sdk.getDocs(sdk.query(sdk.collection(quinDb, 'nearbyTravelers'), sdk.where('destinationKey', '==', 'lisbon'), sdk.limit(100))));
+      await assertFails(sdk.getDocs(sdk.query(sdk.collection(quinDb, 'nearbyTravelers'), sdk.where('destinationKey', '==', 'lisbon'))));
+      const quin = client('packages/firebase/src/firestore.ts', quinDb);
+      const found = await quin.getCompanionTravelers('lisbon');
+      assert.deepEqual(found.map((t) => t.uid), ['pia']);
+      assert.deepEqual((await quin.getDiscoveryRecords(['pia', 'nobody'])).map((t) => t.uid), ['pia']);
+    });
+    await check('discovery: suspended and deleting accounts cannot write; moderators remove suspended records', async () => {
+      const susDb = env.authenticatedContext('sus').firestore();
+      await assertFails(sdk.setDoc(nt(susDb, 'sus'), record({ uid: 'sus', displayName: 'Sus' })));
+      await assertFails(sdk.updateDoc(sdk.doc(susDb, 'users/sus'), { travelPace: 'active' }));
+      const goneDb = env.authenticatedContext('gone').firestore();
+      await assertFails(sdk.setDoc(nt(goneDb, 'gone'), record({ uid: 'gone', displayName: 'Gone' })));
+      await assertFails(sdk.deleteDoc(nt(quinDb, 'sus'))); // not a moderator
+      const modDb = env.authenticatedContext('mod').firestore();
+      const moderation = client('packages/firebase/src/moderation.ts', modDb);
+      await env.withSecurityRulesDisabled(async ctx => { await sdk.deleteDoc(sdk.doc(ctx.firestore(), 'accountSuspensions/sus')); });
+      await moderation.suspendUser('sus', 'mod', 'test');
+      await env.withSecurityRulesDisabled(async ctx => { assert.equal((await sdk.getDoc(sdk.doc(ctx.firestore(), 'nearbyTravelers/sus'))).exists(), false); });
+    });
+    await check('discovery: turning discovery off (or going private) removes the record', async () => {
+      await pia.updateProfileVisibility('pia', { id: 'pia', name: 'Pia' }, 'private');
+      assert.equal((await sdk.getDoc(nt(piaDb, 'pia'))).exists(), false);
+    });
+    await check('public trips: a destination key is optional (older trips) and bounded', async () => {
+      await assertFails(sdk.setDoc(sdk.doc(piaDb, 'publicTrips/t-long'), { ownerUid: 'pia', title: 'T', destination: 'X', destinationKey: 'x'.repeat(81) }));
+      await sdk.setDoc(sdk.doc(piaDb, 'publicTrips/t-old'), { ownerUid: 'pia', title: 'T', destination: 'X' });
+      await sdk.setDoc(sdk.doc(piaDb, 'publicTrips/t-new'), { ownerUid: 'pia', title: 'T', destination: 'Lisbon', destinationKey: 'lisbon' });
+    });
+    await check('join requests: the existing flow works for a requester; blocking (either way) and deleting organizers are refused', async () => {
+      await env.withSecurityRulesDisabled(async ctx => {
+        const adb = ctx.firestore();
+        await sdk.setDoc(sdk.doc(adb, 'blocks/blocker/blocked/quin'), { blockedUid: 'quin' });
+        await sdk.setDoc(sdk.doc(adb, 'blocks/quin/blocked/blockedByQuin'), { blockedUid: 'blockedByQuin' });
+      });
+      const quin = client('packages/firebase/src/firestore.ts', quinDb);
+      const requestor = { id: 'quin', name: 'Quin', photoURL: null, bio: '' };
+      await quin.submitTripJoinRequest('t-new', { ownerUid: 'pia', destination: 'Lisbon', title: 'T' }, requestor, 'hello');
+      assert.equal(await quin.getTripJoinRequestStatus('t-new', 'quin'), 'pending');
+      await assertFails(quin.submitTripJoinRequest('t-b1', { ownerUid: 'blocker', destination: 'X', title: 'T' }, requestor, ''));
+      await assertFails(quin.submitTripJoinRequest('t-b2', { ownerUid: 'blockedByQuin', destination: 'X', title: 'T' }, requestor, ''));
+      await assertFails(quin.submitTripJoinRequest('t-gone', { ownerUid: 'gone', destination: 'X', title: 'T' }, requestor, ''));
+      await assertFails(quin.submitTripJoinRequest('t-new', { ownerUid: 'pia', destination: 'Lisbon', title: 'T' }, requestor, 'again')); // pending already: not a new request
+      // Cancel really cancels, and the requester may ask again afterwards.
+      await quin.cancelTripJoinRequest('t-new_quin', 'quin');
+      assert.equal(await quin.getTripJoinRequestStatus('t-new', 'quin'), 'cancelled');
+      await quin.submitTripJoinRequest('t-new', { ownerUid: 'pia', destination: 'Lisbon', title: 'T' }, requestor, 'again');
+      assert.equal(await quin.getTripJoinRequestStatus('t-new', 'quin'), 'pending');
+      // Re-asking cannot redirect the request to another organizer or trip.
+      await quin.cancelTripJoinRequest('t-new_quin', 'quin');
+      await assertFails(sdk.setDoc(sdk.doc(quinDb, 'tripJoinRequests/t-new_quin'), { requestId: 't-new_quin', tripId: 'other', ownerUid: 'pia', requestorUid: 'quin', status: 'pending' }));
+      // After a rejection the organizer's decision stands.
+      await quin.submitTripJoinRequest('t-new', { ownerUid: 'pia', destination: 'Lisbon', title: 'T' }, requestor, 'again');
+      await sdk.updateDoc(sdk.doc(piaDb, 'tripJoinRequests/t-new_quin'), { status: 'rejected' });
+      await assertFails(quin.submitTripJoinRequest('t-new', { ownerUid: 'pia', destination: 'Lisbon', title: 'T' }, requestor, 'please'));
     });
     console.log(`${checks} release rule checks passed`);
   } finally { await env.cleanup(); }

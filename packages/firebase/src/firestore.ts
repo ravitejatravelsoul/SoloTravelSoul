@@ -57,7 +57,8 @@ import type {
   RequestStatus,
   ReportTargetType,
 } from '@solotravelsoul/shared';
-import { DEFAULT_USER_PROFILE, REPORT_HIDE_THRESHOLD } from '@solotravelsoul/shared';
+import { DEFAULT_USER_PROFILE, REPORT_HIDE_THRESHOLD, destinationKey as toDestinationKey, discoveryRecordFields } from '@solotravelsoul/shared';
+import type { SharedTrip } from '@solotravelsoul/shared';
 
 // Use memoryLocalCache so documents fetched this session are reused if
 // Firestore briefly goes offline (avoids "client is offline" on re-reads).
@@ -571,6 +572,7 @@ function publicTripFromDoc(id: string, d: DocumentData): PublicTrip {
     maxMembers: (d.maxMembers as number | null) ?? null,
     isAcceptingMembers: (d.isAcceptingMembers as boolean) ?? true,
     coverPhotoURL: (d.coverPhotoURL as string | null) ?? null,
+    ...(typeof d.destinationKey === 'string' ? { destinationKey: d.destinationKey } : {}),
     createdAt: tsToDate(d.createdAt),
     updatedAt: tsToDate(d.updatedAt),
   };
@@ -618,6 +620,7 @@ export async function setTripVisibility(
       ownerPhotoURL: publicData.ownerPhotoURL,
       title: publicData.title,
       destination: publicData.destination,
+      destinationKey: toDestinationKey(publicData.destination) ?? '',
       startDate: dateToTs(publicData.startDate),
       endDate: dateToTs(publicData.endDate),
       description: publicData.description,
@@ -748,12 +751,8 @@ export async function submitTripJoinRequest(
   requestor: UserProfile,
   message: string
 ): Promise<void> {
-  // Block check: owner has blocked this requester
-  const blockedSnap = await getDoc(doc(db, 'blocks', trip.ownerUid, 'blocked', requestor.id));
-  if (blockedSnap.exists()) {
-    throw Object.assign(new Error('You cannot request to join this trip.'), { code: 'community/blocked' });
-  }
-
+  // Blocking (either direction) is enforced by the rules on create; the requester
+  // cannot read the owner's block list, so no client-side pre-check here.
   const requestId = `${tripId}_${requestor.id}`;
   await setDoc(doc(db, 'tripJoinRequests', requestId), {
     requestId,
@@ -1250,25 +1249,33 @@ function nearbyTravelerFromDoc(d: DocumentData): NearbyTraveler {
     currentCity: (d.currentCity as string) ?? '',
     travelStyles: (d.travelStyles as TravelStyle[]) ?? [],
     destination: (d.destination as string | null) ?? null,
+    destinationKey: (d.destinationKey as string | null) ?? null,
     destinationStartDate: d.destinationStartDate ? tsToDate(d.destinationStartDate) : null,
     destinationEndDate: d.destinationEndDate ? tsToDate(d.destinationEndDate) : null,
+    interests: (d.interests as NearbyTraveler['interests']) ?? [],
+    languages: (d.languages as string[]) ?? [],
+    travelPace: (d.travelPace as NearbyTraveler['travelPace']) ?? null,
+    travelSchedule: (d.travelSchedule as NearbyTraveler['travelSchedule']) ?? null,
+    groupSizePreference: (d.groupSizePreference as NearbyTraveler['groupSizePreference']) ?? null,
     updatedAt: tsToDate(d.updatedAt),
   };
 }
 
+/**
+ * Writes the discovery record (only while the user is discoverable; see isDiscoverable).
+ * Pace, schedule and group size are included only with the user's shareCompatibility
+ * consent, and a trip only when the user chose one to share (destination and dates).
+ */
 export async function upsertNearbyTraveler(
   uid: string,
-  profile: UserProfile
+  profile: UserProfile,
+  sharedTrip: SharedTrip | null = null
 ): Promise<void> {
+  const f = discoveryRecordFields(uid, profile, sharedTrip);
   await setDoc(doc(db, 'nearbyTravelers', uid), {
-    uid,
-    displayName: profile.name,
-    photoURL: profile.photoURL ?? null,
-    currentCity: profile.city ?? '',
-    travelStyles: profile.travelStyles ?? [],
-    destination: profile.currentDestination ?? null,
-    destinationStartDate: null,
-    destinationEndDate: null,
+    ...f,
+    destinationStartDate: f.destinationStartDate ? dateToTs(f.destinationStartDate) : null,
+    destinationEndDate: f.destinationEndDate ? dateToTs(f.destinationEndDate) : null,
     updatedAt: serverTimestamp(),
   });
 }
@@ -1297,23 +1304,50 @@ export function subscribeNearbyTravelers(
   });
 }
 
+/** Destination-only browsing: travelers who shared a trip to this destination (normalized). */
 export function subscribeDestinationTravelers(
   destination: string,
   callback: (travelers: NearbyTraveler[]) => void
 ): () => void {
-  const q = query(
-    collection(db, 'nearbyTravelers'),
-    where('destination', '==', destination),
-    orderBy('updatedAt', 'desc'),
-    limit(50)
-  );
+  const key = toDestinationKey(destination);
+  if (!key) { callback([]); return () => {}; }
+  // Equality only (single-field index); newest first is applied on the client.
+  const q = query(collection(db, 'nearbyTravelers'), where('destinationKey', '==', key), limit(50));
   return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => nearbyTravelerFromDoc(d.data())));
+    callback(snap.docs.map((d) => nearbyTravelerFromDoc(d.data())).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()));
   }, (err) => {
     if (err.code !== 'permission-denied' && err.code !== 'failed-precondition') {
       console.error('[Firestore] subscribeDestinationTravelers error:', err.code, err.message);
     }
   });
+}
+
+// ── Companion matching (one-shot, bounded reads; no listeners) ───────────────
+export const COMPANION_TRAVELER_LIMIT = 30;
+export const COMPANION_TRIP_LIMIT = 20;
+
+/** Travelers who shared a trip to this destination: at most 30 documents, one query. */
+export async function getCompanionTravelers(destination: string): Promise<NearbyTraveler[]> {
+  const key = toDestinationKey(destination);
+  if (!key) return [];
+  const snap = await getDocs(query(collection(db, 'nearbyTravelers'), where('destinationKey', '==', key), limit(COMPANION_TRAVELER_LIMIT)));
+  return snap.docs.map((d) => nearbyTravelerFromDoc(d.data()));
+}
+
+/** Public trips to this destination (trips published with a destinationKey): at most 20 documents, one query. */
+export async function getCompanionTrips(destination: string): Promise<PublicTrip[]> {
+  const key = toDestinationKey(destination);
+  if (!key) return [];
+  const snap = await getDocs(query(collection(db, 'publicTrips'), where('destinationKey', '==', key), limit(COMPANION_TRIP_LIMIT)));
+  return snap.docs.map((d) => publicTripFromDoc(d.id, d.data()));
+}
+
+/** Discovery records of trip owners, batched: one query for up to 30 owners (never per card). */
+export async function getDiscoveryRecords(uids: string[]): Promise<NearbyTraveler[]> {
+  const ids = [...new Set(uids)].slice(0, 30);
+  if (!ids.length) return [];
+  const snap = await getDocs(query(collection(db, 'nearbyTravelers'), where('uid', 'in', ids), limit(30)));
+  return snap.docs.map((d) => nearbyTravelerFromDoc(d.data()));
 }
 
 // â”€â”€ Community: Activity Feed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

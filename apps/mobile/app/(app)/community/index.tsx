@@ -9,6 +9,7 @@ import {
   subscribeGroupJoinRequestsForOwner,
 } from '@solotravelsoul/firebase';
 import { useAuthStore } from '@/stores/authStore';
+import { shouldOfferPreferenceSetup } from '@solotravelsoul/shared';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 
 function FeatureCard({
@@ -59,6 +60,9 @@ function FeatureCard({
 
 export default function CommunityScreen() {
   const uid = useAuthStore((s) => s.user?.uid ?? '');
+  const profile = useAuthStore((s) => s.profile);
+  const offerSetup = shouldOfferPreferenceSetup(profile);
+  const resuming = profile?.preferenceSetup?.status === 'in_progress';
   const [pendingTripCount, setPendingTripCount] = useState(0);
   const [pendingGroupCount, setPendingGroupCount] = useState(0);
 
@@ -95,6 +99,21 @@ export default function CommunityScreen() {
           </>
         )}
 
+        {offerSetup && (
+          <TouchableOpacity
+            style={styles.setupCard}
+            onPress={() => router.push({ pathname: '/(app)/profile/preferences', params: { from: 'community' } } as never)}
+            accessibilityRole="button"
+          >
+            <Ionicons name="sparkles-outline" size={20} color={Colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.setupTitle}>{resuming ? 'Finish your travel preferences' : 'Set up travel preferences'}</Text>
+              <Text style={styles.setupText}>Optional, about a minute. Helps explain which travelers suit your trips.</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={Colors.placeholder} />
+          </TouchableOpacity>
+        )}
+
         <Text style={styles.sectionLabel}>MANAGE</Text>
         <View style={styles.card}>
           <FeatureCard
@@ -129,6 +148,13 @@ export default function CommunityScreen() {
         <Text style={styles.sectionLabel}>DISCOVER</Text>
         <View style={styles.card}>
           <FeatureCard
+            icon="git-compare"
+            title="Find Travel Companions"
+            subtitle="Match one of your trips by destination, dates and preferences"
+            onPress={() => router.push('/(app)/community/companions' as never)}
+          />
+          <View style={styles.divider} />
+          <FeatureCard
             icon="location"
             title="Nearby Travelers"
             subtitle="Find travelers visiting the same destination"
@@ -148,6 +174,12 @@ export default function CommunityScreen() {
 }
 
 const styles = StyleSheet.create({
+  setupCard: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg, marginTop: Spacing.md,
+    borderRadius: Radius.lg, backgroundColor: Colors.primary + '10', borderWidth: 1, borderColor: Colors.primary + '30',
+  },
+  setupTitle: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  setupText: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
   safe: { flex: 1, backgroundColor: Colors.background },
   navBar: {
     paddingHorizontal: Spacing.lg,

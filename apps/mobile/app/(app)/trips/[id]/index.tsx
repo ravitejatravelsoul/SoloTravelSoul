@@ -315,6 +315,21 @@ export default function TripDetailScreen() {
             />
           </View>
 
+          {/* ── Travel companions for this trip (destination + dates) ── */}
+          <TouchableOpacity
+            style={styles.companionsRow}
+            onPress={() => router.push({ pathname: '/(app)/community/companions', params: { tripId: id } } as never)}
+            accessibilityRole="button"
+            activeOpacity={0.8}
+          >
+            <Ionicons name="people-outline" size={20} color={Colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.companionsTitle}>Find travel companions</Text>
+              <Text style={styles.companionsSub}>Travelers and public trips with overlapping dates</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={Colors.placeholder} />
+          </TouchableOpacity>
+
           {/* ── Packing Checklist ── */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -590,6 +605,12 @@ function ChecklistRow({
 // ── Styles ────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  companionsRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg, marginTop: Spacing.md,
+    borderRadius: Radius.lg, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
+  },
+  companionsTitle: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  companionsSub: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
   safe: { flex: 1, backgroundColor: Colors.primary },
   scroll: { flexGrow: 1 },
 

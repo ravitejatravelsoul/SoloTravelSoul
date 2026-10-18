@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -11,31 +11,18 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Input, Button, Avatar } from '@/components/ui';
-import { MultiSelectChips } from '@/components/ui/MultiSelectChips';
 import { TagInput } from '@/components/ui/TagInput';
+import { PreferenceField } from '@/components/profile/PreferenceFields';
 import { useProfile } from '@/hooks/useProfile';
 import { useUpload } from '@/hooks/useUpload';
 import { upsertUserLookup, upsertPublicProfile, updateUserProfile, updateOwnerPhotoInCommunityDocs } from '@solotravelsoul/firebase';
 import { uploadProfilePhotoFromUri, isUploadsEnabled } from '@/utils/storageUpload';
-import { getUserInitials } from '@solotravelsoul/shared';
-import type { TravelStyle, Interest } from '@solotravelsoul/shared';
+import { getUserInitials, preferencesOf, sanitizePreferences, isDiscoverable } from '@solotravelsoul/shared';
+import type { TravelPreferences, UserProfile } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
+import { useTripStore } from '@/stores/tripStore';
+import { syncDiscovery } from '@/utils/discovery';
 import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
-
-const TRAVEL_STYLE_OPTIONS: TravelStyle[] = ['solo', 'budget', 'luxury', 'adventure', 'cultural', 'food', 'digital-nomad', 'eco'];
-const TRAVEL_STYLE_LABELS: Record<TravelStyle, string> = {
-  solo: 'Solo', budget: 'Budget', luxury: 'Luxury', adventure: 'Adventure',
-  cultural: 'Cultural', food: 'Food', 'digital-nomad': 'Digital Nomad', eco: 'Eco',
-};
-
-const INTEREST_OPTIONS: Interest[] = ['hiking', 'photography', 'food', 'nightlife', 'history', 'beach', 'languages', 'volunteering', 'yoga', 'art', 'sports', 'music'];
-const INTEREST_LABELS: Record<Interest, string> = {
-  hiking: 'Hiking', photography: 'Photography', food: 'Food', nightlife: 'Nightlife',
-  history: 'History', beach: 'Beach', languages: 'Languages', volunteering: 'Volunteering',
-  yoga: 'Yoga', art: 'Art', sports: 'Sports', music: 'Music',
-};
-
-const COMMON_LANGUAGES = ['English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Japanese', 'Chinese', 'Korean', 'Arabic', 'Hindi', 'Russian'];
 
 const BIO_MAX = 500;
 
@@ -56,15 +43,15 @@ export default function EditProfileScreen() {
   const [city, setCity] = useState(profile?.city ?? '');
   const [country, setCountry] = useState(profile?.country ?? '');
   const [bio, setBio] = useState(profile?.bio ?? '');
-  const [travelStyles, setTravelStyles] = useState<TravelStyle[]>(profile?.travelStyles ?? []);
-  const [languages, setLanguages] = useState<string[]>(profile?.languages ?? []);
+  // Travel preferences: same fields and validation as the optional setup.
+  const [prefs, setPrefs] = useState<TravelPreferences>(() => preferencesOf(profile));
+  const trips = useTripStore((s) => s.trips);
   const [countriesVisited, setCountriesVisited] = useState<string>(
     (profile?.countriesVisited ?? []).join(', ')
   );
   const [dreamDestinations, setDreamDestinations] = useState<string[]>(
     profile?.favoriteDestinations ?? []
   );
-  const [interests, setInterests] = useState<Interest[]>(profile?.interests ?? []);
   const [saving, setSaving] = useState(false);
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
 
@@ -98,18 +85,6 @@ export default function EditProfileScreen() {
     ? pickAndUpload
     : () => Alert.alert('Photo uploads', 'Photo uploads are temporarily disabled.');
 
-  const toggleTravelStyle = useCallback((s: TravelStyle) => {
-    setTravelStyles((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]);
-  }, []);
-
-  const toggleInterest = useCallback((i: Interest) => {
-    setInterests((prev) => prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]);
-  }, []);
-
-  const toggleLanguage = useCallback((lang: string) => {
-    setLanguages((prev) => prev.includes(lang) ? prev.filter((x) => x !== lang) : [...prev, lang]);
-  }, []);
-
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -119,16 +94,20 @@ export default function EditProfileScreen() {
       // Firestore write, the Zustand store update, and the public profile
       // write all happen together — no race condition with a separate
       // onSuccess update.
+      const clean = sanitizePreferences(prefs);
       const updatedProfile = {
         name: trimmedName,
         city: city.trim(),
         country: country.trim(),
         bio: bio.trim().slice(0, BIO_MAX),
-        travelStyles,
-        languages,
+        travelStyles: clean.travelStyles,
+        languages: clean.languages,
         countriesVisited: countriesVisited.split(',').map((c) => c.trim()).filter(Boolean),
         favoriteDestinations: dreamDestinations,
-        interests,
+        interests: clean.interests,
+        travelPace: clean.travelPace,
+        travelSchedule: clean.travelSchedule,
+        groupSizePreference: clean.groupSizePreference,
         // Only overwrite photoURL when the user uploaded a new photo this session.
         ...(avatarUri !== null ? { photoURL: avatarUri } : {}),
       };
@@ -144,6 +123,10 @@ export default function EditProfileScreen() {
       if (user && profile && profile.profileVisibility === 'public') {
         const fullProfile = { ...profile, ...updatedProfile, id: user.uid };
         await upsertPublicProfile(user.uid, fullProfile).catch(() => {});
+      }
+      // Keep the discovery record current (only while discoverable; consent decides what it holds).
+      if (user && profile && isDiscoverable(profile)) {
+        await syncDiscovery(user.uid, { ...profile, ...updatedProfile, id: user.uid } as UserProfile, trips).catch(() => {});
       }
 
       router.back();
@@ -217,22 +200,13 @@ export default function EditProfileScreen() {
         {/* Travel Style */}
         <SectionHeader title="TRAVEL STYLE" />
         <View style={styles.card}>
-          <MultiSelectChips
-            options={TRAVEL_STYLE_OPTIONS}
-            selected={travelStyles}
-            onToggle={toggleTravelStyle}
-            labelMap={TRAVEL_STYLE_LABELS}
-          />
+          <PreferenceField step="styles" value={prefs} onChange={setPrefs} />
         </View>
 
         {/* Languages */}
         <SectionHeader title="LANGUAGES SPOKEN" />
         <View style={styles.card}>
-          <MultiSelectChips
-            options={COMMON_LANGUAGES as string[]}
-            selected={languages}
-            onToggle={toggleLanguage as (v: string) => void}
-          />
+          <PreferenceField step="languages" value={prefs} onChange={setPrefs} />
         </View>
 
         {/* Countries Visited */}
@@ -260,13 +234,27 @@ export default function EditProfileScreen() {
         {/* Interests */}
         <SectionHeader title="INTERESTS" />
         <View style={styles.card}>
-          <MultiSelectChips
-            options={INTEREST_OPTIONS}
-            selected={interests}
-            onToggle={toggleInterest}
-            labelMap={INTEREST_LABELS}
-          />
+          <PreferenceField step="interests" value={prefs} onChange={setPrefs} />
         </View>
+
+        {/* Travel compatibility (optional; shared only with consent, see Privacy Settings) */}
+        <SectionHeader title="PACE" />
+        <View style={styles.card}>
+          <PreferenceField step="pace" value={prefs} onChange={setPrefs} />
+        </View>
+
+        <SectionHeader title="SCHEDULE" />
+        <View style={styles.card}>
+          <PreferenceField step="schedule" value={prefs} onChange={setPrefs} />
+        </View>
+
+        <SectionHeader title="PREFERRED GROUP SIZE" />
+        <View style={styles.card}>
+          <PreferenceField step="groupSize" value={prefs} onChange={setPrefs} />
+        </View>
+        <Text variant="caption" style={styles.prefNote}>
+          Optional. Tap a selected answer again to clear it. Whether other travelers can see pace, schedule and group size is set in Privacy Settings.
+        </Text>
 
         <View style={styles.saveRow}>
           <Button label="Save changes" onPress={handleSave} loading={saving} fullWidth size="lg" />
@@ -325,4 +313,5 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   saveRow: { marginHorizontal: Spacing.lg, marginTop: Spacing.xl },
+  prefNote: { color: Colors.textSecondary, marginHorizontal: Spacing.lg, marginTop: Spacing.sm },
 });

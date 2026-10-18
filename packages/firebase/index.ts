@@ -62,6 +62,11 @@ export {
   deleteNearbyTraveler,
   subscribeNearbyTravelers,
   subscribeDestinationTravelers,
+  getCompanionTravelers,
+  getCompanionTrips,
+  getDiscoveryRecords,
+  COMPANION_TRAVELER_LIMIT,
+  COMPANION_TRIP_LIMIT,
   // Community: Activity Feed
   addFeedItem,
   subscribeActivityFeed,

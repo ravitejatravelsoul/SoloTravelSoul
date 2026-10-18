@@ -14,7 +14,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui';
-import { submitTripJoinRequest } from '@solotravelsoul/firebase';
+import { submitTripJoinRequest, getTripJoinRequestStatus } from '@solotravelsoul/firebase';
 import type { PublicTrip, UserProfile } from '@solotravelsoul/shared';
 import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 
@@ -76,7 +76,11 @@ export function JoinRequestModal({ trip, requestor, onClose, onSubmitted }: Join
     } catch (err: unknown) {
       const code = (err as { code?: string }).code;
       if (code === 'already-exists' || code === 'permission-denied') {
-        Alert.alert('Already requested', 'You already have a pending request for this trip.');
+        // Refused by the rules: an earlier request exists, or the request is not allowed
+        // (blocked, organizer unavailable, account restricted). Say which, from our own request.
+        const status = await getTripJoinRequestStatus(trip.tripId, requestor.id).catch(() => null);
+        if (status === 'pending') Alert.alert('Already requested', 'You already have a pending request for this trip.');
+        else Alert.alert('Request not sent', "You can't request to join this trip right now.");
       } else {
         Alert.alert('Failed', 'Could not send request. Please try again.');
       }

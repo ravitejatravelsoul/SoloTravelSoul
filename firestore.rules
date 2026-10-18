@@ -204,6 +204,81 @@ service cloud.firestore {
             && getAfter(/databases/$(database)/documents/publicProfiles/$(data.followerId)).data.lastFollowingId == data.followingId));
     }
 
+    // ── Travel preferences ───────────────────────────────────────────
+    // Option lists mirror packages/shared/src/preferences.ts (a release test
+    // fails if they differ). Fields are validated when they change, so older
+    // profiles keep saving unchanged values.
+    function travelStyleOptions() { return ['solo', 'budget', 'luxury', 'adventure', 'cultural', 'food', 'digital-nomad', 'eco']; }
+    function interestOptions() { return ['hiking', 'photography', 'food', 'nightlife', 'history', 'beach', 'languages', 'volunteering', 'yoga', 'art', 'sports', 'music']; }
+    function paceOptions() { return ['relaxed', 'balanced', 'active']; }
+    function scheduleOptions() { return ['planned', 'spontaneous']; }
+    function groupSizeOptions() { return ['pair', 'small', 'large']; }
+    function enumOrNull(data, key, options) {
+      return data.get(key, null) == null || data.get(key, null) in options;
+    }
+    function listOf(data, key, options, max) {
+      let v = data.get(key, []);
+      return v is list && v.size() <= max && v.toSet().hasOnly(options);
+    }
+    function languageList(data) {
+      let v = data.get('languages', []);
+      return v is list && v.size() <= 12;
+    }
+    function changedKey(key) {
+      return resource == null ? request.resource.data.keys().hasAny([key])
+        : request.resource.data.diff(resource.data).affectedKeys().hasAny([key]);
+    }
+    function validSetup(v) {
+      return v is map && v.keys().hasOnly(['status', 'step', 'updatedAtMs'])
+        && v.status in ['in_progress', 'completed', 'skipped']
+        && v.step is int && v.step >= 0 && v.step <= 6 && v.updatedAtMs is int;
+    }
+    function validUserPreferences() {
+      let d = request.resource.data;
+      return (!changedKey('travelPace') || enumOrNull(d, 'travelPace', paceOptions()))
+        && (!changedKey('travelSchedule') || enumOrNull(d, 'travelSchedule', scheduleOptions()))
+        && (!changedKey('groupSizePreference') || enumOrNull(d, 'groupSizePreference', groupSizeOptions()))
+        && (!changedKey('shareCompatibility') || d.shareCompatibility is bool)
+        && (!changedKey('preferenceSetup') || validSetup(d.preferenceSetup))
+        && (!changedKey('discoveryTripId') || d.discoveryTripId == null
+          || (d.discoveryTripId is string && d.discoveryTripId.size() <= 128))
+        && (!changedKey('travelStyles') || listOf(d, 'travelStyles', travelStyleOptions(), 8))
+        && (!changedKey('interests') || listOf(d, 'interests', interestOptions(), 12))
+        && (!changedKey('languages') || languageList(d));
+    }
+    // A discovery record shares a trip's destination and dates only as a complete set.
+    function validSharedTrip(d) {
+      return (d.get('destinationKey', null) == null && d.get('destination', null) == null
+          && d.get('destinationStartDate', null) == null && d.get('destinationEndDate', null) == null)
+        || (d.destinationKey is string && d.destinationKey.size() > 0 && d.destinationKey.size() <= 80
+          && d.destination is string && d.destination.size() <= 100
+          && d.destinationStartDate is timestamp && d.destinationEndDate is timestamp
+          && d.destinationEndDate >= d.destinationStartDate);
+    }
+    // Discovery is explicit opt-in: a record exists only for a public profile with
+    // showInNearbyTravelers, holds only these fields, and carries pace, schedule and
+    // group size only with the owner's shareCompatibility consent.
+    function validDiscoveryRecord(uid) {
+      let d = request.resource.data;
+      let owner = get(/databases/$(database)/documents/users/$(uid)).data;
+      return d.keys().hasOnly(['uid', 'displayName', 'photoURL', 'currentCity', 'travelStyles', 'interests', 'languages',
+          'travelPace', 'travelSchedule', 'groupSizePreference', 'destination', 'destinationKey',
+          'destinationStartDate', 'destinationEndDate', 'updatedAt'])
+        && d.uid == uid
+        && owner.get('profileVisibility', 'private') == 'public' && owner.get('showInNearbyTravelers', false) == true
+        && d.displayName is string && d.displayName.size() <= 100
+        && d.currentCity is string && d.currentCity.size() <= 100
+        && (d.get('photoURL', null) == null || d.photoURL is string)
+        && listOf(d, 'travelStyles', travelStyleOptions(), 8) && listOf(d, 'interests', interestOptions(), 12) && languageList(d)
+        && enumOrNull(d, 'travelPace', paceOptions()) && enumOrNull(d, 'travelSchedule', scheduleOptions())
+        && enumOrNull(d, 'groupSizePreference', groupSizeOptions())
+        && ((d.get('travelPace', null) == null && d.get('travelSchedule', null) == null && d.get('groupSizePreference', null) == null)
+          || owner.get('shareCompatibility', false) == true)
+        && validSharedTrip(d)
+        && d.updatedAt == request.time
+        && cleanFields(d, ['displayName', 'currentCity', 'destination']);
+    }
+
     // ── Default: deny everything ──────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
@@ -212,7 +287,9 @@ service cloud.firestore {
     // ── Users ──────────────────────────────────────────────────────────
     match /users/{userId} {
       allow read: if request.auth != null && request.auth.uid == userId;
-      allow write: if notDeleting() && (request.auth != null && request.auth.uid == userId);
+      allow create, update: if notDeleting() && (request.auth != null && request.auth.uid == userId)
+        && validUserPreferences();
+      allow delete: if notDeleting() && (request.auth != null && request.auth.uid == userId);
 
       // ── Trips ─────────────────────────────────────────────────────
       match /trips/{tripId} {
@@ -425,6 +502,7 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow create: if notDeleting() && (request.auth != null
         && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.get('destinationKey', '') is string && request.resource.data.get('destinationKey', '').size() <= 80
         && cleanFields(request.resource.data, ['title', 'description', 'destination']));
       allow update: if notDeleting() && (request.auth != null
         && resource != null
@@ -466,6 +544,7 @@ service cloud.firestore {
       allow create: if notDeleting() && !deleting(request.resource.data.ownerUid) && (request.auth != null
         && request.resource.data.requestorUid == request.auth.uid
         && request.resource.data.ownerUid != request.auth.uid
+        && unblocked(request.auth.uid, request.resource.data.ownerUid)
         && request.resource.data.status == 'pending');
       // Allow read when resource == null so getTripJoinRequestStatus returns null
       // instead of throwing permission-denied for trips with no previous request.
@@ -480,6 +559,15 @@ service cloud.firestore {
             && request.resource.data.status in ['approved', 'rejected'])
           || (resource.data.requestorUid == request.auth.uid
               && request.resource.data.status == 'cancelled')
+          // Asking again after cancelling (not after a rejection): same trip, owner and
+          // requester; the create-time checks (blocking, deleting organizer) apply again.
+          || (resource.data.requestorUid == request.auth.uid && resource.data.status == 'cancelled'
+              && request.resource.data.status == 'pending'
+              && request.resource.data.requestorUid == request.auth.uid
+              && request.resource.data.ownerUid == resource.data.ownerUid
+              && request.resource.data.tripId == resource.data.tripId
+              && !deleting(resource.data.ownerUid)
+              && unblocked(request.auth.uid, resource.data.ownerUid))
         ));
       allow delete: if false;
     }
@@ -548,8 +636,13 @@ service cloud.firestore {
 
     // ── Community: Nearby Travelers ───────────────────────────────────
     match /nearbyTravelers/{uid} {
-      allow read: if request.auth != null;
-      allow write: if notDeleting() && (request.auth != null && request.auth.uid == uid);
+      allow get: if request.auth != null;
+      // Bounded candidate queries (Spark): at most 50 records per query.
+      allow list: if request.auth != null && request.query.limit <= 50;
+      allow create, update: if notDeleting() && (request.auth != null && request.auth.uid == uid)
+        && validDiscoveryRecord(uid);
+      // Withdrawal by the owner; moderators remove it when suspending an account.
+      allow delete: if notDeleting() && request.auth != null && (request.auth.uid == uid || isModerator());
     }
 
     // ── Community: Activity Feed ──────────────────────────────────────

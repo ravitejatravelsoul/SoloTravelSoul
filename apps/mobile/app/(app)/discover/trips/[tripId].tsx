@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Avatar, Chip, Button } from '@/components/ui';
 import { JoinRequestModal } from '@/components/community/JoinRequestModal';
-import { getPublicTrip, getPublicProfile, subscribePublicTripMembers, getTripJoinRequestStatus } from '@solotravelsoul/firebase';
+import { getPublicTrip, getPublicProfile, subscribePublicTripMembers, getTripJoinRequestStatus, cancelTripJoinRequest } from '@solotravelsoul/firebase';
 import type { PublicTrip, TripMember, RequestStatus } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
@@ -70,8 +70,15 @@ export default function PublicTripDetailScreen() {
     setShowModal(false);
   };
 
-  const onRequestCancelled = () => {
-    setRequestStatus('cancelled');
+  // Cancels on the server (previously only the screen state changed).
+  const onRequestCancelled = async () => {
+    if (!tripId || !uid) return;
+    try {
+      await cancelTripJoinRequest(`${tripId}_${uid}`, uid);
+      setRequestStatus('cancelled');
+    } catch {
+      Alert.alert('Not cancelled', 'Could not cancel your request. Please try again.');
+    }
   };
 
   if (loading) {

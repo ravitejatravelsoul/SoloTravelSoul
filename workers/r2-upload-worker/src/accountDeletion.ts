@@ -616,7 +616,14 @@ const deleteFirebaseMedia: Step['run'] = async ({ uid, deps, store, work, flags 
   flags.legacyMediaUnresolved = false;
 };
 
+// First: leave traveler discovery at once, so a deleting account is no longer offered
+// as a companion while the rest runs. (privateData removes it again at the end.)
+const hideFromDiscovery: Step['run'] = async (ctx) => {
+  await ctx.store.commit([{ kind: 'delete', path: `nearbyTravelers/${ctx.uid}` }]);
+};
+
 export const DELETION_STEPS: readonly Step[] = [
+  { id: 'discovery', run: hideFromDiscovery },
   // Relationships first: each removal releases a counter on someone else's document.
   { id: 'likes', run: removeLikes },
   { id: 'saves', run: removeSaves },

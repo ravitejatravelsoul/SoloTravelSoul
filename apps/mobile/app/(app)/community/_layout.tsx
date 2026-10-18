@@ -11,6 +11,7 @@ export default function CommunityLayout() {
       <Stack.Screen name="groups/[groupId]" />
       <Stack.Screen name="groups/[groupId]/requests" />
       <Stack.Screen name="travelers/index" />
+      <Stack.Screen name="companions" />
       <Stack.Screen name="feed/index" />
       <Stack.Screen name="my-requests" />
     </Stack>
