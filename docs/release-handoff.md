@@ -825,6 +825,15 @@ Helps travelers find suitable companions for a specific trip from preferences th
 
 **Cleanup:** all seven verification accounts (4 matching fixtures, the sign-up account, 2 rules-check accounts) deleted through account deletion and confirmed (`verify-deleted`: job completed, Auth gone, data and 4 fixture photos purged). Demo feed unchanged (`seedStagingFeed verify` PASS, 48/48 photos). No production operation.
 
+### Bottom tab bar over the system navigation (2026-10-18)
+
+- **Report:** on an SM-S711U (Android 16, three-button navigation) the bottom tabs overlapped Back/Home/Recents (staging APK from `ffa6af3`).
+- **Cause:** `app/(app)/_layout.tsx` set `tabBarStyle` `height: 72` and `paddingBottom: 8`. React Navigation uses a numeric style height as-is and the style padding replaces its inset padding, so with edge-to-edge the bar ignored the bottom safe-area inset.
+- **Fix:** `utils/tabBar.ts` `tabBarInsets(insets.bottom)` from `useSafeAreaInsets()`: content height unchanged (58), bottom padding = the real inset (at least 8 where there is none), height = 6 + 58 + padding. No device-specific offsets; keyboard hiding, badges, labels and the offline banner (top overlay) unchanged. Screens inside tabs use native `SafeAreaView`, which pads only real overlap, so there is no double padding.
+- **Verified (Android 15 emulator, Expo Go with the staging configuration, JS fix):** three-button mode — tabs above the buttons, all six tabs, keyboard open hides the tabs and closing restores them; gesture mode — the handle has its own space below the labels. Reproduced first with the installed APK (three-button overlap). Screenshots: `docs/screenshots/2026-10-18-tab-bar/`.
+- **Not verified:** the physical SM-S711U (locked during this session) and any native binary with the fix (needs a new build). **iPhone: BLOCKED** (no macOS/iOS simulator on this machine); the iOS export succeeds and the same inset logic covers the home indicator; screens with inputs use `KeyboardAvoidingView behavior="padding"`.
+- **Test:** `tests/release/app.cjs` runs React Navigation's own `getTabBarHeight` with insets 0/24/34/48 (none, gesture, iPhone, three-button).
+
 ## 11. Moderator onboarding (prepared; nobody appointed, no production roles granted)
 
 **Store requirements (verified 2026-10-10 against the official texts):**

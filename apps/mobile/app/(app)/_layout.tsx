@@ -1,6 +1,8 @@
 import { Tabs, Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { tabBarInsets } from '@/utils/tabBar';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useNetworkState } from '@/hooks/useNetworkState';
 import { useSyncEngine } from '@/hooks/useSyncEngine';
@@ -46,6 +48,8 @@ export default function AppLayout() {
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const initialized = useAuthStore((s) => s.initialized);
   const haptics = useHaptics();
+  // Real bottom inset (system navigation bar / home indicator): the tab bar ends above it.
+  const insets = useSafeAreaInsets();
   const { loadBlockList } = useBlockStore();
   // Subscribes and keeps chatStore current for badge counts
   useDirectChats();
@@ -75,9 +79,7 @@ export default function AppLayout() {
         tabBarStyle: {
           backgroundColor: '#FFFFFF',
           borderTopWidth: 0,
-          height: 72,
-          paddingTop: 6,
-          paddingBottom: 8,
+          ...tabBarInsets(insets.bottom),
           shadowColor: '#000000',
           shadowOffset: { width: 0, height: -2 },
           shadowOpacity: 0.08,

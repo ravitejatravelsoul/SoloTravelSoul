@@ -225,6 +225,43 @@ test('upload refused for a suspended/deleting account says so instead of asking 
   await assert.rejects(m.uploadMediaFromUri('file:///a.jpg', 'post'), (e) => e.code === 'auth/expired');
 });
 
+test('tab bar sits above the system navigation: height and padding follow the real bottom inset (SM-S711U, 2026-10-18)', () => {
+  const { tabBarInsets } = mobile('apps/mobile/utils/tabBar.ts', {});
+  // React Navigation's own height rule (its source, other imports stubbed): a numeric style
+  // height replaces the inset-aware height, so ours must include the inset.
+  const getTabBarHeight = (() => {
+    const ts = require(path.join(root, 'node_modules/typescript'));
+    const file = path.join(root, 'node_modules/@react-navigation/bottom-tabs/src/views/BottomTabBar.tsx');
+    const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React } }).outputText;
+    const stub = new Proxy(function stub() { return stub; }, { get: (t, k) => (k === '__esModule' ? false : k === Symbol.toPrimitive ? () => '' : stub), apply: () => stub, construct: () => stub });
+    const rn = { StyleSheet: { flatten: (st) => (Array.isArray(st) ? Object.assign({}, ...st.flat(Infinity).filter(Boolean)) : st || {}), create: (o) => o, hairlineWidth: 1 }, Platform: { OS: 'android', select: (o) => o.android ?? o.default } };
+    const m = { exports: {} };
+    new Function('module', 'exports', 'require', code)(m, m.exports, (n) => (n === 'react-native' ? new Proxy(rn, { get: (t, k) => (k in t ? t[k] : stub) }) : stub));
+    return m.exports.getTabBarHeight;
+  })();
+  const state = { index: 0, routes: [{ key: 'a' }] };
+  const descriptors = { a: { options: { tabBarPosition: 'bottom' } } };
+  const modes = { 'no inset (older Android, web)': 0, 'Android gesture navigation': 24, 'iPhone home indicator': 34, 'Android three-button navigation': 48 };
+  const content = [];
+  for (const [mode, bottom] of Object.entries(modes)) {
+    const style = tabBarInsets(bottom);
+    const height = getTabBarHeight({ state, descriptors, dimensions: { width: 412, height: 915 }, insets: { top: 0, bottom, left: 0, right: 0 }, style });
+    assert.equal(height, style.height, mode);
+    // The system area is fully below the tab content: no overlap.
+    assert.ok(style.paddingBottom >= bottom, `${mode}: padding ${style.paddingBottom} < inset ${bottom}`);
+    // No double padding: never inset + extra spacing once a system inset exists.
+    assert.equal(style.paddingBottom, Math.max(bottom, 8), mode);
+    content.push(height - style.paddingTop - style.paddingBottom);
+  }
+  assert.equal(new Set(content).size, 1, 'icons and labels keep the same usable height in every mode');
+  assert.equal(tabBarInsets(0).height, 72, 'unchanged where there is no system inset');
+  const layout = fs.readFileSync(path.join(root, 'apps/mobile/app/(app)/_layout.tsx'), 'utf8');
+  assert.match(layout, /const insets = useSafeAreaInsets\(\);/);
+  assert.match(layout, /\.\.\.tabBarInsets\(insets\.bottom\)/);
+  assert.doesNotMatch(layout, /height: 72,|paddingBottom: 8,/, 'no fixed height/padding that hides the inset');
+  assert.match(layout, /tabBarHideOnKeyboard: true/);
+});
+
 test('native Android findings (staging APK, 2026-10-09) stay fixed', () => {
   const read = (f) => fs.readFileSync(path.join(root, 'apps/mobile', f), 'utf8');
   const walk = (d, out = []) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p, out); else if (/\.tsx?$/.test(e.name)) out.push(p); } return out; };
