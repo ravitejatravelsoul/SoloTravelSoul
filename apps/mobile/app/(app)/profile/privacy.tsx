@@ -11,17 +11,19 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui';
-import { useProfile } from '@/hooks/useProfile';
+import { useUIStore } from '@/stores/uiStore';
 import { useAuthStore } from '@/stores/authStore';
 import { updateProfileVisibility } from '@solotravelsoul/firebase';
 import type { UserProfile } from '@solotravelsoul/shared';
 import { useTripStore } from '@/stores/tripStore';
-import { syncDiscovery, leaveDiscovery, upcomingTrips } from '@/utils/discovery';
+import { applyDiscoverySettings, upcomingTrips } from '@/utils/discovery';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 
 export default function PrivacySettingsScreen() {
-  const { profile, updateProfile } = useProfile();
+  const profile = useAuthStore((s) => s.profile);
+  const setProfile = useAuthStore((s) => s.setProfile);
   const user = useAuthStore((s) => s.user);
+  const addToast = useUIStore((s) => s.addToast);
 
   const [isPublic, setIsPublic] = useState(profile?.profileVisibility === 'public');
   const [discoverable, setDiscoverable] = useState(profile?.showInNearbyTravelers ?? false);
@@ -29,6 +31,7 @@ export default function PrivacySettingsScreen() {
   const [savingDiscovery, setSavingDiscovery] = useState(false);
   const [shareCompat, setShareCompat] = useState(profile?.shareCompatibility === true);
   const [savingShare, setSavingShare] = useState(false);
+  const [savingTrip, setSavingTrip] = useState(false);
   const trips = useTripStore((s) => s.trips);
   const shareableTrips = upcomingTrips(trips);
   const sharedTripId = profile?.discoveryTripId ?? null;
@@ -39,23 +42,36 @@ export default function PrivacySettingsScreen() {
     setShareCompat(profile?.shareCompatibility === true);
   }, [profile?.profileVisibility, profile?.showInNearbyTravelers, profile?.shareCompatibility]);
 
-  /** Saves a discovery-related setting, then rewrites the discovery record from the new profile. */
-  const saveAndSync = async (patch: Partial<UserProfile>) => {
-    if (!user || !profile) return;
-    await updateProfile(patch);
-    await syncDiscovery(user.uid, { ...profile, ...patch } as UserProfile, trips).catch(() => {});
+  /**
+   * Saves a discovery setting and the discovery record together (one batch). Success is
+   * reported only after both are written; on failure nothing changed and we say so.
+   */
+  const saveDiscovery = async (patch: Partial<UserProfile>): Promise<boolean> => {
+    if (!user || !profile) return false;
+    try {
+      const next = await applyDiscoverySettings(user.uid, profile, patch, trips);
+      if (useAuthStore.getState().user?.uid === user.uid) setProfile(next);
+      addToast('Discovery settings updated.', 'success');
+      return true;
+    } catch {
+      addToast('Could not update discovery settings. Nothing was changed; please try again.', 'error');
+      return false;
+    }
   };
 
   const handleShareToggle = async (value: boolean) => {
     if (savingShare) return;
     setSavingShare(true);
     setShareCompat(value);
-    try { await saveAndSync({ shareCompatibility: value }); } finally { setSavingShare(false); }
+    if (!(await saveDiscovery({ shareCompatibility: value }))) setShareCompat(!value);
+    setSavingShare(false);
   };
 
   const handleSharedTrip = async (tripId: string | null) => {
-    if (tripId === sharedTripId) return;
-    await saveAndSync({ discoveryTripId: tripId });
+    if (tripId === sharedTripId || savingTrip) return;
+    setSavingTrip(true);
+    await saveDiscovery({ discoveryTripId: tripId });
+    setSavingTrip(false);
   };
 
   const handleVisibilityToggle = async (value: boolean) => {
@@ -63,10 +79,15 @@ export default function PrivacySettingsScreen() {
     setSavingVisibility(true);
     setIsPublic(value);
     try {
+      // One batch: going private also turns discovery off and removes the discovery record.
       await updateProfileVisibility(user.uid, profile, value ? 'public' : 'private');
-      await updateProfile({ profileVisibility: value ? 'public' : 'private' });
+      if (useAuthStore.getState().user?.uid === user.uid) {
+        setProfile({ ...profile, profileVisibility: value ? 'public' : 'private', ...(value ? {} : { showInNearbyTravelers: false }) });
+      }
+      addToast('Profile visibility updated.', 'success');
     } catch {
       setIsPublic(!value);
+      addToast('Could not update profile visibility. Nothing was changed; please try again.', 'error');
     } finally {
       setSavingVisibility(false);
     }
@@ -76,18 +97,8 @@ export default function PrivacySettingsScreen() {
     if (!user || !profile || savingDiscovery) return;
     setSavingDiscovery(true);
     setDiscoverable(value);
-    try {
-      await updateProfile({ showInNearbyTravelers: value });
-      if (value) {
-        await syncDiscovery(user.uid, { ...profile, showInNearbyTravelers: true }, trips);
-      } else {
-        await leaveDiscovery(user.uid);
-      }
-    } catch {
-      setDiscoverable(!value);
-    } finally {
-      setSavingDiscovery(false);
-    }
+    if (!(await saveDiscovery({ showInNearbyTravelers: value }))) setDiscoverable(!value);
+    setSavingDiscovery(false);
   };
 
   return (

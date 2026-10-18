@@ -20,10 +20,11 @@
   writeBatch,
   increment,
   runTransaction,
+  connectFirestoreEmulator,
   type DocumentData,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore';
-import { app } from './config';
+import { app, emulatorHost } from './config';
 
 function isOfflineError(err: unknown): boolean {
   const code = (err as { code?: string }).code;
@@ -57,7 +58,7 @@ import type {
   RequestStatus,
   ReportTargetType,
 } from '@solotravelsoul/shared';
-import { DEFAULT_USER_PROFILE, REPORT_HIDE_THRESHOLD, destinationKey as toDestinationKey, discoveryRecordFields } from '@solotravelsoul/shared';
+import { DEFAULT_USER_PROFILE, REPORT_HIDE_THRESHOLD, destinationKey as toDestinationKey, discoveryRecordFields, isDiscoverable } from '@solotravelsoul/shared';
 import type { SharedTrip } from '@solotravelsoul/shared';
 
 // Use memoryLocalCache so documents fetched this session are reused if
@@ -65,9 +66,11 @@ import type { SharedTrip } from '@solotravelsoul/shared';
 // initializeFirestore can only be called once per app â€” guard against HMR re-runs.
 function createDb() {
   try {
-    return initializeFirestore(app, {
+    const created = initializeFirestore(app, {
       localCache: memoryLocalCache(),
     });
+    if (emulatorHost) connectFirestoreEmulator(created, emulatorHost, 8188);
+    return created;
   } catch {
     // Fast refresh â€” already initialized, return existing instance.
     return getFirestore(app);
@@ -180,25 +183,48 @@ export async function createTrip(
   return ref.id;
 }
 
+/**
+ * The trip shown in discovery changed. `profile` is the user's current profile; when the
+ * user is discoverable the record is rewritten with `sharedTrip` (null removes the trip
+ * details) in the same batch as the trip write. Consent is never changed here.
+ */
+export interface TripDiscoveryChange { profile: UserProfile; sharedTrip?: SharedTrip | null }
+
 export async function updateTrip(
   uid: string,
   tripId: string,
   updates: Partial<
     Pick<PlannedTrip, 'destination' | 'startDate' | 'endDate' | 'notes' | 'coverPhotoURL'>
-  >
+  >,
+  discovery?: TripDiscoveryChange
 ): Promise<void> {
   const payload: Record<string, unknown> = { ...updates, updatedAt: serverTimestamp() };
   if (updates.startDate) payload.startDate = dateToTs(updates.startDate);
   if (updates.endDate) payload.endDate = dateToTs(updates.endDate);
-  await updateDoc(doc(db, 'users', uid, 'trips', tripId), payload);
+  if (!discovery || !isDiscoverable(discovery.profile)) {
+    await updateDoc(doc(db, 'users', uid, 'trips', tripId), payload);
+    return;
+  }
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'users', uid, 'trips', tripId), payload);
+  batch.set(doc(db, 'nearbyTravelers', uid), discoveryRecordData(uid, discovery.profile, discovery.sharedTrip ?? null));
+  await batch.commit();
 }
 
-// Soft delete â€” keeps data, just hides from lists.
-export async function archiveTrip(uid: string, tripId: string): Promise<void> {
-  await updateDoc(doc(db, 'users', uid, 'trips', tripId), {
-    isArchived: true,
-    updatedAt: serverTimestamp(),
-  });
+// Soft delete â€” keeps data, just hides from lists. Archiving the trip shown in
+// discovery also clears that choice and removes its details from the record (same batch).
+export async function archiveTrip(uid: string, tripId: string, discovery?: TripDiscoveryChange): Promise<void> {
+  const tripWrite = { isArchived: true, updatedAt: serverTimestamp() };
+  if (!discovery) {
+    await updateDoc(doc(db, 'users', uid, 'trips', tripId), tripWrite);
+    return;
+  }
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'users', uid, 'trips', tripId), tripWrite);
+  batch.update(doc(db, 'users', uid), { discoveryTripId: null, updatedAt: serverTimestamp() });
+  const after = { ...discovery.profile, discoveryTripId: null };
+  if (isDiscoverable(after)) batch.set(doc(db, 'nearbyTravelers', uid), discoveryRecordData(uid, after, null));
+  await batch.commit();
 }
 
 // â”€â”€ Itinerary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -489,12 +515,7 @@ export async function getPublicProfile(uid: string): Promise<PublicProfile | nul
   }
 }
 
-export async function upsertPublicProfile(
-  uid: string,
-  profile: UserProfile
-): Promise<void> {
-  const batch = writeBatch(db);
-
+function publicProfileWrites(batch: ReturnType<typeof writeBatch>, uid: string, profile: UserProfile): void {
   const communityFields = {
     travelStyles: profile.travelStyles ?? [],
     countriesVisited: profile.countriesVisited ?? [],
@@ -528,7 +549,14 @@ export async function upsertPublicProfile(
     profileVisibility: profile.profileVisibility ?? 'private',
     updatedAt: serverTimestamp(),
   }, { merge: true });
+}
 
+export async function upsertPublicProfile(
+  uid: string,
+  profile: UserProfile
+): Promise<void> {
+  const batch = writeBatch(db);
+  publicProfileWrites(batch, uid, profile);
   await batch.commit();
 }
 
@@ -541,17 +569,14 @@ export async function updateProfileVisibility(
   profile: UserProfile,
   visibility: ProfileVisibility
 ): Promise<void> {
-  await updateDoc(doc(db, 'users', uid), {
-    profileVisibility: visibility,
-    updatedAt: serverTimestamp(),
-  });
-  // Keep relationship counters when visibility changes. Rules hide private profiles.
-  await upsertPublicProfile(uid, { ...profile, profileVisibility: visibility });
-  if (visibility !== 'public') {
-    // Going private must also remove any stale nearbyTravelers opt-in doc —
-    // otherwise the user keeps showing up in other travelers' Nearby list.
-    await deleteNearbyTraveler(uid);
-  }
+  // One batch: going private also turns discovery off and removes the discovery record,
+  // so no write can leave the user listed (firestore.rules discoveryConsistent()).
+  // Relationship counters are kept; rules hide private profiles.
+  const next: UserProfile = { ...profile, profileVisibility: visibility, ...(visibility !== 'public' ? { showInNearbyTravelers: false } : {}) };
+  const batch = writeBatch(db);
+  publicProfileWrites(batch, uid, next);
+  if (visibility !== 'public') batch.delete(doc(db, 'nearbyTravelers', uid));
+  await batch.commit();
 }
 
 // â”€â”€ Community: Public Trips â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1266,6 +1291,17 @@ function nearbyTravelerFromDoc(d: DocumentData): NearbyTraveler {
  * Pace, schedule and group size are included only with the user's shareCompatibility
  * consent, and a trip only when the user chose one to share (destination and dates).
  */
+function discoveryRecordData(uid: string, profile: UserProfile, sharedTrip: SharedTrip | null) {
+  // Trip details only for a trip the user chose (rules require discoveryTripId).
+  const f = discoveryRecordFields(uid, profile, profile.discoveryTripId ? sharedTrip : null);
+  return {
+    ...f,
+    destinationStartDate: f.destinationStartDate ? dateToTs(f.destinationStartDate) : null,
+    destinationEndDate: f.destinationEndDate ? dateToTs(f.destinationEndDate) : null,
+    updatedAt: serverTimestamp(),
+  };
+}
+
 export async function upsertNearbyTraveler(
   uid: string,
   profile: UserProfile,
@@ -1278,6 +1314,26 @@ export async function upsertNearbyTraveler(
     destinationEndDate: f.destinationEndDate ? dateToTs(f.destinationEndDate) : null,
     updatedAt: serverTimestamp(),
   });
+}
+
+/**
+ * Saves profile settings that affect discovery (consent, opt-in, shared trip, preferences)
+ * together with the discovery record, in one batch: the record is rewritten from the new
+ * profile while discoverable and deleted otherwise. Either both change or neither does;
+ * the promise rejects on failure (callers must not report success).
+ */
+export async function setDiscoverySettings(
+  uid: string,
+  profile: UserProfile,
+  patch: Partial<UserProfile>,
+  sharedTrip: SharedTrip | null
+): Promise<void> {
+  const next = { ...profile, ...patch } as UserProfile;
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'users', uid), { ...patch, updatedAt: serverTimestamp() });
+  if (isDiscoverable(next)) batch.set(doc(db, 'nearbyTravelers', uid), discoveryRecordData(uid, next, sharedTrip));
+  else if (isDiscoverable(profile) || profile.showInNearbyTravelers) batch.delete(doc(db, 'nearbyTravelers', uid));
+  await batch.commit();
 }
 
 export async function deleteNearbyTraveler(uid: string): Promise<void> {

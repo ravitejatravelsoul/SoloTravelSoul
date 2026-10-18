@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useTripStore } from '@/stores/tripStore';
 import { useUIStore } from '@/stores/uiStore';
 import { cacheTrips, getCachedTrips, setLastSync } from '@/utils/offlineCache';
+import { tripDiscoveryUpdate } from '@/utils/discovery';
 
 export function useTrips() {
   const uid = useAuthStore((s) => s.user?.uid);
@@ -27,6 +28,13 @@ export function useTrips() {
     );
   const addToast = useUIStore((s) => s.addToast);
   const [refreshing, setRefreshing] = useState(false);
+
+  // The trip shown in discovery: its edits update, and archiving removes, its discovery
+  // details in the same write (never another trip; consent unchanged).
+  const discoveryFor = useCallback((id: string, tripAfter: PlannedTrip | null = null) => {
+    const u = tripDiscoveryUpdate(useAuthStore.getState().profile, id, tripAfter);
+    return u ? { profile: u.profile, sharedTrip: u.sharedTrip } : undefined;
+  }, []);
 
   useEffect(() => {
     if (!uid) return;
@@ -83,27 +91,33 @@ export function useTrips() {
     ) => {
       if (!uid) return;
       try {
-        await fbUpdateTrip(uid, id, updates);
+        const current = useTripStore.getState().trips.find((t) => t.id === id) ?? null;
+        await fbUpdateTrip(uid, id, updates, discoveryFor(id, { ...(current ?? ({} as PlannedTrip)), ...updates, id }));
         patchTrip(id, updates);
       } catch {
         addToast('Could not update trip.', 'error');
       }
     },
-    [uid, patchTrip, addToast]
+    [uid, patchTrip, addToast, discoveryFor]
   );
 
   const deleteTrip = useCallback(
     async (id: string) => {
       if (!uid) return;
       try {
-        await fbArchiveTrip(uid, id);
+        const discovery = discoveryFor(id);
+        await fbArchiveTrip(uid, id, discoveryFor(id));
+        if (discovery) {
+          const profile = useAuthStore.getState().profile;
+          if (profile && useAuthStore.getState().user?.uid === uid) useAuthStore.getState().setProfile({ ...profile, discoveryTripId: null });
+        }
         removeTrip(id);
         addToast('Trip deleted.', 'success');
       } catch {
         addToast('Could not delete trip.', 'error');
       }
     },
-    [uid, removeTrip, addToast]
+    [uid, removeTrip, addToast, discoveryFor]
   );
 
   const upcoming = trips.filter((t) => t.endDate >= new Date());

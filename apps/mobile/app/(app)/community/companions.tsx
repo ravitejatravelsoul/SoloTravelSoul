@@ -4,29 +4,23 @@
 // and bounded (≤ 30 travelers, ≤ 20 trips, one batched owner lookup); no listeners.
 // Actions reuse existing flows: view profile, view trip / request to join. Nothing is sent
 // automatically.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Avatar, Button, Chip } from '@/components/ui';
 import { getCompanionTravelers, getCompanionTrips, getDiscoveryRecords } from '@solotravelsoul/firebase';
-import {
-  compareTravelers, rankByCompatibility, preferencesOf, destinationKey, isDiscoverable, getUserInitials, LEVEL_LABELS,
-} from '@solotravelsoul/shared';
-import type { CompatibilityResult, NearbyTraveler, PlannedTrip, PublicTrip, TripWindow } from '@solotravelsoul/shared';
+import { preferencesOf, isDiscoverable, getUserInitials, LEVEL_LABELS, PREFERENCE_LABELS } from '@solotravelsoul/shared';
+import type { CompatibilityResult, NearbyTraveler, PlannedTrip } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useBlockStore } from '@/stores/blockStore';
 import { useTripStore } from '@/stores/tripStore';
 import { upcomingTrips } from '@/utils/discovery';
+import { buildMatches, latestOnly, EMPTY_RAW } from '@/utils/companions';
+import type { RawMatches } from '@/utils/companions';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 
-type TravelerItem = { id: string; name: string; traveler: NearbyTraveler; result: CompatibilityResult };
-type TripItem = { id: string; name: string; trip: PublicTrip; owner: NearbyTraveler | null; result: CompatibilityResult };
-
-const windowOf = (t: { destination: string | null; startDate: Date | null; endDate: Date | null }): TripWindow => ({
-  destination: t.destination, destinationKey: destinationKey(t.destination), startDate: t.startDate, endDate: t.endDate,
-});
 const range = (a: Date, b: Date) => `${a.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – ${b.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`;
 
 export default function CompanionsScreen() {
@@ -39,43 +33,46 @@ export default function CompanionsScreen() {
   const [tripId, setTripId] = useState<string | null>(params.tripId ?? null);
   const selected: PlannedTrip | null = myTrips.find((t) => t.id === tripId) ?? myTrips[0] ?? null;
 
-  const [travelers, setTravelers] = useState<TravelerItem[]>([]);
-  const [publicTrips, setPublicTrips] = useState<TripItem[]>([]);
+  // Raw query results; the cards are derived from them below.
+  const [raw, setRaw] = useState<RawMatches>(EMPTY_RAW);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const discoverable = isDiscoverable(profile);
   const me = useMemo(() => preferencesOf(profile), [profile]);
+  const guard = useRef(latestOnly()).current;
 
   const load = useCallback(async () => {
-    if (!selected) return;
-    setLoading(true);
+    const token = guard.begin();
+    setRaw(EMPTY_RAW); // obsolete cards disappear at once
     setError(false);
-    const mine = windowOf(selected);
-    const hidden = (other: string) => other === uid || blockedUids.includes(other);
+    if (!selected || !uid) { setLoading(false); return; }
+    setLoading(true);
     try {
       // Travelers: only for people who are discoverable themselves (reciprocal, as Nearby Travelers).
       const [records, tripsThere] = await Promise.all([
         discoverable ? getCompanionTravelers(selected.destination) : Promise.resolve([] as NearbyTraveler[]),
         getCompanionTrips(selected.destination),
       ]);
-      setTravelers(rankByCompatibility(records.filter((r) => !hidden(r.uid)).map((r) => ({
-        id: r.uid, name: r.displayName, traveler: r,
-        result: compareTravelers(me, r, mine, windowOf({ destination: r.destination, startDate: r.destinationStartDate, endDate: r.destinationEndDate })),
-      }))));
-      const openTrips = tripsThere.filter((t) => !hidden(t.ownerUid) && t.tripId !== selected.id);
-      const owners = await getDiscoveryRecords(openTrips.map((t) => t.ownerUid));
-      setPublicTrips(rankByCompatibility(openTrips.map((t) => {
-        const owner = owners.find((o) => o.uid === t.ownerUid) ?? null;
-        return { id: t.tripId, name: t.title, trip: t, owner, result: compareTravelers(me, owner ?? {}, mine, windowOf(t)) };
-      })));
+      if (!guard.isCurrent(token)) return;
+      const owners = await getDiscoveryRecords(tripsThere.filter((t) => t.ownerUid !== uid).map((t) => t.ownerUid));
+      if (!guard.isCurrent(token)) return;
+      setRaw({ travelers: records, trips: tripsThere, owners });
     } catch {
-      setError(true);
+      if (guard.isCurrent(token)) setError(true);
     } finally {
-      setLoading(false);
+      if (guard.isCurrent(token)) setLoading(false);
     }
-  }, [selected, uid, blockedUids, discoverable, me]);
+  }, [guard, selected, uid, discoverable]);
 
-  useEffect(() => { load(); }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Reload when the trip, the account or discoverability changes; a newer load (or leaving
+  // the screen) makes any older response irrelevant.
+  useEffect(() => {
+    load();
+    return () => guard.cancel();
+  }, [selected?.id, uid, discoverable]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Preferences, consent and block changes re-rank or hide cards without another query.
+  const { travelers, trips: publicTrips } = useMemo(() => buildMatches(raw, { uid, blockedUids, me, selected }), [raw, uid, blockedUids, me, selected]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -172,9 +169,9 @@ export function MatchCard({ title, subtitle, photoURL, initialsFrom, result, act
   title: string; subtitle: string; photoURL: string | null; initialsFrom?: string; result: CompatibilityResult;
   actionLabel: string; onAction: () => void; ownerNote?: string | null;
 }) {
-  const levelColor = result.level === 'strong' ? Colors.success : result.level === 'good' ? Colors.primary : Colors.textSecondary;
+  const levelColor = result.level === 'strong' ? Colors.success : result.level === 'good' ? Colors.primary : result.level === 'dates_differ' ? Colors.warning : Colors.textSecondary;
   return (
-    <View style={styles.card} accessible accessibilityLabel={`${title}. ${LEVEL_LABELS[result.level]}. ${result.reasons.join('. ')}`}>
+    <View style={styles.card} accessible accessibilityLabel={`${title}. ${LEVEL_LABELS[result.level]}. ${result.dates.label ? `${result.dates.label}. ` : ''}Preferences: ${PREFERENCE_LABELS[result.preferences.level]}. ${result.reasons.join('. ')}`}>
       <View style={styles.cardHeader}>
         <Avatar uri={photoURL} initials={getUserInitials(initialsFrom ?? title)} size={44} />
         <View style={{ flex: 1 }}>
@@ -182,6 +179,16 @@ export function MatchCard({ title, subtitle, photoURL, initialsFrom, result, act
           {subtitle ? <Text style={styles.cardSubtitle}>{subtitle}</Text> : null}
         </View>
         <Text style={[styles.level, { color: levelColor, borderColor: levelColor }]}>{LEVEL_LABELS[result.level]}</Text>
+      </View>
+      {result.dates.label ? (
+        <View style={styles.line}>
+          <Ionicons name="calendar-outline" size={14} color={result.dates.status === 'overlap' ? Colors.success : Colors.textSecondary} />
+          <Text style={[styles.lineText, styles.strong]}>{result.dates.label}</Text>
+        </View>
+      ) : null}
+      <View style={styles.line}>
+        <Ionicons name="options-outline" size={14} color={Colors.textSecondary} />
+        <Text style={[styles.lineText, styles.strong]}>Preferences: {PREFERENCE_LABELS[result.preferences.level]}</Text>
       </View>
       {result.reasons.map((r) => (
         <View key={r} style={styles.line}><Ionicons name="checkmark-circle" size={14} color={Colors.success} /><Text style={styles.lineText}>{r}</Text></View>
@@ -222,4 +229,5 @@ const styles = StyleSheet.create({
   line: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.xs },
   lineText: { flex: 1, fontSize: FontSize.sm, color: Colors.textPrimary, lineHeight: 19 },
   notProvided: { fontSize: FontSize.xs, color: Colors.textSecondary, fontStyle: 'italic' },
+  strong: { fontWeight: FontWeight.semibold },
 });

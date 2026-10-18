@@ -257,10 +257,12 @@ service cloud.firestore {
     }
     // Discovery is explicit opt-in: a record exists only for a public profile with
     // showInNearbyTravelers, holds only these fields, and carries pace, schedule and
-    // group size only with the owner's shareCompatibility consent.
+    // group size only with the owner's shareCompatibility consent, and trip details only
+    // for a trip the owner chose. Judged on the owner's settings after this write, so
+    // settings and record change together in one batch.
     function validDiscoveryRecord(uid) {
       let d = request.resource.data;
-      let owner = get(/databases/$(database)/documents/users/$(uid)).data;
+      let owner = getAfter(/databases/$(database)/documents/users/$(uid)).data;
       return d.keys().hasOnly(['uid', 'displayName', 'photoURL', 'currentCity', 'travelStyles', 'interests', 'languages',
           'travelPace', 'travelSchedule', 'groupSizePreference', 'destination', 'destinationKey',
           'destinationStartDate', 'destinationEndDate', 'updatedAt'])
@@ -275,8 +277,24 @@ service cloud.firestore {
         && ((d.get('travelPace', null) == null && d.get('travelSchedule', null) == null && d.get('groupSizePreference', null) == null)
           || owner.get('shareCompatibility', false) == true)
         && validSharedTrip(d)
+        && (d.get('destinationKey', null) == null || owner.get('discoveryTripId', null) != null)
         && d.updatedAt == request.time
         && cleanFields(d, ['displayName', 'currentCity', 'destination']);
+    }
+    // A write to users/{uid} may not leave shared data behind: after it, a discovery
+    // record may exist only while the profile is public and discoverable, may carry
+    // pace/schedule/group size only with consent, and trip details only with a chosen
+    // trip. Withdrawal, opt-out and going private therefore update or delete the record
+    // in the same batch (setDiscoverySettings / updateProfileVisibility).
+    function discoveryConsistent(uid) {
+      let after = request.resource.data;
+      let path = /databases/$(database)/documents/nearbyTravelers/$(uid);
+      return !existsAfter(path)
+        || (after.get('profileVisibility', 'private') == 'public' && after.get('showInNearbyTravelers', false) == true
+          && (after.get('shareCompatibility', false) == true
+            || (getAfter(path).data.get('travelPace', null) == null && getAfter(path).data.get('travelSchedule', null) == null
+              && getAfter(path).data.get('groupSizePreference', null) == null))
+          && (after.get('discoveryTripId', null) != null || getAfter(path).data.get('destinationKey', null) == null));
     }
 
     // ── Default: deny everything ──────────────────────────────────────
@@ -288,7 +306,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow create, update: if notDeleting() && (request.auth != null && request.auth.uid == userId)
-        && validUserPreferences();
+        && validUserPreferences() && discoveryConsistent(userId);
       allow delete: if notDeleting() && (request.auth != null && request.auth.uid == userId);
 
       // ── Trips ─────────────────────────────────────────────────────
@@ -552,22 +570,25 @@ service cloud.firestore {
         && (resource == null
             || resource.data.ownerUid == request.auth.uid
             || resource.data.requestorUid == request.auth.uid);
+      // pending → approved | rejected (organizer); pending → cancelled (requester);
+      // cancelled → pending (requester asks again; create-time checks apply again).
+      // Decisions are final. requestId, tripId, ownerUid and requestorUid never change.
       allow update: if notDeleting() && (request.auth != null
         && resource != null
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['requestId', 'tripId', 'ownerUid', 'requestorUid'])
         && (
           (resource.data.ownerUid == request.auth.uid
-            && request.resource.data.status in ['approved', 'rejected'])
+            && (resource.data.status == 'pending'
+              || (resource.data.status == 'approved' && request.resource.data.status == 'approved'))
+            && request.resource.data.status in ['approved', 'rejected']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
           || (resource.data.requestorUid == request.auth.uid
-              && request.resource.data.status == 'cancelled')
-          // Asking again after cancelling (not after a rejection): same trip, owner and
-          // requester; the create-time checks (blocking, deleting organizer) apply again.
+            && resource.data.status == 'pending' && request.resource.data.status == 'cancelled'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
           || (resource.data.requestorUid == request.auth.uid && resource.data.status == 'cancelled'
-              && request.resource.data.status == 'pending'
-              && request.resource.data.requestorUid == request.auth.uid
-              && request.resource.data.ownerUid == resource.data.ownerUid
-              && request.resource.data.tripId == resource.data.tripId
-              && !deleting(resource.data.ownerUid)
-              && unblocked(request.auth.uid, resource.data.ownerUid))
+            && request.resource.data.status == 'pending'
+            && !deleting(resource.data.ownerUid)
+            && unblocked(request.auth.uid, resource.data.ownerUid))
         ));
       allow delete: if false;
     }

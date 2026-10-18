@@ -17,11 +17,12 @@ import { useProfile } from '@/hooks/useProfile';
 import { useUpload } from '@/hooks/useUpload';
 import { upsertUserLookup, upsertPublicProfile, updateUserProfile, updateOwnerPhotoInCommunityDocs } from '@solotravelsoul/firebase';
 import { uploadProfilePhotoFromUri, isUploadsEnabled } from '@/utils/storageUpload';
-import { getUserInitials, preferencesOf, sanitizePreferences, isDiscoverable } from '@solotravelsoul/shared';
-import type { TravelPreferences, UserProfile } from '@solotravelsoul/shared';
+import { getUserInitials, preferencesOf, sanitizePreferences } from '@solotravelsoul/shared';
+import type { TravelPreferences } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useTripStore } from '@/stores/tripStore';
-import { syncDiscovery } from '@/utils/discovery';
+import { saveProfileWithDiscovery } from '@/utils/discovery';
+import { useUIStore } from '@/stores/uiStore';
 import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 
 const BIO_MAX = 500;
@@ -35,7 +36,8 @@ function SectionHeader({ title }: { title: string }) {
 }
 
 export default function EditProfileScreen() {
-  const { profile, updateProfile } = useProfile();
+  const { profile } = useProfile();
+  const addToast = useUIStore((s) => s.addToast);
   const user = useAuthStore((s) => s.user);
   const setProfile = useAuthStore((s) => s.setProfile);
 
@@ -112,7 +114,11 @@ export default function EditProfileScreen() {
         ...(avatarUri !== null ? { photoURL: avatarUri } : {}),
       };
 
-      await updateProfile(updatedProfile);
+      // Profile and discovery record are saved together while discoverable, so removed or
+      // changed answers never stay exposed; failures are reported, not hidden.
+      if (!user || !profile) return;
+      const saved = await saveProfileWithDiscovery(user.uid, profile, updatedProfile, trips);
+      if (useAuthStore.getState().user?.uid === user.uid) setProfile(saved);
 
       if (user && trimmedName) {
         const initials = getUserInitials(trimmedName) || trimmedName[0]?.toUpperCase() || 'T';
@@ -120,16 +126,14 @@ export default function EditProfileScreen() {
         await upsertUserLookup(user.uid, trimmedName, user.email ?? '', initials, latestPhotoURL).catch(() => {});
       }
 
-      if (user && profile && profile.profileVisibility === 'public') {
-        const fullProfile = { ...profile, ...updatedProfile, id: user.uid };
-        await upsertPublicProfile(user.uid, fullProfile).catch(() => {});
-      }
-      // Keep the discovery record current (only while discoverable; consent decides what it holds).
-      if (user && profile && isDiscoverable(profile)) {
-        await syncDiscovery(user.uid, { ...profile, ...updatedProfile, id: user.uid } as UserProfile, trips).catch(() => {});
+      if (profile.profileVisibility === 'public') {
+        await upsertPublicProfile(user.uid, { ...saved, id: user.uid });
       }
 
+      addToast('Profile updated.', 'success');
       router.back();
+    } catch {
+      addToast('Could not save your profile. Please check your connection and try again.', 'error');
     } finally {
       setSaving(false);
     }

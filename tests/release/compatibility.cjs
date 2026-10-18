@@ -38,7 +38,7 @@ test('matching: destination and date overlap come first, with an explained overl
   const r = compat.compareTravelers(ME, { ...ME }, MY_TRIP, trip('lisbon', '2026-06-08', '2026-06-20'));
   assert.equal(r.trip.match, 'overlap');
   assert.equal(r.trip.overlapDays, 3);
-  assert.equal(r.reasons[0], 'Both in Lisbon, Portugal 8 Jun–10 Jun (3 days overlap)');
+  assert.deepEqual(r.dates, { status: 'overlap', overlapDays: 3, label: 'Dates overlap: 3 days' });
   assert.equal(r.level, 'strong');
   assert.deepEqual(r.differences, []);
   assert.deepEqual(r.notProvided, []);
@@ -47,7 +47,7 @@ test('matching: destination and date overlap come first, with an explained overl
   const far = compat.compareTravelers(ME, { ...ME }, MY_TRIP, trip('Lisbon', '2026-07-01', '2026-07-05'));
   assert.equal(close.trip.overlapDays, 1);
   assert.equal(far.trip.match, 'no_overlap');
-  assert.ok(far.differences.includes('Your dates do not overlap'));
+  assert.equal(far.dates.status, 'no_overlap');
   assert.ok(close.rank > far.rank, 'date overlap outranks shared preferences');
 });
 
@@ -103,7 +103,7 @@ test('matching: deterministic and transparent; unknown attributes are ignored, n
   const a = compat.compareTravelers(ME, them, MY_TRIP, trip('Lisbon', '2026-06-03', '2026-06-04'));
   const b = compat.compareTravelers(ME, { ...them, gender: 'x', age: 30, religion: 'y', safetyScore: 1 }, MY_TRIP, trip('Lisbon', '2026-06-03', '2026-06-04'));
   assert.deepEqual(a, b);
-  assert.deepEqual(Object.keys(a).sort(), ['differences', 'level', 'notProvided', 'rank', 'reasons', 'trip', 'youHaveNotAnswered']);
+  assert.deepEqual(Object.keys(a).sort(), ['dates', 'differences', 'level', 'notProvided', 'preferences', 'rank', 'reasons', 'trip', 'youHaveNotAnswered']);
   const items = [
     { id: 'b', name: 'Bea', result: { ...a } }, { id: 'a', name: 'Ann', result: { ...a } },
     { id: 'c', name: 'Cid', result: { ...a, rank: a.rank + 1 } },
@@ -218,7 +218,7 @@ test('consent: the app syncs the record only while discoverable, removes it on o
   await discovery.leaveDiscovery('u');
   assert.deepEqual(calls[1], ['delete', 'u']);
   const privacy = read('apps/mobile/app/(app)/profile/privacy.tsx');
-  assert.match(privacy, /await leaveDiscovery\(user\.uid\)/);
+  assert.match(privacy, /saveDiscovery\(\{ showInNearbyTravelers: value \}\)/);
   assert.match(privacy, /handleShareToggle/);
   assert.match(privacy, /disabled=\{!isPublic\}/, 'discovery still requires a public profile');
 });
@@ -232,7 +232,7 @@ test('rules option lists match the app option lists', () => {
   assert.deepEqual(list('paceOptions'), prefs.PACE_OPTIONS.map((o) => o.value));
   assert.deepEqual(list('scheduleOptions'), prefs.SCHEDULE_OPTIONS.map((o) => o.value));
   assert.deepEqual(list('groupSizeOptions'), prefs.GROUP_SIZE_OPTIONS.map((o) => o.value));
-  assert.match(rules, /allow create, update: if notDeleting\(\) && \(request\.auth != null && request\.auth\.uid == userId\)\s+&& validUserPreferences\(\);/);
+  assert.match(rules, /allow create, update: if notDeleting\(\) && \(request\.auth != null && request\.auth\.uid == userId\)\s+&& validUserPreferences\(\) && discoveryConsistent\(userId\);/);
   assert.match(rules, /allow list: if request\.auth != null && request\.query\.limit <= 50;/);
 });
 
@@ -254,7 +254,7 @@ test('bounded reads: one-shot queries with fixed limits, one batched owner looku
 
 test('guards: blocked users and self are hidden; actions reuse profile / trip / join-request flows; nothing is sent automatically', () => {
   const screen = read('apps/mobile/app/(app)/community/companions.tsx');
-  assert.match(screen, /other === uid \|\| blockedUids\.includes\(other\)/);
+  assert.match(read('apps/mobile/utils/companions.ts'), /other === ctx\.uid \|\| ctx\.blockedUids\.includes\(other\)/);
   assert.match(screen, /\/\(app\)\/community\/profile\/\$\{t\.traveler\.uid\}/);
   assert.match(screen, /\/\(app\)\/discover\/trips\/\$\{t\.trip\.tripId\}/);
   assert.doesNotMatch(screen, /submitTripJoinRequest|sendDirectMessage|getOrCreateDirectChat|createGroup/);
@@ -297,6 +297,118 @@ test('privacy documentation covers preferences, consent, the shared trip and del
   assert.match(policy, /pace, schedule and preferred group size are shown to other travelers only if you turn on sharing/);
   assert.match(policy, /only its destination and dates are shown/);
   assert.match(policy, /missing answers are never treated as a mismatch/);
+});
+
+// ── Corrections (2026-10-17): wording, freshness, consent paths, shared-trip sync ──
+test('wording: known non-overlapping dates are never a Strong/Good match; dates and preferences are reported separately', () => {
+  const far = compat.compareTravelers(ME, { ...ME }, MY_TRIP, trip('Lisbon', '2026-07-01', '2026-07-05'));
+  assert.equal(far.level, 'dates_differ');
+  assert.equal(compat.LEVEL_LABELS[far.level], "Dates don't overlap");
+  assert.deepEqual(far.dates, { status: 'no_overlap', overlapDays: 0, label: "Dates don't overlap" });
+  assert.equal(far.preferences.level, 'strong', 'shared preferences are still shown, separately');
+  assert.equal(compat.PREFERENCE_LABELS[far.preferences.level], 'Strong preference match');
+  const near = compat.compareTravelers(ME, { ...ME }, MY_TRIP, trip('Lisbon', '2026-06-05', '2026-06-06'));
+  assert.equal(near.level, 'strong');
+  assert.deepEqual(near.dates, { status: 'overlap', overlapDays: 2, label: 'Dates overlap: 2 days' });
+  // Unknown dates stay unknown: neither a mismatch nor a claimed trip match.
+  const unknown = compat.compareTravelers(ME, { ...ME }, MY_TRIP, trip('Lisbon', null, null));
+  assert.equal(unknown.dates.status, 'unknown');
+  assert.equal(unknown.dates.label, 'Dates unknown');
+  assert.ok(!['strong', 'good', 'dates_differ'].includes(unknown.level), unknown.level);
+  assert.equal(unknown.preferences.level, 'strong');
+  // Without a trip (destination browsing) the level is the preference level and no dates are claimed.
+  const browse = compat.compareTravelers(ME, { ...ME });
+  assert.equal(browse.dates.status, 'not_applicable');
+  assert.equal(browse.dates.label, null);
+  assert.equal(browse.level, browse.preferences.level);
+  // Every result explains dates and preferences on separate lines in the companion card.
+  const screen = read('apps/mobile/app/(app)/community/companions.tsx');
+  assert.match(screen, /result\.dates\.label/);
+  assert.match(screen, /PREFERENCE_LABELS\[result\.preferences\.level\]/);
+  assert.doesNotMatch(read('packages/shared/src/compatibility.ts'), /reasons\.push\(`Both in/, 'date overlap is not listed as a shared preference');
+});
+
+test('freshness: only the latest load may update the screen; obsolete cards clear at once', async () => {
+  const companions = load('apps/mobile/utils/companions.ts', { '@solotravelsoul/shared': shared });
+  const guard = companions.latestOnly();
+  const first = guard.begin();
+  const second = guard.begin();
+  assert.equal(guard.isCurrent(first), false);
+  assert.equal(guard.isCurrent(second), true);
+  guard.cancel();
+  assert.equal(guard.isCurrent(second), false, 'leaving the screen or switching account invalidates loads');
+  const screen = read('apps/mobile/app/(app)/community/companions.tsx');
+  assert.match(screen, /latestOnly\(\)/);
+  assert.match(screen, /if \(!guard\.isCurrent\(token\)\) return;/);
+  assert.match(screen, /setRaw\(EMPTY_RAW\)/, 'cards clear immediately when a new load starts');
+  assert.match(screen, /\}, \[selected\?\.id, uid, discoverable\]\);/, 'reload when trip, account or discoverability changes');
+});
+
+test('freshness: matches are recomputed from raw results when preferences, consent or blocks change (no refetch)', () => {
+  const companions = load('apps/mobile/utils/companions.ts', { '@solotravelsoul/shared': shared });
+  const rec = (uid, extra = {}) => ({ uid, displayName: uid, photoURL: null, currentCity: '', travelStyles: ['solo'], interests: ['hiking'], languages: [],
+    destination: 'Lisbon', destinationKey: 'lisbon', destinationStartDate: d('2026-06-02'), destinationEndDate: d('2026-06-04'), updatedAt: d('2026-01-01'), ...extra });
+  const raw = { travelers: [rec('ana'), rec('ben'), rec('me')], trips: [], owners: [] };
+  const selected = { id: 't', destination: 'Lisbon', startDate: d('2026-06-01'), endDate: d('2026-06-10') };
+  const ctx = { uid: 'me', blockedUids: [], me: prefs.sanitizePreferences({ travelStyles: ['solo'] }), selected };
+  const a = companions.buildMatches(raw, ctx);
+  assert.deepEqual(a.travelers.map((t) => t.id).sort(), ['ana', 'ben']);
+  const blocked = companions.buildMatches(raw, { ...ctx, blockedUids: ['ben'] });
+  assert.deepEqual(blocked.travelers.map((t) => t.id), ['ana']);
+  const morePrefs = companions.buildMatches(raw, { ...ctx, me: prefs.sanitizePreferences({ travelStyles: ['solo'], interests: ['hiking'] }) });
+  assert.ok(morePrefs.travelers[0].result.reasons.some((r) => r.startsWith('Shared interests')));
+  // Results for another trip are discarded rather than shown under the current one.
+  assert.deepEqual(companions.buildMatches(raw, { ...ctx, selected: null }).travelers, []);
+  const screen = read('apps/mobile/app/(app)/community/companions.tsx');
+  assert.match(screen, /useMemo\(\(\) => buildMatches\(raw, \{ uid, blockedUids, me, selected \}\)/);
+});
+
+test('consent: settings screens save discovery changes atomically and never report success after a failed write', () => {
+  const privacy = read('apps/mobile/app/(app)/profile/privacy.tsx');
+  assert.doesNotMatch(privacy, /syncDiscovery\([^)]*\)\.catch\(\(\) => \{\}\)/);
+  assert.match(privacy, /applyDiscoverySettings\(/);
+  assert.match(privacy, /Could not update discovery settings/);
+  const setup = read('apps/mobile/app/(app)/profile/preferences.tsx');
+  const edit = read('apps/mobile/app/(app)/profile/edit.tsx');
+  for (const src of [setup, edit]) {
+    assert.doesNotMatch(src, /syncDiscovery\([^)]*\)\.catch\(\(\) => \{\}\)/);
+    assert.match(src, /saveProfileWithDiscovery\(/);
+  }
+  const util = read('apps/mobile/utils/discovery.ts');
+  assert.match(util, /setDiscoverySettings\(/);
+  const fsSrc = read('packages/firebase/src/firestore.ts');
+  const fn = fsSrc.slice(fsSrc.indexOf('export async function setDiscoverySettings'), fsSrc.indexOf('export async function setDiscoverySettings') + 1500);
+  assert.match(fn, /writeBatch\(db\)/);
+  assert.match(fn, /batch\.delete\(doc\(db, 'nearbyTravelers', uid\)\)/);
+  const vis = fsSrc.slice(fsSrc.indexOf('export async function updateProfileVisibility'), fsSrc.indexOf('export async function updateProfileVisibility') + 1500);
+  assert.match(vis, /writeBatch\(db\)/);
+});
+
+test('shared trip: edits and archiving go through the discovery-aware trip writes; nothing else is published', async () => {
+  const trips = read('apps/mobile/hooks/useTrips.ts');
+  assert.match(trips, /fbUpdateTrip\(uid, id, updates, discoveryFor\(id, \{/);
+  assert.match(trips, /fbArchiveTrip\(uid, id, discoveryFor\(id\)\)/);
+  const discovery = load('apps/mobile/utils/discovery.ts', {
+    '@solotravelsoul/firebase': { upsertNearbyTraveler: async () => {}, deleteNearbyTraveler: async () => {}, setDiscoverySettings: async () => {}, updateUserProfile: async () => {} },
+    '@solotravelsoul/shared': shared,
+  });
+  const profile = { profileVisibility: 'public', showInNearbyTravelers: true, discoveryTripId: 'lis' };
+  const t = { id: 'lis', destination: 'Lisbon', startDate: d('2026-06-01'), endDate: d('2026-06-10'), isArchived: false };
+  assert.equal(discovery.tripDiscoveryUpdate(profile, 'other', t), undefined, 'other trips never touch discovery');
+  assert.equal(discovery.tripDiscoveryUpdate({ ...profile, discoveryTripId: null }, 'lis', t), undefined);
+  const now = d('2026-05-01');
+  assert.deepEqual(discovery.tripDiscoveryUpdate(profile, 'lis', t, now).sharedTrip, { destination: 'Lisbon', startDate: t.startDate, endDate: t.endDate });
+  assert.equal(discovery.tripDiscoveryUpdate(profile, 'lis', { ...t, endDate: d('2026-04-01') }, now).sharedTrip, null, 'a trip moved into the past is no longer shown');
+  assert.equal(discovery.tripDiscoveryUpdate(profile, 'lis', null).sharedTrip, null, 'archived: details removed');
+  // Not discoverable: only the profile's trip choice is cleared, no record is written.
+  assert.equal(discovery.tripDiscoveryUpdate({ ...profile, showInNearbyTravelers: false }, 'lis', null).record, false);
+});
+
+test('local emulator switch is development-only: release bundles never connect to emulators', () => {
+  const config = read('packages/firebase/src/config.ts');
+  assert.match(config, /typeof __DEV__ !== 'undefined' && __DEV__ === true && process\.env\.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST/);
+  assert.match(read('packages/firebase/src/firestore.ts'), /if \(emulatorHost\) connectFirestoreEmulator\(created, emulatorHost, 8188\);/);
+  assert.match(read('packages/firebase/src/auth.ts'), /if \(emulatorHost\) connectAuthEmulator\(created, `http:\/\/\$\{emulatorHost\}:9189`/);
 });
 
 (async () => {

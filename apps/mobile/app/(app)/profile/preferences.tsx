@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button, ProgressBar } from '@/components/ui';
 import { PreferenceField, STEP_TITLES } from '@/components/profile/PreferenceFields';
-import { updateUserProfile, upsertPublicProfile } from '@solotravelsoul/firebase';
+import { upsertPublicProfile } from '@solotravelsoul/firebase';
 import {
   PREFERENCE_STEPS, preferencesOf, sanitizePreferences, resumeStep, progressAt, finishedProgress, isDiscoverable,
 } from '@solotravelsoul/shared';
@@ -16,7 +16,7 @@ import type { PreferenceStep, TravelPreferences, UserProfile } from '@solotravel
 import { useAuthStore } from '@/stores/authStore';
 import { useTripStore } from '@/stores/tripStore';
 import { useUIStore } from '@/stores/uiStore';
-import { syncDiscovery } from '@/utils/discovery';
+import { saveProfileWithDiscovery } from '@/utils/discovery';
 import { Colors, Spacing, FontSize, FontWeight } from '@/constants/theme';
 
 const STEP_FIELDS: Record<PreferenceStep, (keyof TravelPreferences)[]> = {
@@ -52,11 +52,10 @@ export default function PreferenceSetupScreen() {
       const clean = sanitizePreferences({ ...preferencesOf(profile), ...fields });
       const patch: Partial<UserProfile> = { preferenceSetup: progress };
       for (const k of Object.keys(fields) as (keyof TravelPreferences)[]) (patch as Record<string, unknown>)[k] = clean[k];
-      await updateUserProfile(user.uid, patch);
-      const next = { ...profile, ...patch } as UserProfile;
+      // Profile and discovery record change together (withdrawing consent removes shared answers).
+      const next = await saveProfileWithDiscovery(user.uid, profile, patch, trips);
       if (useAuthStore.getState().user?.uid === user.uid) setProfile(next);
-      if (publicChange && next.profileVisibility === 'public') await upsertPublicProfile(user.uid, next).catch(() => {});
-      if (publicChange && isDiscoverable(next)) await syncDiscovery(user.uid, next, trips).catch(() => {});
+      if (publicChange && next.profileVisibility === 'public') await upsertPublicProfile(user.uid, next);
       return true;
     } catch {
       addToast('Could not save. Check your connection and try again.', 'error');

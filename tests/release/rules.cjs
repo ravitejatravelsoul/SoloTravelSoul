@@ -463,13 +463,13 @@ function client(file, db) {
       await assertFails(sdk.setDoc(nt(piaDb, 'pia'), record({ travelPace: 'relaxed' })));
       await sdk.updateDoc(sdk.doc(piaDb, 'users/pia'), { shareCompatibility: true });
       await sdk.setDoc(nt(piaDb, 'pia'), record({ travelPace: 'relaxed', travelSchedule: 'planned', groupSizePreference: 'small' }));
-      // Withdraw consent: the app rewrites the record without them (and a record with them is refused).
-      await sdk.updateDoc(sdk.doc(piaDb, 'users/pia'), { shareCompatibility: false });
+      // Withdrawing consent alone would leave them exposed: refused. The app withdraws atomically.
+      await assertFails(sdk.updateDoc(sdk.doc(piaDb, 'users/pia'), { shareCompatibility: false }));
+      const me = { id: 'pia', name: 'Pia', city: 'Lisbon', profileVisibility: 'public', showInNearbyTravelers: true, travelStyles: ['solo'], travelPace: 'active', shareCompatibility: true };
+      await pia.setDiscoverySettings('pia', me, { shareCompatibility: false }, null);
       await assertFails(sdk.setDoc(nt(piaDb, 'pia'), record({ travelPace: 'relaxed' })));
-      await sdk.updateDoc(sdk.doc(piaDb, 'users/pia'), { travelPace: 'active', shareCompatibility: false });
-      const me = { id: 'pia', name: 'Pia', city: 'Lisbon', profileVisibility: 'public', showInNearbyTravelers: true, travelStyles: ['solo'], travelPace: 'active', shareCompatibility: false };
-      await pia.upsertNearbyTraveler('pia', me, null);
       const stored = (await sdk.getDoc(nt(piaDb, 'pia'))).data();
+      assert.equal((await sdk.getDoc(sdk.doc(piaDb, 'users/pia'))).data().shareCompatibility, false);
       assert.equal(stored.travelPace, null);
       assert.equal(stored.groupSizePreference, null);
     });
@@ -482,9 +482,14 @@ function client(file, db) {
       await assertFails(sdk.setDoc(nt(piaDb, 'pia'), record({ uid: 'someone-else' })));
       await assertFails(sdk.setDoc(nt(piaDb, 'pia'), record({ updatedAt: sdk.Timestamp.fromDate(new Date('2020-01-01')) })));
       const me = { id: 'pia', name: 'Pia', city: 'Lisbon', profileVisibility: 'public', showInNearbyTravelers: true };
-      await pia.upsertNearbyTraveler('pia', me, { destination: 'Lisbon, Portugal', startDate: new Date('2026-06-01'), endDate: new Date('2026-06-10') });
+      const lisbon = { destination: 'Lisbon, Portugal', startDate: new Date('2026-06-01'), endDate: new Date('2026-06-10') };
+      await assertFails(pia.upsertNearbyTraveler('pia', me, lisbon)); // no trip chosen on the profile
+      await pia.setDiscoverySettings('pia', me, { discoveryTripId: 'tripL' }, lisbon);
       const stored = (await sdk.getDoc(nt(piaDb, 'pia'))).data();
       assert.equal(stored.destinationKey, 'lisbon');
+      await pia.setDiscoverySettings('pia', { ...me, discoveryTripId: 'tripL' }, { discoveryTripId: null }, null);
+      assert.equal((await sdk.getDoc(nt(piaDb, 'pia'))).data().destinationKey, null);
+      await pia.setDiscoverySettings('pia', me, { discoveryTripId: 'tripL' }, lisbon); // shared again for the query checks below
     });
     await check('discovery: candidate queries are bounded (limit ≤ 50) and use the bounded client helpers', async () => {
       await assertFails(sdk.getDocs(sdk.query(sdk.collection(quinDb, 'nearbyTravelers'), sdk.where('destinationKey', '==', 'lisbon'), sdk.limit(100))));
@@ -542,6 +547,102 @@ function client(file, db) {
       await quin.submitTripJoinRequest('t-new', { ownerUid: 'pia', destination: 'Lisbon', title: 'T' }, requestor, 'again');
       await sdk.updateDoc(sdk.doc(piaDb, 'tripJoinRequests/t-new_quin'), { status: 'rejected' });
       await assertFails(quin.submitTripJoinRequest('t-new', { ownerUid: 'pia', destination: 'Lisbon', title: 'T' }, requestor, 'please'));
+    });
+    // ── Consent: discovery settings and the discovery record change together ──
+    await env.withSecurityRulesDisabled(async ctx => {
+      const adb = ctx.firestore();
+      for (const [p, data] of Object.entries({
+        'users/cara': { name: 'Cara', city: 'Porto', profileVisibility: 'public', showInNearbyTravelers: true, shareCompatibility: true, travelPace: 'relaxed', discoveryTripId: 'tc' },
+        'users/cara/trips/tc': { userId: 'cara', destination: 'Porto', startDate: sdk.Timestamp.fromDate(new Date('2026-07-01')), endDate: sdk.Timestamp.fromDate(new Date('2026-07-05')), isArchived: false },
+        'users/cara/trips/other': { userId: 'cara', destination: 'Rome', startDate: sdk.Timestamp.fromDate(new Date('2026-08-01')), endDate: sdk.Timestamp.fromDate(new Date('2026-08-05')), isArchived: false },
+        'nearbyTravelers/cara': { uid: 'cara', displayName: 'Cara', photoURL: null, currentCity: 'Porto', travelStyles: [], interests: [], languages: [], travelPace: 'relaxed',
+          travelSchedule: null, groupSizePreference: null, destination: 'Porto', destinationKey: 'porto',
+          destinationStartDate: sdk.Timestamp.fromDate(new Date('2026-07-01')), destinationEndDate: sdk.Timestamp.fromDate(new Date('2026-07-05')), updatedAt: sdk.Timestamp.now() },
+      })) await sdk.setDoc(sdk.doc(adb, p), data);
+    });
+    const caraDb = env.authenticatedContext('cara').firestore();
+    const cara = client('packages/firebase/src/firestore.ts', caraDb);
+    const caraUser = async () => (await sdk.getDoc(sdk.doc(caraDb, 'users/cara'))).data();
+    const caraRecord = async () => { const r = await sdk.getDoc(nt(caraDb, 'cara')); return r.exists() ? r.data() : null; };
+    const CARA = { id: 'cara', name: 'Cara', city: 'Porto', profileVisibility: 'public', showInNearbyTravelers: true, shareCompatibility: true, travelPace: 'relaxed', discoveryTripId: 'tc' };
+    const PORTO = { destination: 'Porto', startDate: new Date('2026-07-01'), endDate: new Date('2026-07-05') };
+    await check('consent: direct SDK writes cannot withdraw, opt out or go private while shared data stays in the record', async () => {
+      await assertFails(sdk.updateDoc(sdk.doc(caraDb, 'users/cara'), { shareCompatibility: false }));
+      await assertFails(sdk.updateDoc(sdk.doc(caraDb, 'users/cara'), { showInNearbyTravelers: false }));
+      await assertFails(sdk.updateDoc(sdk.doc(caraDb, 'users/cara'), { profileVisibility: 'private' }));
+      await assertFails(sdk.updateDoc(sdk.doc(caraDb, 'users/cara'), { discoveryTripId: null }));
+      // Unrelated profile edits still work.
+      await sdk.updateDoc(sdk.doc(caraDb, 'users/cara'), { bio: 'hello' });
+      // The interrupted two-step sequence the app used to run cannot leave an unsafe state:
+      // step 1 alone is refused, so nothing changes.
+      assert.equal((await caraUser()).shareCompatibility, true);
+      assert.equal((await caraRecord()).travelPace, 'relaxed');
+    });
+    await check('consent: an interrupted settings write changes nothing and reports failure', async () => {
+      // A record the rules refuse (blocked term in the name) makes the whole batch fail.
+      await assert.rejects(cara.setDiscoverySettings('cara', { ...CARA, name: 'kys' }, { shareCompatibility: false }, PORTO));
+      assert.equal((await caraUser()).shareCompatibility, true);
+      assert.equal((await caraRecord()).travelPace, 'relaxed');
+    });
+    await check('consent: withdrawal, trip removal, opt-out and going private are atomic', async () => {
+      await cara.setDiscoverySettings('cara', CARA, { shareCompatibility: false }, PORTO);
+      assert.deepEqual([(await caraUser()).shareCompatibility, (await caraRecord()).travelPace, (await caraRecord()).destinationKey], [false, null, 'porto']);
+      await cara.setDiscoverySettings('cara', { ...CARA, shareCompatibility: false }, { discoveryTripId: null }, null);
+      assert.deepEqual([(await caraUser()).discoveryTripId, (await caraRecord()).destinationKey], [null, null]);
+      await cara.setDiscoverySettings('cara', { ...CARA, shareCompatibility: false, discoveryTripId: null }, { showInNearbyTravelers: false }, null);
+      assert.deepEqual([(await caraUser()).showInNearbyTravelers, await caraRecord()], [false, null]);
+      // Opting in again creates the record in the same write.
+      await cara.setDiscoverySettings('cara', { ...CARA, shareCompatibility: false, discoveryTripId: null, showInNearbyTravelers: false }, { showInNearbyTravelers: true }, null);
+      assert.ok(await caraRecord());
+      await cara.updateProfileVisibility('cara', { ...CARA, shareCompatibility: false, discoveryTripId: null }, 'private');
+      assert.deepEqual([(await caraUser()).profileVisibility, (await caraUser()).showInNearbyTravelers, await caraRecord()], ['private', false, null]);
+    });
+    await check('shared trip: editing updates and archiving removes its discovery details in the same write; consent is kept', async () => {
+      await env.withSecurityRulesDisabled(async ctx => {
+        await sdk.setDoc(sdk.doc(ctx.firestore(), 'users/cara'), { ...CARA });
+      });
+      await cara.setDiscoverySettings('cara', { ...CARA, discoveryTripId: null }, { discoveryTripId: 'tc' }, PORTO);
+      const moved = { destination: 'Porto', startDate: new Date('2026-07-10'), endDate: new Date('2026-07-12') };
+      await cara.updateTrip('cara', 'tc', { startDate: moved.startDate, endDate: moved.endDate }, { profile: CARA, sharedTrip: moved });
+      assert.equal((await caraRecord()).destinationStartDate.toDate().toISOString().slice(0, 10), '2026-07-10');
+      await cara.updateTrip('cara', 'tc', { destination: 'Lisbon' }, { profile: CARA, sharedTrip: { ...moved, destination: 'Lisbon' } });
+      assert.equal((await caraRecord()).destinationKey, 'lisbon');
+      await cara.archiveTrip('cara', 'tc', { profile: CARA });
+      const u = await caraUser();
+      const r = await caraRecord();
+      assert.deepEqual([u.discoveryTripId, u.shareCompatibility, r.destinationKey, r.travelPace], [null, true, null, 'relaxed']);
+      assert.equal((await sdk.getDoc(sdk.doc(caraDb, 'users/cara/trips/other'))).data().isArchived, false, 'no other trip is published');
+    });
+
+    // ── Join requests: state machine and identity ──
+    await check('join requests: rejected cannot become cancelled or pending again (bypass sequence)', async () => {
+      const quin = client('packages/firebase/src/firestore.ts', quinDb);
+      const requestor = { id: 'quin', name: 'Quin', photoURL: null, bio: '' };
+      await quin.submitTripJoinRequest('t-sm', { ownerUid: 'pia', destination: 'Lisbon', title: 'T' }, requestor, 'hi');
+      await sdk.updateDoc(sdk.doc(piaDb, 'tripJoinRequests/t-sm_quin'), { status: 'rejected', updatedAt: sdk.serverTimestamp() });
+      await assertFails(quin.cancelTripJoinRequest('t-sm_quin', 'quin'));
+      await assertFails(sdk.updateDoc(sdk.doc(quinDb, 'tripJoinRequests/t-sm_quin'), { status: 'cancelled' }));
+      await assertFails(quin.submitTripJoinRequest('t-sm', { ownerUid: 'pia', destination: 'Lisbon', title: 'T' }, requestor, 'again'));
+      assert.equal(await quin.getTripJoinRequestStatus('t-sm', 'quin'), 'rejected');
+      // The organizer cannot flip a decision either.
+      await assertFails(sdk.updateDoc(sdk.doc(piaDb, 'tripJoinRequests/t-sm_quin'), { status: 'approved' }));
+    });
+    await check('join requests: pending → cancelled → pending and organizer approval still work; identity is immutable', async () => {
+      const quin = client('packages/firebase/src/firestore.ts', quinDb);
+      const requestor = { id: 'quin', name: 'Quin', photoURL: null, bio: '' };
+      await quin.submitTripJoinRequest('t-ok', { ownerUid: 'pia', destination: 'Lisbon', title: 'T' }, requestor, 'hi');
+      await assertFails(sdk.updateDoc(sdk.doc(quinDb, 'tripJoinRequests/t-ok_quin'), { status: 'cancelled', ownerUid: 'someone' }));
+      await assertFails(sdk.updateDoc(sdk.doc(quinDb, 'tripJoinRequests/t-ok_quin'), { status: 'cancelled', tripId: 'other' }));
+      await quin.cancelTripJoinRequest('t-ok_quin', 'quin');
+      await assertFails(quin.cancelTripJoinRequest('t-ok_quin', 'quin')); // already cancelled
+      await assertFails(sdk.updateDoc(sdk.doc(piaDb, 'tripJoinRequests/t-ok_quin'), { status: 'approved' })); // nothing pending to decide
+      await quin.submitTripJoinRequest('t-ok', { ownerUid: 'pia', destination: 'Lisbon', title: 'T' }, requestor, 'again');
+      await assertFails(sdk.updateDoc(sdk.doc(piaDb, 'tripJoinRequests/t-ok_quin'), { status: 'approved', requestorUid: 'pia' }));
+      await assertFails(sdk.updateDoc(sdk.doc(piaDb, 'tripJoinRequests/t-ok_quin'), { status: 'approved', message: 'edited' }));
+      await sdk.updateDoc(sdk.doc(piaDb, 'tripJoinRequests/t-ok_quin'), { status: 'approved', updatedAt: sdk.serverTimestamp() });
+      assert.equal(await quin.getTripJoinRequestStatus('t-ok', 'quin'), 'approved');
+      await assertFails(quin.cancelTripJoinRequest('t-ok_quin', 'quin')); // approved is not cancellable
+      await assertFails(sdk.updateDoc(sdk.doc(piaDb, 'tripJoinRequests/t-ok_quin'), { status: 'rejected' }));
     });
     console.log(`${checks} release rule checks passed`);
   } finally { await env.cleanup(); }

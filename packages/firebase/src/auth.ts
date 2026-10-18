@@ -1,6 +1,7 @@
 import {
   initializeAuth,
   getAuth,
+  connectAuthEmulator,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut as _signOut,
@@ -11,7 +12,7 @@ import {
   reauthenticateWithCredential,
   type User,
 } from 'firebase/auth';
-import { app } from './config';
+import { app, emulatorHost } from './config';
 
 function createAuth() {
   try {
@@ -21,9 +22,11 @@ function createAuth() {
     const { getReactNativePersistence } = require('firebase/auth') as any;
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    return initializeAuth(app, {
+    const created = initializeAuth(app, {
       persistence: getReactNativePersistence(AsyncStorage),
     });
+    if (emulatorHost) connectAuthEmulator(created, `http://${emulatorHost}:9189`, { disableWarnings: true });
+    return created;
   } catch {
     // Fast refresh — auth already initialized, return existing instance.
     return getAuth(app);

@@ -24,10 +24,17 @@ export interface TripWindow {
 }
 
 export type TripMatch = 'overlap' | 'no_overlap' | 'dates_unknown' | 'other_destination' | 'no_trip';
-export type CompatibilityLevel = 'strong' | 'good' | 'some' | 'not_enough_info';
+export type PreferenceLevel = 'strong' | 'good' | 'some' | 'not_enough_info';
+/** Overall level for the selected trip. Known non-overlapping dates are never Strong/Good. */
+export type CompatibilityLevel = PreferenceLevel | 'dates_differ';
+export type DatesStatus = 'overlap' | 'no_overlap' | 'unknown' | 'not_applicable';
 
 export interface CompatibilityResult {
   trip: { match: TripMatch; overlapDays: number };
+  /** Travel dates, reported apart from preferences. */
+  dates: { status: DatesStatus; overlapDays: number; label: string | null };
+  /** Stated preferences only (ignores dates). */
+  preferences: { level: PreferenceLevel };
   reasons: string[];
   differences: string[];
   /** Questions the other traveler has not answered or not shared. */
@@ -40,12 +47,14 @@ export interface CompatibilityResult {
 }
 
 export const LEVEL_LABELS: Record<CompatibilityLevel, string> = {
-  strong: 'Strong match', good: 'Good match', some: 'Some overlap', not_enough_info: 'Not enough information',
+  strong: 'Strong match', good: 'Good match', some: 'Possible match', not_enough_info: 'Not enough information',
+  dates_differ: "Dates don't overlap",
+};
+export const PREFERENCE_LABELS: Record<PreferenceLevel, string> = {
+  strong: 'Strong preference match', good: 'Good preference match', some: 'Some shared preferences', not_enough_info: 'Not enough information',
 };
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const dayIndex = (d: Date) => Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000);
-const fmt = (d: Date) => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 
 /** Inclusive overlap in days of two date ranges (0 when they do not overlap). */
 export function overlapDays(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): number {
@@ -78,20 +87,22 @@ export function compareTravelers(me: CompatibilityAnswers, them: CompatibilityAn
   let compared = 0;
   let agreements = 0;
 
-  // 1. The selected trip comes first: same destination, then date overlap.
+  // 1. The selected trip comes first: same destination, then date overlap. Dates are
+  // reported separately from preferences (result.dates), never as a shared preference.
   const trip = compareTrips(myTrip, theirTrip);
-  const place = myTrip?.destination || theirTrip?.destination || 'the same destination';
+  let dates: CompatibilityResult['dates'];
   if (trip.match === 'overlap' && trip.overlap) {
-    reasons.push(`Both in ${place} ${fmt(trip.overlap[0])}–${fmt(trip.overlap[1])} (${trip.overlapDays} day${trip.overlapDays === 1 ? '' : 's'} overlap)`);
+    dates = { status: 'overlap', overlapDays: trip.overlapDays, label: `Dates overlap: ${trip.overlapDays} day${trip.overlapDays === 1 ? '' : 's'}` };
     rank += 1000 + Math.min(trip.overlapDays, 60);
   } else if (trip.match === 'dates_unknown') {
-    reasons.push(`Also going to ${place}`);
+    dates = { status: 'unknown', overlapDays: 0, label: 'Dates unknown' };
     notProvided.push('trip dates');
     rank += 500;
   } else if (trip.match === 'no_overlap') {
-    reasons.push(`Also going to ${place}`);
-    differences.push('Your dates do not overlap');
+    dates = { status: 'no_overlap', overlapDays: 0, label: "Dates don't overlap" };
     rank += 200;
+  } else {
+    dates = { status: 'not_applicable', overlapDays: 0, label: null };
   }
 
   // 2. Stated preferences. A dimension is compared only when both answered.
@@ -128,15 +139,18 @@ export function compareTravelers(me: CompatibilityAnswers, them: CompatibilityAn
     else differences.push(`Group size: you prefer ${label(GROUP_SIZE_OPTIONS, me.groupSizePreference!).toLowerCase()}, they prefer ${label(GROUP_SIZE_OPTIONS, them.groupSizePreference!).toLowerCase()}`);
   });
 
-  // 3. Level: explicit thresholds on what was actually compared.
-  const tripPositive = trip.match === 'overlap';
+  // 3. Levels: explicit thresholds on what was actually compared.
+  // Preferences alone:
+  const prefLevel: PreferenceLevel = compared < 2 ? 'not_enough_info' : agreements >= 4 ? 'strong' : agreements >= 2 ? 'good' : 'some';
+  // For the selected trip: known non-overlapping dates are never Strong/Good; unknown dates
+  // stay unknown (at most "Possible match"); without a trip it is the preference level.
   let level: CompatibilityLevel;
-  if (!tripPositive && compared < 2) level = 'not_enough_info';
-  else if ((tripPositive && agreements >= 3) || agreements >= 4) level = 'strong';
-  else if ((tripPositive && agreements >= 1) || agreements >= 2) level = 'good';
-  else level = 'some';
+  if (dates.status === 'no_overlap') level = 'dates_differ';
+  else if (dates.status === 'overlap') level = agreements >= 3 ? 'strong' : agreements >= 1 ? 'good' : 'some';
+  else if (dates.status === 'unknown') level = compared < 2 ? 'not_enough_info' : 'some';
+  else level = prefLevel;
 
-  return { trip: { match: trip.match, overlapDays: trip.overlapDays }, reasons, differences, notProvided, youHaveNotAnswered, level, rank };
+  return { trip: { match: trip.match, overlapDays: trip.overlapDays }, dates, preferences: { level: prefLevel }, reasons, differences, notProvided, youHaveNotAnswered, level, rank };
 }
 
 /** Stable order: rank, then name, then id. */

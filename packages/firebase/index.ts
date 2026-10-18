@@ -62,6 +62,7 @@ export {
   deleteNearbyTraveler,
   subscribeNearbyTravelers,
   subscribeDestinationTravelers,
+  setDiscoverySettings,
   getCompanionTravelers,
   getCompanionTrips,
   getDiscoveryRecords,

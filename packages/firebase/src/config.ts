@@ -59,6 +59,17 @@ function getFirebaseApp(): FirebaseApp {
   return getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 }
 
+/**
+ * Local Firebase emulators for development only: a development bundle (__DEV__) started
+ * with EXPO_PUBLIC_FIREBASE_EMULATOR_HOST set (e.g. 127.0.0.1 via adb reverse). Release
+ * bundles never connect to emulators.
+ */
+declare const __DEV__: boolean | undefined;
+export const emulatorHost: string | null =
+  typeof __DEV__ !== 'undefined' && __DEV__ === true && process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST
+    ? process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST
+    : null;
+
 export const app = getFirebaseApp();
 
 // Expose whether the app is misconfigured so auth/firestore can surface
