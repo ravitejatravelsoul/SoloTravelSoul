@@ -52,3 +52,41 @@ export function latestOnly() {
     cancel: () => { current++; },
   };
 }
+
+export interface LoadContext { uid: string; discoverable: boolean; selected: MatchContext['selected'] }
+export interface LoadState { raw: RawMatches; loading: boolean; error: boolean }
+
+/**
+ * What the queries depend on: account, discoverability and the selected trip's destination.
+ * Not the trip ID or dates — a destination edit on the same trip queries again; a date-only
+ * edit does not (buildMatches recomputes overlap from the same results).
+ */
+export function matchQueryKey(ctx: LoadContext): string | null {
+  const key = ctx.selected ? destinationKey(ctx.selected.destination) : null;
+  return ctx.uid && key ? `${ctx.uid}|${ctx.discoverable ? 1 : 0}|${key}` : null;
+}
+
+/**
+ * Runs the bounded companion queries when the query key changes (or on refresh), clears old
+ * cards as a load starts, and lets only the latest load update state (older responses and
+ * errors are ignored). cancel() stops all updates, e.g. when leaving the screen.
+ */
+export function createMatchLoader(fetchRaw: (ctx: LoadContext & { selected: NonNullable<LoadContext['selected']> }) => Promise<RawMatches>, set: (state: LoadState) => void) {
+  const guard = latestOnly();
+  let lastKey: string | null | undefined;
+  return {
+    load(ctx: LoadContext, force = false): void {
+      const key = matchQueryKey(ctx);
+      if (!force && key === lastKey) return;
+      lastKey = key;
+      const token = guard.begin();
+      set({ raw: EMPTY_RAW, loading: !!key, error: false });
+      if (!key || !ctx.selected) return;
+      fetchRaw({ ...ctx, selected: ctx.selected }).then(
+        (raw) => { if (guard.isCurrent(token)) set({ raw, loading: false, error: false }); },
+        () => { if (guard.isCurrent(token)) set({ raw: EMPTY_RAW, loading: false, error: true }); },
+      );
+    },
+    cancel(): void { guard.cancel(); lastKey = undefined; },
+  };
+}

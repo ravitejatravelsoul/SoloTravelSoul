@@ -17,8 +17,8 @@ import { useAuthStore } from '@/stores/authStore';
 import { useBlockStore } from '@/stores/blockStore';
 import { useTripStore } from '@/stores/tripStore';
 import { upcomingTrips } from '@/utils/discovery';
-import { buildMatches, latestOnly, EMPTY_RAW } from '@/utils/companions';
-import type { RawMatches } from '@/utils/companions';
+import { buildMatches, createMatchLoader, matchQueryKey, EMPTY_RAW } from '@/utils/companions';
+import type { LoadContext, LoadState, RawMatches } from '@/utils/companions';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 
 const range = (a: Date, b: Date) => `${a.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – ${b.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`;
@@ -34,42 +34,33 @@ export default function CompanionsScreen() {
   const selected: PlannedTrip | null = myTrips.find((t) => t.id === tripId) ?? myTrips[0] ?? null;
 
   // Raw query results; the cards are derived from them below.
-  const [raw, setRaw] = useState<RawMatches>(EMPTY_RAW);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
+  const [{ raw, loading, error }, setState] = useState<LoadState>({ raw: EMPTY_RAW, loading: false, error: false });
   const discoverable = isDiscoverable(profile);
   const me = useMemo(() => preferencesOf(profile), [profile]);
-  const guard = useRef(latestOnly()).current;
 
-  const load = useCallback(async () => {
-    const token = guard.begin();
-    setRaw(EMPTY_RAW); // obsolete cards disappear at once
-    setError(false);
-    if (!selected || !uid) { setLoading(false); return; }
-    setLoading(true);
-    try {
-      // Travelers: only for people who are discoverable themselves (reciprocal, as Nearby Travelers).
-      const [records, tripsThere] = await Promise.all([
-        discoverable ? getCompanionTravelers(selected.destination) : Promise.resolve([] as NearbyTraveler[]),
-        getCompanionTrips(selected.destination),
-      ]);
-      if (!guard.isCurrent(token)) return;
-      const owners = await getDiscoveryRecords(tripsThere.filter((t) => t.ownerUid !== uid).map((t) => t.ownerUid));
-      if (!guard.isCurrent(token)) return;
-      setRaw({ travelers: records, trips: tripsThere, owners });
-    } catch {
-      if (guard.isCurrent(token)) setError(true);
-    } finally {
-      if (guard.isCurrent(token)) setLoading(false);
-    }
-  }, [guard, selected, uid, discoverable]);
+  // Bounded queries for a destination (≤ 30 travelers, ≤ 20 trips, one batched owner lookup).
+  const fetchMatches = useCallback(async (ctx: LoadContext & { selected: NonNullable<LoadContext['selected']> }): Promise<RawMatches> => {
+    const { selected, discoverable } = ctx;
+    // Travelers: only for people who are discoverable themselves (reciprocal, as Nearby Travelers).
+    const [records, tripsThere] = await Promise.all([
+      discoverable ? getCompanionTravelers(selected.destination) : Promise.resolve([] as NearbyTraveler[]),
+      getCompanionTrips(selected.destination),
+    ]);
+    const owners = await getDiscoveryRecords(tripsThere.filter((t) => t.ownerUid !== ctx.uid).map((t) => t.ownerUid));
+    return { travelers: records, trips: tripsThere, owners };
+  }, []);
+  const loader = useRef(createMatchLoader(fetchMatches, setState)).current;
 
-  // Reload when the trip, the account or discoverability changes; a newer load (or leaving
-  // the screen) makes any older response irrelevant.
+  // Query again when the account, discoverability or the selected trip's destination changes
+  // (including a destination edit on the same trip, e.g. after returning from Edit Trip).
+  // Date-only edits keep the results; overlap is recomputed below. Only the latest load
+  // may update the screen.
+  const queryKey = matchQueryKey({ uid, discoverable, selected });
   useEffect(() => {
-    load();
-    return () => guard.cancel();
-  }, [selected?.id, uid, discoverable]); // eslint-disable-line react-hooks/exhaustive-deps
+    loader.load({ uid, discoverable, selected });
+  }, [queryKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => loader.cancel(), [loader]);
+  const refresh = () => loader.load({ uid, discoverable, selected }, true);
 
   // Preferences, consent and block changes re-rank or hide cards without another query.
   const { travelers, trips: publicTrips } = useMemo(() => buildMatches(raw, { uid, blockedUids, me, selected }), [raw, uid, blockedUids, me, selected]);
@@ -81,7 +72,7 @@ export default function CompanionsScreen() {
           <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.navTitle}>Find travel companions</Text>
-        <TouchableOpacity onPress={load} hitSlop={12} accessibilityLabel="Refresh" disabled={!selected || loading}>
+        <TouchableOpacity onPress={refresh} hitSlop={12} accessibilityLabel="Refresh" disabled={!selected || loading}>
           <Ionicons name="refresh" size={22} color={Colors.primary} />
         </TouchableOpacity>
       </View>

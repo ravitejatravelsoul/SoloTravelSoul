@@ -337,11 +337,79 @@ test('freshness: only the latest load may update the screen; obsolete cards clea
   assert.equal(guard.isCurrent(second), true);
   guard.cancel();
   assert.equal(guard.isCurrent(second), false, 'leaving the screen or switching account invalidates loads');
+  // The screen loads through the loader below (behaviour tested there).
   const screen = read('apps/mobile/app/(app)/community/companions.tsx');
-  assert.match(screen, /latestOnly\(\)/);
-  assert.match(screen, /if \(!guard\.isCurrent\(token\)\) return;/);
-  assert.match(screen, /setRaw\(EMPTY_RAW\)/, 'cards clear immediately when a new load starts');
-  assert.match(screen, /\}, \[selected\?\.id, uid, discoverable\]\);/, 'reload when trip, account or discoverability changes');
+  assert.match(screen, /createMatchLoader\(/);
+});
+
+test('freshness: editing the destination of the same trip refetches; old responses never overwrite; date-only edits do not query', async () => {
+  const companions = load('apps/mobile/utils/companions.ts', { '@solotravelsoul/shared': shared });
+  // A controllable fetch: each call returns a promise the test resolves later.
+  const calls = [];
+  const fetchRaw = (ctx) => new Promise((resolve, reject) => calls.push({ destination: ctx.selected.destination, discoverable: ctx.discoverable, resolve, reject }));
+  const states = [];
+  const loader = companions.createMatchLoader(fetchRaw, (st) => states.push(st));
+  const last = () => states[states.length - 1];
+  const rec = (uid, dest, from, to) => ({ uid, displayName: uid, photoURL: null, currentCity: '', travelStyles: ['solo'], interests: [], languages: [],
+    destination: dest, destinationKey: prefs.destinationKey(dest), destinationStartDate: d(from), destinationEndDate: d(to), updatedAt: d('2026-01-01') });
+  const lisbonRaw = { travelers: [rec('ana', 'Lisbon', '2026-06-05', '2026-06-08')], trips: [], owners: [] };
+  const portoRaw = { travelers: [rec('pia', 'Porto', '2026-06-02', '2026-06-03')], trips: [], owners: [] };
+  const me = prefs.sanitizePreferences({ travelStyles: ['solo'] });
+  const trip = { id: 't1', destination: 'Lisbon, Portugal', startDate: d('2026-06-01'), endDate: d('2026-06-10') };
+  const ctx = (selected, extra = {}) => ({ uid: 'me', discoverable: true, selected, ...extra });
+
+  // 1. First open: one query for Lisbon; cards clear while loading.
+  loader.load(ctx(trip));
+  assert.deepEqual(calls.map((c) => c.destination), ['Lisbon, Portugal']);
+  assert.deepEqual([last().loading, last().raw.travelers.length], [true, 0]);
+
+  // 2. The same trip ID is edited to Porto before Lisbon answers: a new query starts at once.
+  const edited = { ...trip, destination: 'Porto' };
+  loader.load(ctx(edited));
+  assert.deepEqual(calls.map((c) => c.destination), ['Lisbon, Portugal', 'Porto']);
+  // Porto answers, then the slow Lisbon response arrives: it must not overwrite Porto.
+  calls[1].resolve(portoRaw);
+  await new Promise((r) => setTimeout(r, 0));
+  calls[0].resolve(lisbonRaw);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(last().loading, false);
+  assert.deepEqual(last().raw.travelers.map((t) => t.uid), ['pia']);
+  const shown = companions.buildMatches(last().raw, { uid: 'me', blockedUids: [], me, selected: edited });
+  assert.deepEqual(shown.travelers.map((t) => t.id), ['pia']);
+  assert.equal(shown.travelers[0].result.dates.label, 'Dates overlap: 2 days');
+
+  // 3. Date-only edit: no query; overlap is recomputed from the same results.
+  const moved = { ...edited, startDate: d('2026-06-03'), endDate: d('2026-06-20') };
+  loader.load(ctx(moved));
+  assert.equal(calls.length, 2, 'no query for a date-only change');
+  const recomputed = companions.buildMatches(last().raw, { uid: 'me', blockedUids: [], me, selected: moved });
+  assert.equal(recomputed.travelers[0].result.dates.label, 'Dates overlap: 1 day');
+
+  // 4. A failed older request cannot show an error over newer results either.
+  loader.load(ctx({ ...trip, destination: 'Faro' }));
+  loader.load(ctx({ ...trip, destination: 'Braga' }));
+  calls[3].resolve({ travelers: [], trips: [], owners: [] });
+  await new Promise((r) => setTimeout(r, 0));
+  calls[2].reject(new Error('slow failure'));
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual([last().error, last().loading], [false, false]);
+
+  // 5. Account and discoverability changes query again; refresh forces a query; leaving cancels.
+  loader.load(ctx({ ...trip, destination: 'Braga' }, { uid: 'other' }));
+  loader.load(ctx({ ...trip, destination: 'Braga' }, { uid: 'other', discoverable: false }));
+  assert.equal(calls.length, 6);
+  assert.equal(calls[5].discoverable, false);
+  loader.load(ctx({ ...trip, destination: 'Braga' }, { uid: 'other', discoverable: false }), true);
+  assert.equal(calls.length, 7);
+  const before = states.length;
+  loader.cancel();
+  calls[6].resolve(lisbonRaw);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(states.length, before, 'no updates after leaving the screen');
+  // No trip or no account: nothing is queried.
+  loader.load(ctx(null));
+  assert.equal(calls.length, 7);
+  assert.equal(last().loading, false);
 });
 
 test('freshness: matches are recomputed from raw results when preferences, consent or blocks change (no refetch)', () => {
