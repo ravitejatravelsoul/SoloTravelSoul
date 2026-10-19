@@ -371,11 +371,12 @@ test('journal card: like control never overlapped; author and read time shrink/w
   assert.equal(flat(readTime.props.style).flexShrink, 0, 'read time stays whole ("1 min read")');
 });
 
-test('a system text-size change does not relaunch MainActivity (state, drafts and navigation survive; no stale layout) (SM-S711U, 2026-10-18)', () => {
-  // Observed on the installed APK: changing the text size while the app ran (or was backgrounded) relaunched MainActivity
-  // (wm_relaunch_resume_activity, config 0x40000000 = fontScale) because the manifest's configChanges lacked fontScale.
-  // The app came back on Feed with its draft gone, and React Native's process-wide metrics kept the old scale while the
-  // new activity drew the new one (text boxes 1.0x wide, glyphs 1.3x: "SoloTravelS", "Commu…", clipped descenders).
+test('config plugin declares fontScale in MainActivity configChanges (manifest configuration only; runtime behaviour is verified on a device)', () => {
+  // Observed on the installed APK (b150243): changing the text size while the app ran relaunched MainActivity
+  // (wm_relaunch_resume_activity, config 0x40000000 = fontScale), because the manifest's configChanges lacked fontScale.
+  // This test proves ONLY that the build configuration now declares fontScale (plugin output, idempotence, registration).
+  // It does NOT prove that navigation, drafts or the session survive a text-size change, that no relaunch happens at
+  // runtime, that text is unclipped, or that text adopts the new size: those need a device build (see release-handoff.md).
   const calls = [];
   const mod = mobile('apps/mobile/plugins/withFontScaleConfigChange.js', { 'expo/config-plugins': {
     withAndroidManifest: (config, action) => { calls.push('withAndroidManifest'); return action({ ...config, modResults: config.__manifest }); },
@@ -408,9 +409,6 @@ test('a system text-size change does not relaunch MainActivity (state, drafts an
     assert.ok(appConfig({ config: appJson.expo }).plugins.includes('./plugins/withFontScaleConfigChange'), `plugin present (${variant || 'production'})`);
   }
   delete process.env.APP_VARIANT;
-  // The tab label keeps measuring at the system's current size (no cached "natural" width survives a size change).
-  const label = fs.readFileSync(path.join(root, 'apps/mobile/components/ui/TabLabel.tsx'), 'utf8');
-  assert.match(label, /onTextLayout/, 'natural width comes from layout events, re-fired when the text size changes');
 });
 
 test('native Android findings (staging APK, 2026-10-09) stay fixed', () => {
