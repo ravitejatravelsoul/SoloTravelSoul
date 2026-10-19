@@ -82,7 +82,8 @@
         }
       ],
       "@rnmapbox/maps",
-      "./plugins/withFontScaleConfigChange"
+      "./plugins/withFontScaleConfigChange",
+      "./plugins/withFontScaleLayoutUpdates"
     ],
     "experiments": {
       "typedRoutes": true

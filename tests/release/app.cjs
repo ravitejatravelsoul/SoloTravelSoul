@@ -411,6 +411,92 @@ test('config plugin declares fontScale in MainActivity configChanges (manifest c
   delete process.env.APP_VARIANT;
 });
 
+test('font-scale layout updates: generated native code enables RN own flag through one forced override, preserves RN defaults, relayouts the surface (RN 0.81.5)', () => {
+  // Failure on the SM-S711U with only configChanges=fontScale: no relaunch, but live text sizes were inconsistent, headers/tabs clipped
+  // and the composer could move behind the keyboard. Cause (RN 0.81.5 source): on a font-scale change RN refreshes DisplayMetricsHolder
+  // (ReactHostImpl.onConfigurationChanged), feeds the live scale into the surface layout context (ReactSurfaceImpl.getFontScale) and
+  // re-dirties every measurable text node (SurfaceHandler::constraintLayout) ONLY behind enableFontScaleChangesUpdatingLayout, default off.
+  // This test checks the generated native code and the RN symbols it relies on. It does not prove runtime behaviour (device phase).
+  const rn = (f) => fs.readFileSync(path.join(root, 'node_modules/react-native', f), 'utf8');
+  const kt = (f) => rn('ReactAndroid/src/main/java/com/facebook/react/' + f);
+  const fixture = (f) => fs.readFileSync(path.join(root, 'tests/release/fixtures/android', f), 'utf8');
+  const files = {};
+  const stub = {
+    withAndroidManifest: (c) => c, withMainApplication: (c) => c, withMainActivity: (c) => c,
+    withDangerousMod: (c, [platform, action]) => { assert.equal(platform, 'android'); files.write = action; return c; },
+    AndroidConfig: { Manifest: { getMainActivityOrThrow: () => ({}) }, Package: { getPackage: (c) => c.android.package } },
+  };
+  const mod = mobile('apps/mobile/plugins/withFontScaleLayoutUpdates.js', { 'expo/config-plugins': stub, fs, path });
+  const { patchMainApplication, patchMainActivity, helperSource } = mod;
+
+  // MainApplication: one call, right after RN's generated loadReactNative (RN's single override) and before Expo's lifecycle dispatch.
+  const app = fixture('MainApplication.kt').replace(/\r\n/g, '\n');
+  const patched = patchMainApplication(app);
+  assert.equal((patched.match(/FontScaleLayout\.enableFontScaleLayoutUpdates\(\)/g) || []).length, 1);
+  assert.ok(patched.indexOf('loadReactNative(this)\n') < patched.indexOf('FontScaleLayout.enableFontScaleLayoutUpdates()'), 'after loadReactNative');
+  assert.ok(patched.indexOf('FontScaleLayout.enableFontScaleLayoutUpdates()') < patched.indexOf('ApplicationLifecycleDispatcher.onApplicationCreate(this)'), 'before Expo lifecycle');
+  assert.equal(patchMainApplication(patched), patched, 'idempotent');
+  assert.equal(patched.replace(/\n\s*FontScaleLayout\.enableFontScaleLayoutUpdates\(\)/, ''), app, 'nothing else changed');
+  assert.throws(() => patchMainApplication('class MainApplication {}'), /loadReactNative/, 'fails loudly if the template changes');
+
+  // MainActivity: onConfigurationChanged forwards to RN first, then requests a relayout of the React surface.
+  const act = fixture('MainActivity.kt').replace(/\r\n/g, '\n');
+  const pa = patchMainActivity(act);
+  assert.match(pa, /import android\.content\.res\.Configuration/);
+  assert.match(pa, /override fun onConfigurationChanged\(newConfig: Configuration\) \{\s*super\.onConfigurationChanged\(newConfig\)(?:\s*\/\/[^\n]*)*\s*FontScaleLayout\.relayoutReactSurface\(this\)\s*\}/);
+  assert.equal(patchMainActivity(pa), pa, 'idempotent');
+  assert.equal((pa.match(/onConfigurationChanged/g) || []).length, 2, 'one override (declaration plus the super call)');
+  assert.throws(() => patchMainActivity('class Other {}'), /MainActivity/, 'fails loudly if the template changes');
+
+  // Helper source: package follows the app variant; exactly one forced override; no second plain override; only RN public API.
+  for (const pkg of ['com.solotravelsoul.app', 'com.solotravelsoul.app.staging']) {
+    assert.ok(helperSource(pkg).startsWith(`package ${pkg}\n`), pkg);
+  }
+  const src = helperSource('com.solotravelsoul.app');
+  assert.equal((src.match(/ReactNativeFeatureFlags\.dangerouslyForceOverride\(/g) || []).length, 1, 'one forced override');
+  assert.doesNotMatch(src, /ReactNativeFeatureFlags\.override\(|dangerouslyReset\(/, 'no conflicting second override');
+  assert.match(src, /ReactNativeFeatureFlagsProvider by base/, 'RN defaults are delegated, not copied');
+  assert.equal((src.match(/override fun /g) || []).length, 1, 'the delegate overrides exactly one flag');
+  assert.match(src, /override fun enableFontScaleChangesUpdatingLayout\(\): Boolean = true/);
+  assert.match(src, /accessed != null/, 'reports flags read before the override instead of failing silently');
+
+  // The RN symbols the helper uses exist in the pinned RN, with the shapes it assumes.
+  assert.equal(JSON.parse(rn('package.json')).version, '0.81.5');
+  assert.match(kt('internal/featureflags/ReactNativeFeatureFlags.kt'), /public fun dangerouslyForceOverride\(provider: ReactNativeFeatureFlagsProvider\): String\?/);
+  assert.match(kt('internal/featureflags/ReactNativeFeatureFlagsProvider.kt'), /public interface ReactNativeFeatureFlagsProvider[\s\S]*public fun enableFontScaleChangesUpdatingLayout\(\): Boolean/);
+  assert.match(kt('internal/featureflags/ReactNativeFeatureFlagsDefaults.kt'), /override fun enableFontScaleChangesUpdatingLayout\(\): Boolean = false/, 'RN default is off, so the app must opt in');
+  assert.match(kt('common/ReleaseLevel.kt'), /enum class ReleaseLevel \{\s*EXPERIMENTAL,\s*CANARY,\s*STABLE\s*\}/, 'the helper when() is exhaustive');
+  const entry = kt('defaults/DefaultNewArchitectureEntryPoint.kt');
+  assert.match(entry, /public var releaseLevel: ReleaseLevel/);
+  assert.match(entry, /ReleaseLevel\.EXPERIMENTAL -> \{\s*ReactNativeFeatureFlags\.override\(\s*ReactNativeFeatureFlagsOverrides_RNOSS_Experimental_Android\(\)\)/);
+  assert.match(entry, /ReleaseLevel\.CANARY -> \{\s*ReactNativeFeatureFlags\.override\(ReactNativeFeatureFlagsOverrides_RNOSS_Canary_Android\(\)\)/);
+  assert.match(entry, /ReactNativeFeatureFlagsOverrides_RNOSS_Stable_Android\(\s*fabricEnabled, bridgelessEnabled, turboModulesEnabled\)/);
+  assert.match(entry, /turboModulesEnabled: Boolean = true,\s*fabricEnabled: Boolean = true,\s*bridgelessEnabled: Boolean = true/, 'the no-arg load() uses true/true/true like the helper');
+  assert.match(kt('internal/featureflags/ReactNativeFeatureFlagsOverrides_RNOSS_Stable_Android.kt'), /public class ReactNativeFeatureFlagsOverrides_RNOSS_Stable_Android\(\s*private val fabricEnabled: Boolean,\s*private val bridgelessEnabled: Boolean,\s*private val turboModulesEnabled: Boolean\s*\)/);
+  assert.match(kt('internal/featureflags/ReactNativeFeatureFlagsOverrides_RNOSS_Canary_Android.kt'), /public open class ReactNativeFeatureFlagsOverrides_RNOSS_Canary_Android : /);
+  assert.match(kt('internal/featureflags/ReactNativeFeatureFlagsOverrides_RNOSS_Experimental_Android.kt'), /public open class ReactNativeFeatureFlagsOverrides_RNOSS_Experimental_Android : /);
+  assert.match(kt('ReactActivity.java'), /public @Nullable ReactDelegate getReactDelegate\(\)/);
+  assert.match(kt('ReactDelegate.kt'), /public var reactRootView: ReactRootView\?/);
+  assert.match(kt('runtime/ReactSurfaceView.kt'), /ReactSurfaceView\([^)]*\)\s*:\s*ReactRootView\(context\)/, 'the surface view is the delegate root view');
+  // What the flag switches on in the pinned RN (so the opt-in does what the helper claims).
+  assert.match(kt('runtime/ReactHostImpl.kt'), /enableFontScaleChangesUpdatingLayout\(\)\) \{\s*DisplayMetricsHolder\.initDisplayMetrics\(currentReactContext\)/);
+  assert.match(kt('runtime/ReactSurfaceImpl.kt'), /enableFontScaleChangesUpdatingLayout\(\)\)\s*context\.getResources\(\)\.getConfiguration\(\)\.fontScale/);
+  assert.match(rn('ReactCommon/react/renderer/scheduler/SurfaceHandler.cpp'), /enableFontScaleChangesUpdatingLayout\(\) &&[\s\S]{0,200}fontSizeMultiplier[\s\S]{0,200}dirtyMeasurableNodes\(\*newRoot\)/);
+
+  // The plugin entry registers its mods and writes the helper next to MainApplication (per package/variant).
+  mod.default({ android: { package: 'com.solotravelsoul.app.staging' } });
+  assert.equal(typeof files.write, 'function', 'dangerous mod registered');
+  assert.equal(mod.helperPath('/p', 'com.solotravelsoul.app.staging').replace(/\\/g, '/'), '/p/app/src/main/java/com/solotravelsoul/app/staging/FontScaleLayout.kt');
+  const appJson = JSON.parse(fs.readFileSync(path.join(root, 'apps/mobile/app.json'), 'utf8'));
+  assert.ok(appJson.expo.plugins.includes('./plugins/withFontScaleLayoutUpdates'), 'registered in app.json');
+  const appConfig = require(path.join(root, 'apps/mobile/app.config.js'));
+  for (const variant of [undefined, 'staging']) {
+    if (variant) process.env.APP_VARIANT = variant; else delete process.env.APP_VARIANT;
+    assert.ok(appConfig({ config: appJson.expo }).plugins.includes('./plugins/withFontScaleLayoutUpdates'), `present (${variant || 'production'})`);
+  }
+  delete process.env.APP_VARIANT;
+});
+
 test('native Android findings (staging APK, 2026-10-09) stay fixed', () => {
   const read = (f) => fs.readFileSync(path.join(root, 'apps/mobile', f), 'utf8');
   const walk = (d, out = []) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p, out); else if (/\.tsx?$/.test(e.name)) out.push(p); } return out; };
