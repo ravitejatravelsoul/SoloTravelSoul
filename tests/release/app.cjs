@@ -371,6 +371,48 @@ test('journal card: like control never overlapped; author and read time shrink/w
   assert.equal(flat(readTime.props.style).flexShrink, 0, 'read time stays whole ("1 min read")');
 });
 
+test('a system text-size change does not relaunch MainActivity (state, drafts and navigation survive; no stale layout) (SM-S711U, 2026-10-18)', () => {
+  // Observed on the installed APK: changing the text size while the app ran (or was backgrounded) relaunched MainActivity
+  // (wm_relaunch_resume_activity, config 0x40000000 = fontScale) because the manifest's configChanges lacked fontScale.
+  // The app came back on Feed with its draft gone, and React Native's process-wide metrics kept the old scale while the
+  // new activity drew the new one (text boxes 1.0x wide, glyphs 1.3x: "SoloTravelS", "Commu…", clipped descenders).
+  const calls = [];
+  const mod = mobile('apps/mobile/plugins/withFontScaleConfigChange.js', { 'expo/config-plugins': {
+    withAndroidManifest: (config, action) => { calls.push('withAndroidManifest'); return action({ ...config, modResults: config.__manifest }); },
+    AndroidConfig: { Manifest: { getMainActivityOrThrow: (m) => m.manifest.application[0].activity.find((a) => a.$['android:name'] === '.MainActivity') } },
+  } });
+  const { addFontScaleConfigChange } = mod;
+  const manifest = (changes) => ({ manifest: { application: [{ activity: [
+    { $: { 'android:name': '.MainActivity', ...(changes === undefined ? {} : { 'android:configChanges': changes }) } },
+    { $: { 'android:name': '.Other', 'android:configChanges': 'orientation' } },
+  ] }] } });
+  const flags = (m) => (m.manifest.application[0].activity[0].$['android:configChanges'] || '').split('|').filter(Boolean);
+  // Expo's template value (what the installed APK shipped with).
+  const template = 'keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode';
+  const a = manifest(template); addFontScaleConfigChange(a);
+  assert.deepEqual(flags(a), [...template.split('|'), 'fontScale'], 'fontScale added, existing flags kept in order');
+  addFontScaleConfigChange(a);
+  assert.equal(flags(a).filter((f) => f === 'fontScale').length, 1, 'idempotent');
+  assert.equal(a.manifest.application[0].activity[1].$['android:configChanges'], 'orientation', 'other activities untouched');
+  const b = manifest(undefined); addFontScaleConfigChange(b);
+  assert.deepEqual(flags(b), ['fontScale'], 'no existing attribute: fontScale only');
+  // The plugin entry point goes through the Expo manifest mod and is registered for every build profile.
+  const cfg = mod.default || mod;
+  cfg({ __manifest: manifest(template) });
+  assert.deepEqual(calls, ['withAndroidManifest']);
+  const appJson = JSON.parse(fs.readFileSync(path.join(root, 'apps/mobile/app.json'), 'utf8'));
+  assert.ok(appJson.expo.plugins.includes('./plugins/withFontScaleConfigChange'), 'plugin registered in app.json');
+  const appConfig = require(path.join(root, 'apps/mobile/app.config.js'));
+  for (const variant of [undefined, 'staging']) {
+    if (variant) process.env.APP_VARIANT = variant; else delete process.env.APP_VARIANT;
+    assert.ok(appConfig({ config: appJson.expo }).plugins.includes('./plugins/withFontScaleConfigChange'), `plugin present (${variant || 'production'})`);
+  }
+  delete process.env.APP_VARIANT;
+  // The tab label keeps measuring at the system's current size (no cached "natural" width survives a size change).
+  const label = fs.readFileSync(path.join(root, 'apps/mobile/components/ui/TabLabel.tsx'), 'utf8');
+  assert.match(label, /onTextLayout/, 'natural width comes from layout events, re-fired when the text size changes');
+});
+
 test('native Android findings (staging APK, 2026-10-09) stay fixed', () => {
   const read = (f) => fs.readFileSync(path.join(root, 'apps/mobile', f), 'utf8');
   const walk = (d, out = []) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p, out); else if (/\.tsx?$/.test(e.name)) out.push(p); } return out; };

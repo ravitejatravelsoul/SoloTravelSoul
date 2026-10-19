@@ -81,7 +81,8 @@
           "faceIDPermission": "Allow SoloTravelSoul to use Face ID for secure sign-in."
         }
       ],
-      "@rnmapbox/maps"
+      "@rnmapbox/maps",
+      "./plugins/withFontScaleConfigChange"
     ],
     "experiments": {
       "typedRoutes": true
