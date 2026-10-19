@@ -884,6 +884,27 @@ Helps travelers find suitable companions for a specific trip from preferences th
 - **Restored:** three-button navigation, airplane off, Wi-Fi and mobile data on, text size 1.0, 1080x2340 at 450 dpi.
 - **Evidence (cropped, no personal information):** `docs/screenshots/2026-10-19-gesture-and-text-size/`.
 
+### Font-scale mitigation on the SM-S711U: PARTIAL (2026-10-19)
+
+- **Verdict: PARTIAL.** The relaunch is gone (navigation, draft and session survive a text-size change). The app does **not** support live text-size changes: text adopts the new size inconsistently and the parts that do adopt it clip. Do not claim live font-size support.
+- **Corrected earlier claim.** The regression added in `54f2b17` (`tests/release/app.cjs`) proves manifest configuration only; it does not prove draft preservation, absence of a relaunch, or absence of clipping. Its name and comment were corrected in `45fc108` and the earlier handoff wording was qualified. The results below are the runtime evidence.
+- **Build / source:** EAS preview build `b96e7d1e-74fd-4325-b25d-05d946fe1386` from a clean worktree at `45fc10808e659822b24e30064a816d0b953142e9` (EAS Free 7/30 before the build, $0 overage; staging isolation passed, no emulator variable). APK https://expo.dev/artifacts/eas/3mYqA71tslt9ekmTb9cGoNYhVoZ3KkOojUHowdMhGTw.apk (SHA-256 `56bc3aaf1df305a150e617029197f84e2dbe3da71f616654803b6bd851a5e050`). The APK's own manifest decodes to MainActivity `configChanges` = `keyboard|keyboardHidden|orientation|screenLayout|screenSize|uiMode|fontScale` (was without `fontScale`). Installed as an update on R5CWB2VWTWB (SM-S711U, Android 16): first install 2026-10-11 unchanged, signed-in session kept.
+- **Method.** Unsent draft typed in a group chat composer (a test group in the signed-in account; nothing was sent), keyboard open. System text size changed with `settings put system font_scale`: 1.0 to 1.3 to 2.0 (foreground), a trip through Settings and back, 2.0 to 1.0, then 1.0 to 1.3 to 2.0 with the app backgrounded (Home) and brought back. Each step: screenshot, `uiautomator` node bounds, `logcat -b events` relaunch count, process id. The app was never restarted and text size was not reset to hide a failure (the final reset to 1.0 came after all observations).
+- **Survival (all steps, both scenarios): PASS.** No `wm_relaunch_resume_activity` or `wm_on_destroy_called`; the process id stayed 9984; the same chat screen, the draft text and the signed-in session persisted (before the fix on the previous APK the same change relaunched MainActivity and returned the app to Feed with the draft gone).
+- **Text actually adopting the new setting: PARTIAL / inconsistent.**
+  - Adopted (re-rendered or newly mounted views): composer text (node height 54 to 71 px at 1.3), the chat header title, the tabs that were re-rendered after the change (Explore and Chats grew), and every screen mounted after the change (journal card, New Message).
+  - Retained its old size: tab labels that were not re-rendered (Feed, Trips, Community, Profile stayed 39 px tall at 2.0), and already-mounted screens such as the Chats list (header "Chats" kept its old size).
+  - Layout boxes did not follow: the chat header title box stayed 291 x 61 px at 1.0, 1.3 and 2.0.
+- **Clipping observed (live-changed state, no restart):**
+  - Chat header: at 1.3 "Gesture-a..." (ellipsised), at 2.0 title and subtitle cut vertically ("Gestur", "1 members" half hidden); same with the app backgrounded during the change.
+  - Tabs that grew (Explore, Chats) have descenders cut ("Explore" p); untouched tabs are fine.
+  - **Input behind the keyboard:** with the keyboard open, a foreground change 1.0 to 1.3 moved the composer to y 1356-1427 while the keyboard starts at about y 1330, hiding the field and draft (reproduced twice); at 2.0, and when backgrounded during the change, the composer stayed visible (y 1221-1292).
+  - Journal card (mounted after the change) at 2.0: name truncated, "1 min read" on its own line, "1.2M" intact: no clipping. New Message input and keyboard: fine on a freshly mounted screen.
+- **Not done (stated):** no control at a fresh launch in this phase (earlier phases have fresh-launch evidence at 1.0, 1.3 and 2.0). Gesture navigation was not repeated here (three-button, the phone's original mode).
+- **Remaining option (not applied):** React Native's own `enableFontScaleChangesUpdatingLayout` re-measures text on a font-scale change, but it can only be overridden natively (`ReactNativeFeatureFlags.dangerouslyForceOverride`), which cannot be verified here without another build. Alternatively the app could restart its UI when `useWindowDimensions().fontScale` changes, at the cost of losing state, which the requirement forbids.
+- **Restored:** three-button navigation, airplane off, Wi-Fi and mobile data on, text size 1.0, 1080x2340 at 450 dpi, as recorded before testing. The disposable account and journal were deleted; existing conversations were not changed (no message sent; the draft was left unsent).
+- **Evidence (cropped, no personal information):** `docs/screenshots/2026-10-19-font-scale-mitigation/`.
+
 ## 11. Moderator onboarding (prepared; nobody appointed, no production roles granted)
 
 **Store requirements (verified 2026-10-10 against the official texts):**
