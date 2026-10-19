@@ -443,7 +443,7 @@ test('font-scale layout updates: generated native code enables RN own flag throu
   const act = fixture('MainActivity.kt').replace(/\r\n/g, '\n');
   const pa = patchMainActivity(act);
   assert.match(pa, /import android\.content\.res\.Configuration/);
-  assert.match(pa, /override fun onConfigurationChanged\(newConfig: Configuration\) \{\s*super\.onConfigurationChanged\(newConfig\)(?:\s*\/\/[^\n]*)*\s*FontScaleLayout\.relayoutReactSurface\(this\)\s*\}/);
+  assert.match(pa, /override fun onConfigurationChanged\(newConfig: Configuration\) \{\s*super\.onConfigurationChanged\(newConfig\)(?:\s*\/\/[^\n]*)*\s*FontScaleLayout\.relayoutReactSurface\(this, newConfig\)\s*\}/);
   assert.equal(patchMainActivity(pa), pa, 'idempotent');
   assert.equal((pa.match(/onConfigurationChanged/g) || []).length, 2, 'one override (declaration plus the super call)');
   assert.throws(() => patchMainActivity('class Other {}'), /MainActivity/, 'fails loudly if the template changes');
@@ -456,9 +456,31 @@ test('font-scale layout updates: generated native code enables RN own flag throu
   assert.equal((src.match(/ReactNativeFeatureFlags\.dangerouslyForceOverride\(/g) || []).length, 1, 'one forced override');
   assert.doesNotMatch(src, /ReactNativeFeatureFlags\.override\(|dangerouslyReset\(/, 'no conflicting second override');
   assert.match(src, /ReactNativeFeatureFlagsProvider by base/, 'RN defaults are delegated, not copied');
-  assert.equal((src.match(/override fun /g) || []).length, 1, 'the delegate overrides exactly one flag');
+  const delegate = src.slice(src.indexOf('internal class FontScaleLayoutFlags'), src.indexOf('object FontScaleLayout'));
+  assert.equal((delegate.match(/override fun /g) || []).length, 1, 'the delegate overrides exactly one flag');
   assert.match(src, /override fun enableFontScaleChangesUpdatingLayout\(\): Boolean = true/);
   assert.match(src, /accessed != null/, 'reports flags read before the override instead of failing silently');
+  // Font-scale change: relayout the surface, then tell JS (only when the scale really changed, after the layout pass).
+  assert.match(src, /fun relayoutReactSurface\(activity: ReactActivity, newConfig: Configuration\)/);
+  assert.match(src, /if \(newConfig\.fontScale == lastFontScale\) return/);
+  assert.match(src, /root\.requestLayout\(\)[\s\S]*addOnGlobalLayoutListener[\s\S]*emitDeviceEvent\(FONT_SCALE_CHANGED_EVENT\)/);
+  assert.match(src, /removeOnGlobalLayoutListener\(this\)/, 'one-shot listener');
+  // Settled keyboard metrics: measured on the SM-S711U, the keyboard re-inflates after a font-scale change and RN's one-shot
+  // keyboardDidShow can carry a transient screenY (135 px = the navigation bar too low), which KeyboardAvoidingView turns into
+  // composer padding. The helper re-sends RN's own payload, computed the same way, once the insets have settled.
+  assert.match(src, /KEYBOARD_SETTLE_DELAYS_MS = longArrayOf\(700L, 1600L\)/);
+  assert.match(src, /insets\.getInsets\(WindowInsets\.Type\.ime\(\)\)\.bottom - insets\.getInsets\(WindowInsets\.Type\.systemBars\(\)\)\.bottom/);
+  assert.match(src, /softInputMode == WindowManager\.LayoutParams\.SOFT_INPUT_ADJUST_NOTHING\) visible\.bottom - height else visible\.bottom/);
+  assert.match(src, /emitDeviceEvent\("keyboardDidShow", params\)/);
+  const rootView = kt('ReactRootView.java');
+  assert.match(rootView, /int height = imeInsets\.bottom - barInsets\.bottom;/, 'RN keyboard height formula');
+  assert.match(rootView, /softInputMode == WindowManager\.LayoutParams\.SOFT_INPUT_ADJUST_NOTHING\s*\?\s*mVisibleViewArea\.bottom - height\s*:\s*mVisibleViewArea\.bottom/, 'RN screenY formula');
+  assert.match(rootView, /endCoordinates\.putDouble\("height", height\);[\s\S]*putDouble\("screenX", screenX\);[\s\S]*putDouble\("width", width\);[\s\S]*putDouble\("screenY", screenY\);[\s\S]*putString\("easing", "keyboard"\);[\s\S]*putDouble\("duration", 0\)/, 'RN payload shape');
+  assert.match(fs.readFileSync(path.join(root, 'node_modules/react-native/Libraries/Components/Keyboard/KeyboardAvoidingView.js'), 'utf8'), /Keyboard\.addListener\('keyboardDidShow', this\._onKeyboardChange\)/, 'KeyboardAvoidingView listens to keyboardDidShow');
+  assert.match(kt('uimanager/PixelUtil.kt'), /fun toDIPFromPixel\(value: Float\): Float/);
+  assert.match(kt('bridge/ReactContext.java'), /public void emitDeviceEvent\(String eventName\)/);
+  assert.match(kt('ReactApplication.kt'), /val reactHost: ReactHost\?/);
+  assert.match(kt('ReactHost.kt'), /val currentReactContext: ReactContext\?/);
 
   // The RN symbols the helper uses exist in the pinned RN, with the shapes it assumes.
   assert.equal(JSON.parse(rn('package.json')).version, '0.81.5');
@@ -495,6 +517,69 @@ test('font-scale layout updates: generated native code enables RN own flag throu
     assert.ok(appConfig({ config: appJson.expo }).plugins.includes('./plugins/withFontScaleLayoutUpdates'), `present (${variant || 'production'})`);
   }
   delete process.env.APP_VARIANT;
+});
+
+test('font-scale re-commit: Text/TextInput re-render with a new prop after the native font-scale event (measured: JS commits revert re-measured native text)', () => {
+  // Measured on the SM-S711U (Gradle debug build, native instrumentation): with the RN flag on, the native tree re-measures every text node
+  // and the views reach the new size at +168 ms, but a later React commit (safe-area insets ~+100 ms) re-installs React's own, never
+  // re-measured node instances and the mount layer silently resets the views to the old size at ~+208 ms (no onLayout reaches JS).
+  // This test exercises the JS half of the fix against fake React/React Native modules.
+  const calls = [];
+  const subscribers = [];
+  const react = {
+    createElement: (type, props) => { calls.push({ type, props }); return { type, props }; },
+    useSyncExternalStore: (subscribe, getSnapshot) => { subscribers.push(subscribe(() => {})); return getSnapshot(); },
+  };
+  const listeners = [];
+  const Text = Object.assign(function Text() {}, { displayName: 'Text' });
+  const TextInput = Object.assign(function TextInput() {}, { State: { marker: 1 } });
+  const make = (os) => {
+    const rn = { Platform: { OS: os }, DeviceEventEmitter: { addListener: (name, fn) => { listeners.push({ name, fn }); return { remove() {} }; } } };
+    Object.defineProperty(rn, 'Text', { configurable: true, enumerable: true, get: () => Text });
+    Object.defineProperty(rn, 'TextInput', { configurable: true, enumerable: true, get: () => TextInput });
+    return rn;
+  };
+  const load = (os) => { const rn = make(os); return { rn, mod: mobile('apps/mobile/utils/fontScaleRelayout.ts', { react, 'react-native': rn }) }; };
+
+  // Not Android: nothing is touched.
+  const ios = load('ios'); ios.mod.installFontScaleRelayout();
+  assert.equal(ios.rn.Text, Text); assert.equal(listeners.length, 0);
+
+  const { rn, mod } = load('android');
+  assert.equal(mod.FONT_SCALE_CHANGED_EVENT, 'fontScaleChanged');
+  mod.installFontScaleRelayout(); mod.installFontScaleRelayout();
+  assert.equal(listeners.length, 1, 'one listener, install is idempotent');
+  assert.equal(listeners[0].name, 'fontScaleChanged');
+  assert.notEqual(rn.Text, Text, 'the real react-native export is replaced, not a copy');
+  assert.equal(rn.Text.displayName, 'Text'); assert.deepEqual(rn.TextInput.State, { marker: 1 }, 'statics are kept');
+
+  // Epoch 0 (no font-scale change yet): props pass through untouched.
+  const p0 = { style: { fontSize: 12 }, numberOfLines: 1 };
+  rn.Text(p0);
+  assert.equal(calls.at(-1).type, Text); assert.equal(calls.at(-1).props, p0);
+
+  // The native event bumps the epoch and notifies every mounted Text/TextInput.
+  const mounted = subscribers.length;
+  assert.ok(mounted >= 1);
+  const notified = []; rn.Text.length; // keep lint quiet
+  listeners[0].fn();
+  rn.Text(p0);
+  const p1 = calls.at(-1).props;
+  assert.notEqual(p1, p0); assert.equal(p1.nativeID, 'fs1'); assert.deepEqual(p1.style, p0.style); assert.equal(p1.numberOfLines, 1);
+  assert.equal(p0.nativeID, undefined, 'the caller props are not mutated');
+  rn.TextInput({ value: 'draft' }); assert.equal(calls.at(-1).props.nativeID, 'fs1'); assert.equal(calls.at(-1).props.value, 'draft', 'draft text is passed through');
+  // Each change gets a new value, so React commits again.
+  listeners[0].fn(); rn.Text(p0); assert.equal(calls.at(-1).props.nativeID, 'fs2');
+  // Elements that set their own id keep it; testID is the fallback; with both set nothing is injected.
+  rn.Text({ nativeID: 'mine' }); assert.equal(calls.at(-1).props.nativeID, 'mine'); assert.equal(calls.at(-1).props.testID, 'fs2');
+  rn.Text({ id: 'mine' }); assert.equal(calls.at(-1).props.nativeID, undefined); assert.equal(calls.at(-1).props.testID, 'fs2');
+  const both = { nativeID: 'a', testID: 'b' }; rn.Text(both); assert.equal(calls.at(-1).props, both);
+  void notified;
+  // The root layout installs it before anything renders, and the native side emits the same event name.
+  const layout = fs.readFileSync(path.join(root, 'apps/mobile/app/_layout.tsx'), 'utf8');
+  assert.match(layout, /import \{ installFontScaleRelayout \} from '@\/utils\/fontScaleRelayout';[\s\S]*SplashScreen\.preventAutoHideAsync\(\);\s*installFontScaleRelayout\(\);/);
+  assert.match(helperSource('com.x'), /FONT_SCALE_CHANGED_EVENT = "fontScaleChanged"/, 'native and JS event names match');
+  function helperSource(pkg) { return mobile('apps/mobile/plugins/withFontScaleLayoutUpdates.js', { 'expo/config-plugins': { withMainApplication: (c) => c, withMainActivity: (c) => c, withDangerousMod: (c) => c, AndroidConfig: {} }, fs, path }).helperSource(pkg); }
 });
 
 test('native Android findings (staging APK, 2026-10-09) stay fixed', () => {

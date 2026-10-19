@@ -13,8 +13,10 @@ import { useAuthStore } from '@/stores/authStore';
 import { ToastContainer } from '@/components/ui';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { validateEnv } from '@/utils/envCheck';
+import { installFontScaleRelayout } from '@/utils/fontScaleRelayout';
 
 SplashScreen.preventAutoHideAsync();
+installFontScaleRelayout();
 
 export default function RootLayout() {
   const { setUser, setProfile, setInitialized } = useAuthStore(
