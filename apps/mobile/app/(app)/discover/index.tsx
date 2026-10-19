@@ -255,13 +255,16 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.chipBackground,
     borderRadius: Radius.xl,
     paddingHorizontal: Spacing.md,
-    height: 42,
+    paddingVertical: Spacing.sm,
+    // A minimum, not a fixed height: 42 at normal text size, grows with the system text size instead of clipping.
+    minHeight: 42,
   },
   searchInput: {
     flex: 1,
     fontSize: FontSize.md,
     color: Colors.textPrimary,
-    height: '100%',
+    // Android's default TextInput padding would add to the bar's own padding; the bar owns the spacing.
+    paddingVertical: 0,
   },
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { paddingTop: Spacing.xl },

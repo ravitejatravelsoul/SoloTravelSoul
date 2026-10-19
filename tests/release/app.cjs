@@ -472,6 +472,12 @@ test('font-scale layout updates: generated native code enables RN own flag throu
   assert.match(src, /insets\.getInsets\(WindowInsets\.Type\.ime\(\)\)\.bottom - insets\.getInsets\(WindowInsets\.Type\.systemBars\(\)\)\.bottom/);
   assert.match(src, /softInputMode == WindowManager\.LayoutParams\.SOFT_INPUT_ADJUST_NOTHING\) visible\.bottom - height else visible\.bottom/);
   assert.match(src, /emitDeviceEvent\("keyboardDidShow", params\)/);
+  // Quick successive changes and leaving the screen: a newer change cancels the older pending callbacks, every delayed callback
+  // is guarded by its generation, and nothing holds the activity strongly (no leak, no emit after finish/destroy).
+  assert.match(src, /val mine = \+\+generation\s*handler\.removeCallbacksAndMessages\(null\)/, 'a new change cancels the pending ones');
+  assert.match(src, /WeakReference\(activity\)/, 'the activity is held weakly');
+  assert.match(src, /mine != generation \|\| live\.isFinishing \|\| live\.isDestroyed\) return/, 'layout callback checks generation and lifecycle');
+  assert.match(src, /if \(mine == generation\) reemitKeyboardMetrics\(live\)/, 'delayed keyboard re-send checks generation');
   const rootView = kt('ReactRootView.java');
   assert.match(rootView, /int height = imeInsets\.bottom - barInsets\.bottom;/, 'RN keyboard height formula');
   assert.match(rootView, /softInputMode == WindowManager\.LayoutParams\.SOFT_INPUT_ADJUST_NOTHING\s*\?\s*mVisibleViewArea\.bottom - height\s*:\s*mVisibleViewArea\.bottom/, 'RN screenY formula');
@@ -519,31 +525,24 @@ test('font-scale layout updates: generated native code enables RN own flag throu
   delete process.env.APP_VARIANT;
 });
 
-test('font-scale re-commit: Text/TextInput re-render with a new prop after the native font-scale event (measured: JS commits revert re-measured native text)', () => {
+test('font-scale re-commit install: real react-native exports replaced once, Android only, native event drives the epoch (measured: JS commits revert re-measured native text)', () => {
   // Measured on the SM-S711U (Gradle debug build, native instrumentation): with the RN flag on, the native tree re-measures every text node
   // and the views reach the new size at +168 ms, but a later React commit (safe-area insets ~+100 ms) re-installs React's own, never
   // re-measured node instances and the mount layer silently resets the views to the old size at ~+208 ms (no onLayout reaches JS).
-  // This test exercises the JS half of the fix against fake React/React Native modules.
-  const calls = [];
-  const subscribers = [];
-  const react = {
-    createElement: (type, props) => { calls.push({ type, props }); return { type, props }; },
-    useSyncExternalStore: (subscribe, getSnapshot) => { subscribers.push(subscribe(() => {})); return getSnapshot(); },
-  };
+  const React = require('react');
   const listeners = [];
-  const Text = Object.assign(function Text() {}, { displayName: 'Text' });
-  const TextInput = Object.assign(function TextInput() {}, { State: { marker: 1 } });
+  const Text = Object.assign(function Text() { return null; }, { displayName: 'Text' });
+  const TextInput = Object.assign(function TextInput() { return null; }, { State: { marker: 1 } });
   const make = (os) => {
     const rn = { Platform: { OS: os }, DeviceEventEmitter: { addListener: (name, fn) => { listeners.push({ name, fn }); return { remove() {} }; } } };
     Object.defineProperty(rn, 'Text', { configurable: true, enumerable: true, get: () => Text });
     Object.defineProperty(rn, 'TextInput', { configurable: true, enumerable: true, get: () => TextInput });
     return rn;
   };
-  const load = (os) => { const rn = make(os); return { rn, mod: mobile('apps/mobile/utils/fontScaleRelayout.ts', { react, 'react-native': rn }) }; };
+  const load = (os) => { const rn = make(os); return { rn, mod: mobile('apps/mobile/utils/fontScaleRelayout.ts', { react: React, 'react-native': rn }) }; };
 
-  // Not Android: nothing is touched.
   const ios = load('ios'); ios.mod.installFontScaleRelayout();
-  assert.equal(ios.rn.Text, Text); assert.equal(listeners.length, 0);
+  assert.equal(ios.rn.Text, Text, 'not Android: nothing is touched'); assert.equal(listeners.length, 0);
 
   const { rn, mod } = load('android');
   assert.equal(mod.FONT_SCALE_CHANGED_EVENT, 'fontScaleChanged');
@@ -552,34 +551,77 @@ test('font-scale re-commit: Text/TextInput re-render with a new prop after the n
   assert.equal(listeners[0].name, 'fontScaleChanged');
   assert.notEqual(rn.Text, Text, 'the real react-native export is replaced, not a copy');
   assert.equal(rn.Text.displayName, 'Text'); assert.deepEqual(rn.TextInput.State, { marker: 1 }, 'statics are kept');
-
-  // Epoch 0 (no font-scale change yet): props pass through untouched.
-  const p0 = { style: { fontSize: 12 }, numberOfLines: 1 };
-  rn.Text(p0);
-  assert.equal(calls.at(-1).type, Text); assert.equal(calls.at(-1).props, p0);
-
-  // The native event bumps the epoch and notifies every mounted Text/TextInput.
-  const mounted = subscribers.length;
-  assert.ok(mounted >= 1);
-  const notified = []; rn.Text.length; // keep lint quiet
-  listeners[0].fn();
-  rn.Text(p0);
-  const p1 = calls.at(-1).props;
-  assert.notEqual(p1, p0); assert.equal(p1.nativeID, 'fs1'); assert.deepEqual(p1.style, p0.style); assert.equal(p1.numberOfLines, 1);
-  assert.equal(p0.nativeID, undefined, 'the caller props are not mutated');
-  rn.TextInput({ value: 'draft' }); assert.equal(calls.at(-1).props.nativeID, 'fs1'); assert.equal(calls.at(-1).props.value, 'draft', 'draft text is passed through');
-  // Each change gets a new value, so React commits again.
-  listeners[0].fn(); rn.Text(p0); assert.equal(calls.at(-1).props.nativeID, 'fs2');
-  // Elements that set their own id keep it; testID is the fallback; with both set nothing is injected.
-  rn.Text({ nativeID: 'mine' }); assert.equal(calls.at(-1).props.nativeID, 'mine'); assert.equal(calls.at(-1).props.testID, 'fs2');
-  rn.Text({ id: 'mine' }); assert.equal(calls.at(-1).props.nativeID, undefined); assert.equal(calls.at(-1).props.testID, 'fs2');
-  const both = { nativeID: 'a', testID: 'b' }; rn.Text(both); assert.equal(calls.at(-1).props, both);
-  void notified;
   // The root layout installs it before anything renders, and the native side emits the same event name.
   const layout = fs.readFileSync(path.join(root, 'apps/mobile/app/_layout.tsx'), 'utf8');
   assert.match(layout, /import \{ installFontScaleRelayout \} from '@\/utils\/fontScaleRelayout';[\s\S]*SplashScreen\.preventAutoHideAsync\(\);\s*installFontScaleRelayout\(\);/);
-  assert.match(helperSource('com.x'), /FONT_SCALE_CHANGED_EVENT = "fontScaleChanged"/, 'native and JS event names match');
-  function helperSource(pkg) { return mobile('apps/mobile/plugins/withFontScaleLayoutUpdates.js', { 'expo/config-plugins': { withMainApplication: (c) => c, withMainActivity: (c) => c, withDangerousMod: (c) => c, AndroidConfig: {} }, fs, path }).helperSource(pkg); }
+  const plugin = mobile('apps/mobile/plugins/withFontScaleLayoutUpdates.js', { 'expo/config-plugins': { withMainApplication: (c) => c, withMainActivity: (c) => c, withDangerousMod: (c) => c, AndroidConfig: {} }, fs, path });
+  assert.match(plugin.helperSource('com.x'), /FONT_SCALE_CHANGED_EVENT = "fontScaleChanged"/, 'native and JS event names match');
+});
+
+test('font-scale re-commit with many elements (real React): unique ids, caller ids kept, in-place updates, TextInput props/ref/statics kept', () => {
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const h = React.createElement;
+  const listeners = [];
+  const seen = []; // every props object an original component receives, in render order
+  const Text = function Text(props) { seen.push({ kind: 'Text', props }); return h('span', { 'data-id': props.nativeID ?? '', 'data-test': props.testID ?? '', 'data-own': props.id ?? '' }, props.children); };
+  const TextInput = Object.assign(function TextInput(props) { seen.push({ kind: 'TextInput', props }); return h('input', { 'data-id': props.nativeID ?? '', 'data-test': props.testID ?? '', defaultValue: props.value }); }, { State: { marker: 7 } });
+  const rn = { Platform: { OS: 'android' }, DeviceEventEmitter: { addListener: (name, fn) => { listeners.push({ name, fn }); return { remove() {} }; } } };
+  Object.defineProperty(rn, 'Text', { configurable: true, enumerable: true, get: () => Text });
+  Object.defineProperty(rn, 'TextInput', { configurable: true, enumerable: true, get: () => TextInput });
+  const mod = mobile('apps/mobile/utils/fontScaleRelayout.ts', { react: React, 'react-native': rn });
+  mod.installFontScaleRelayout();
+
+  const refCb = () => {}; const onChangeText = () => {}; const selection = { start: 3, end: 3 };
+  const Tree = () => h('div', null,
+    h(rn.Text, { key: 'a' }, 'a'), h(rn.Text, { key: 'b' }, 'b'), h(rn.Text, { key: 'c' }, 'c'),
+    h(rn.Text, { key: 'mine', nativeID: 'mine' }, 'mine'), h(rn.Text, { key: 'id', id: 'own' }, 'id'),
+    h(rn.Text, { key: 'both', nativeID: 'n', testID: 't' }, 'both'),
+    h(rn.Text, { key: 'outer' }, h(rn.Text, { key: 'inner' }, 'nested')),
+    h(rn.TextInput, { key: 'input', value: 'draft', ref: refCb, selection, onChangeText }),
+    h(rn.TextInput, { key: 'input2', value: 'two', testID: 'caller-test' }));
+  const idsOf = (html) => [...html.matchAll(/data-id="([^"]*)"/g)].map((m) => m[1]);
+  const testsOf = (html) => [...html.matchAll(/data-test="([^"]*)"/g)].map((m) => m[1]);
+
+  // Epoch 0: nothing is injected anywhere.
+  const html0 = renderToStaticMarkup(h(Tree));
+  assert.deepEqual(idsOf(html0).filter(Boolean), ['mine', 'n']); assert.deepEqual(testsOf(html0).filter(Boolean), ['t', 'caller-test']);
+
+  const epoch = (n) => {
+    listeners[0].fn();
+    seen.length = 0;
+    const html = renderToStaticMarkup(h(Tree));
+    const injected = [...idsOf(html), ...testsOf(html)].filter((v) => v.startsWith(`fsr-${n}-`));
+    return { html, injected, ids: idsOf(html), tests: testsOf(html) };
+  };
+  const e1 = epoch(1);
+  // 9 elements get an injected token: a, b, c, outer, inner, input (nativeID), mine/id/input2 (testID fallback); 'both' none.
+  assert.equal(e1.injected.length, 9, `injected ${e1.injected.join(',')}`);
+  assert.equal(new Set(e1.injected).size, e1.injected.length, 'no two elements share an identifier');
+  assert.ok(e1.ids.includes('mine') && e1.ids.includes('n'), 'caller nativeIDs kept');
+  assert.ok(e1.tests.includes('t') && e1.tests.includes('caller-test'), 'caller testIDs kept');
+  assert.ok(!e1.html.includes('data-id="fs1"'), 'no shared fs1');
+  // The caller's own props reach the originals untouched; the TextInput keeps ref, value, selection, handlers.
+  const input = seen.find((s) => s.kind === 'TextInput' && s.props.value === 'draft').props;
+  assert.equal(input.value, 'draft'); assert.equal(input.selection, selection); assert.equal(input.onChangeText, onChangeText);
+  assert.equal(input.ref, refCb, 'ref forwarded (React 19 passes it as a prop)');
+  assert.match(input.nativeID, /^fsr-1-/);
+  const kept = seen.find((s) => s.kind === 'Text' && s.props.nativeID === 'mine').props; assert.match(kept.testID, /^fsr-1-/);
+  assert.deepEqual(rn.TextInput.State, { marker: 7 }, 'statics kept');
+  // A second change gives every element a new, still unique identifier (React sees a changed prop and re-commits).
+  const e2 = epoch(2);
+  assert.equal(e2.injected.length, 9); assert.equal(new Set(e2.injected).size, 9);
+  assert.equal(e2.injected.filter((v) => e1.injected.includes(v)).length, 0, 'every identifier differs from the previous epoch');
+  // Same component type and no key added: React updates in place (focus, selection and draft are not remounted).
+  assert.equal(React.createElement(rn.TextInput, { value: 'x' }).type, rn.TextInput);
+  assert.equal(rn.TextInput, rn.TextInput, 'the exported component is stable between renders');
+});
+
+test('Explore search bar adapts to the system text size: a minimum height, no fixed height that clips 2.0x text', () => {
+  const src = fs.readFileSync(path.join(root, 'apps/mobile/app/(app)/discover/index.tsx'), 'utf8');
+  const styles = src.slice(src.indexOf('searchBar: {'), src.indexOf('loader:'));
+  assert.match(styles, /minHeight: 42/, 'normal-size height is kept as a minimum');
+  assert.doesNotMatch(styles, /height:/, 'no fixed height on the bar or on the input');
 });
 
 test('native Android findings (staging APK, 2026-10-09) stay fixed', () => {

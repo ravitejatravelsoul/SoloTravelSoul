@@ -70,6 +70,7 @@ import android.util.Log
 import android.view.ViewTreeObserver
 import android.view.WindowInsets
 import android.view.WindowManager
+import java.lang.ref.WeakReference
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactApplication
 import com.facebook.react.bridge.Arguments
@@ -112,29 +113,45 @@ object FontScaleLayout {
     }
   }
 
+  private val handler = Handler(Looper.getMainLooper())
+
+  /** Incremented by every font-scale change; callbacks of an earlier change see a different value and do nothing. */
+  private var generation = 0
+
   /**
    * Call from MainActivity.onConfigurationChanged after super (React Native has refreshed its metrics by then).
    * When the font scale really changed: ask the React surface to measure again (it only does so when asked or
    * when its size changes) and, once that layout pass is done, tell JS so React re-commits its text nodes.
    * Emitting earlier would let React commit before the surface carries the new scale.
+   * Quick successive changes: only the latest change emits and re-sends keyboard metrics; callbacks of the earlier
+   * ones are cancelled or ignored. Callbacks hold the activity weakly and do nothing once it is finishing or destroyed.
    */
   fun relayoutReactSurface(activity: ReactActivity, newConfig: Configuration) {
     if (newConfig.fontScale == lastFontScale) return
     lastFontScale = newConfig.fontScale
+    val mine = ++generation
+    handler.removeCallbacksAndMessages(null)
     val root = activity.reactDelegate?.reactRootView ?: return
+    val ref = WeakReference(activity)
     root.requestLayout()
     root.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
       override fun onGlobalLayout() {
         if (root.viewTreeObserver.isAlive) root.viewTreeObserver.removeOnGlobalLayoutListener(this)
-        (activity.application as? ReactApplication)?.reactHost?.currentReactContext?.emitDeviceEvent(FONT_SCALE_CHANGED_EVENT)
+        val live = ref.get() ?: return
+        if (mine != generation || live.isFinishing || live.isDestroyed) return
+        (live.application as? ReactApplication)?.reactHost?.currentReactContext?.emitDeviceEvent(FONT_SCALE_CHANGED_EVENT)
       }
     })
     // The keyboard re-inflates itself on a font-scale change and the window insets pass through transient states
     // (IME hidden, system bars 0) before settling about half a second later. React Native computes its
     // keyboardDidShow payload once, in whichever state it catches, and KeyboardAvoidingView pads the composer from it.
     // Re-send the settled values so the composer ends up above the keyboard.
-    val handler = Handler(Looper.getMainLooper())
-    for (delay in KEYBOARD_SETTLE_DELAYS_MS) handler.postDelayed({ reemitKeyboardMetrics(activity) }, delay)
+    for (delay in KEYBOARD_SETTLE_DELAYS_MS) {
+      handler.postDelayed({
+        val live = ref.get() ?: return@postDelayed
+        if (mine == generation) reemitKeyboardMetrics(live)
+      }, delay)
+    }
   }
 
   private val KEYBOARD_SETTLE_DELAYS_MS = longArrayOf(700L, 1600L)

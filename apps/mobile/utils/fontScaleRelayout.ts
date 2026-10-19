@@ -1,4 +1,4 @@
-import { createElement, useSyncExternalStore, type ComponentType } from 'react';
+import { createElement, useId, useSyncExternalStore, type ComponentType } from 'react';
 import { DeviceEventEmitter, Platform } from 'react-native';
 // A namespace import (`import * as`) is a copy of the module; the getters below must replace the real exports.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -24,14 +24,21 @@ const getEpoch = () => epoch;
  * installs React's own node instances for every subtree it did not touch. Those were never re-measured, so their
  * views snap back to the old size while the glyphs stay new. Giving each Text/TextInput a prop that changes with
  * the font-scale epoch makes React re-commit them, now measured with the live scale.
+ *
+ * The prop is an identifier, so it is unique per element (`fsr-<epoch>-<useId>`): no two elements share it, it differs
+ * from every earlier epoch, and a caller's own `nativeID`/`id`/`testID` is never replaced. The wrapper renders the same
+ * component type without a key, so React updates the element in place: refs, focus, selection and draft text of a
+ * TextInput are untouched.
  */
 function withFontScaleEpoch<P extends IdProps>(Original: ComponentType<P>): ComponentType<P> {
   function FontScaleAware(props: P) {
+    const instance = useId();
     const current = useSyncExternalStore(subscribe, getEpoch, getEpoch);
     let next = props;
     if (current !== 0) {
-      if (props.nativeID == null && props.id == null) next = { ...props, nativeID: `fs${current}` };
-      else if (props.testID == null) next = { ...props, testID: `fs${current}` };
+      const token = `fsr-${current}-${instance}`;
+      if (props.nativeID == null && props.id == null) next = { ...props, nativeID: token };
+      else if (props.testID == null) next = { ...props, testID: token };
     }
     return createElement(Original as ComponentType<IdProps>, next);
   }
