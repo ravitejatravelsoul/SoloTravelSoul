@@ -50,21 +50,28 @@ export const JournalCard = memo(function JournalCard({ journal }: Props) {
         ) : null}
 
         {/* ── Author + meta ── */}
+        {/* The metadata shrinks and wraps (long names ellipsise, read time moves under the author at
+            large text sizes); the like control keeps its own space and is never overlapped. */}
         <View style={styles.footer}>
-          <View style={styles.authorRow}>
-            <Avatar uri={journal.authorPhoto} initials={initials} size={24} />
-            <Text style={styles.authorName}>{journal.authorName}</Text>
-            <Text style={styles.sep}>·</Text>
-            <Ionicons name="time-outline" size={12} color={Colors.textSecondary} />
-            <Text style={styles.readTime}>{journal.readTimeMinutes} min read</Text>
+          <View style={styles.meta}>
+            <View style={styles.author}>
+              <Avatar uri={journal.authorPhoto} initials={initials} size={24} />
+              <Text style={styles.authorName} numberOfLines={1}>{journal.authorName}</Text>
+            </View>
+            <View style={styles.readTimeRow}>
+              <Ionicons name="time-outline" size={12} color={Colors.textSecondary} />
+              <Text style={styles.readTime}>{journal.readTimeMinutes} min read</Text>
+            </View>
           </View>
-          <LikeButton
-            liked={liked}
-            count={journal.likeCount}
-            onToggle={() => toggle(journal.likeCount)}
-            disabled={toggling}
-            size={18}
-          />
+          <View style={styles.like}>
+            <LikeButton
+              liked={liked}
+              count={journal.likeCount}
+              onToggle={() => toggle(journal.likeCount)}
+              disabled={toggling}
+              size={18}
+            />
+          </View>
         </View>
       </View>
     </TouchableOpacity>
@@ -114,8 +121,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  authorRow: { flexDirection: 'row', alignItems: 'center', gap: 5, flex: 1 },
-  authorName: { fontSize: FontSize.sm, color: Colors.textSecondary },
-  sep: { fontSize: FontSize.sm, color: Colors.placeholder },
+  meta: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    columnGap: Spacing.sm,
+    rowGap: Spacing.xs,
+  },
+  author: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 1, minWidth: 0 },
+  authorName: { fontSize: FontSize.sm, color: Colors.textSecondary, flexShrink: 1 },
+  readTimeRow: { flexDirection: 'row', alignItems: 'center', gap: 3, flexShrink: 0 },
   readTime: { fontSize: FontSize.sm, color: Colors.textSecondary },
+  like: { flexShrink: 0, marginLeft: Spacing.sm },
 });

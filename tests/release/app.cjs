@@ -262,6 +262,115 @@ test('tab bar sits above the system navigation: height and padding follow the re
   assert.match(layout, /tabBarHideOnKeyboard: true/);
 });
 
+// Renders a .tsx component to a plain element tree (React stubbed; no native layout engine).
+function component(file, deps) {
+  const ts = require(path.join(root, 'node_modules/typescript'));
+  const code = ts.transpileModule(fs.readFileSync(path.join(root, file), 'utf8'), { fileName: file, compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+  const el = (type, props) => ({ type, props: { ...props, children: [props.children].flat(Infinity).filter((c) => c != null && c !== false) } });
+  const m = { exports: {} };
+  new Function('module', 'exports', 'require', code)(m, m.exports, (n) => {
+    if (n === 'react/jsx-runtime') return { jsx: el, jsxs: el, Fragment: 'Fragment' };
+    if (n in deps) return deps[n];
+    if (n === 'react') return { memo: (f) => f };
+    throw Error('Unexpected ' + n);
+  });
+  return m.exports;
+}
+const flat = (st) => (Array.isArray(st) ? Object.assign({}, ...st.flat(Infinity).filter(Boolean).map(flat)) : st || {});
+const nodes = (el, out = []) => { if (el && typeof el === 'object' && el.props) { out.push(el); for (const c of el.props.children || []) nodes(c, out); } return out; };
+const textOf = (el) => (typeof el === 'string' || typeof el === 'number' ? String(el) : el && el.props ? (el.props.children || []).map(textOf).join('') : '');
+const rnStub = { StyleSheet: { create: (o) => o }, Text: 'Text', View: 'View', TouchableOpacity: 'TouchableOpacity', Image: 'Image' };
+// Conservative advance for a 600-weight label in a wide system font (SamsungOne): 0.6 em per glyph.
+const estWidth = (s, fontSize) => s.length * 0.6 * fontSize;
+
+test('tab labels stay whole and readable at default and enlarged text on a 384 dp phone (SM-S711U "Communi…", 2026-10-18)', () => {
+  // Hook state across renders, driven by the label's own layout callbacks.
+  const slots = []; let i = 0;
+  const react = { useState: (init) => { const k = i++; if (!(k in slots)) slots[k] = init; return [slots[k], (v) => { slots[k] = v; }]; } };
+  const mod = component('apps/mobile/components/ui/TabLabel.tsx', { react, 'react-native': rnStub });
+  const { TabLabel, fitScale, TAB_LABEL_MIN_SCALE, TAB_LABEL_MAX_FONT_MULTIPLIER, TAB_LABEL_FIT_MARGIN } = mod;
+  const render = () => { i = 0; return TabLabel({ color: '#123456', children: 'Community' }); };
+  let box = render();
+  const [measure, visible] = box.props.children;
+  assert.equal(box.props.pointerEvents, 'none', 'the tab button keeps every touch');
+  assert.equal(flat(measure.props.style).opacity, 0); assert.equal(measure.props.importantForAccessibility, 'no-hide-descendants');
+  assert.equal(measure.props.numberOfLines, undefined, 'the measuring copy is unconstrained');
+  assert.equal(visible.props.numberOfLines, 1);
+  for (const t of [measure, visible]) {
+    assert.notEqual(t.props.allowFontScaling, false, 'follows the system text size (no opt-out)');
+    assert.equal(t.props.maxFontSizeMultiplier, TAB_LABEL_MAX_FONT_MULTIPLIER, 'same growth cap for both copies');
+  }
+  assert.ok(TAB_LABEL_MAX_FONT_MULTIPLIER >= 1.3 && TAB_LABEL_MIN_SCALE >= 0.65);
+  assert.ok(TAB_LABEL_FIT_MARGIN >= 1, 'slack for whole-pixel font rounding (an exact fit still ellipsised on Android)');
+  assert.equal(flat(visible.props.style).color, '#123456');
+  assert.equal(textOf(visible), 'Community', 'full title, never a hard-coded abbreviation');
+  const base = flat(visible.props.style).fontSize;
+  // Measured: natural 57 dp (split over two lines when constrained), tab box 54 dp → scaled to fit with slack.
+  box.props.onLayout({ nativeEvent: { layout: { width: 54 } } });
+  measure.props.onTextLayout({ nativeEvent: { lines: [{ width: 40 }, { width: 17 }] } });
+  box = render();
+  assert.equal(flat(box.props.children[1].props.style).fontSize, base * ((54 - TAB_LABEL_FIT_MARGIN) / 57));
+  // React Navigation's own inner tab padding (its source), on 360/384/411 dp phones and text ×1–×2.
+  const item = fs.readFileSync(path.join(root, 'node_modules/@react-navigation/bottom-tabs/src/views/BottomTabItem.tsx'), 'utf8');
+  const pad = Number(item.match(/tabVerticalUiKit: \{[^}]*padding: (\d+)/)[1]);
+  const titles = ['Feed', 'Trips', 'Explore', 'Chats', 'Community', 'Profile'];
+  for (const width of [360, 384, 411]) {
+    const available = width / titles.length - 2 * pad;
+    for (const scale of [1, 1.15, 1.3, 1.5, 2]) {
+      const size = base * Math.min(scale, TAB_LABEL_MAX_FONT_MULTIPLIER);
+      for (const t of titles) {
+        const need = (available - TAB_LABEL_FIT_MARGIN) / estWidth(t, size);
+        const s = fitScale(estWidth(t, size), available);
+        assert.ok(need >= TAB_LABEL_MIN_SCALE, `${t} at ${width} dp, text ×${scale}: needs ${need.toFixed(2)}`);
+        assert.ok(estWidth(t, size) * s <= available + 1e-9, `${t} fits at ${width} dp, text ×${scale}`);
+      }
+    }
+  }
+  assert.equal(fitScale(0, 54), 1, 'unmeasured: full size');
+  const layout = fs.readFileSync(path.join(root, 'apps/mobile/app/(app)/_layout.tsx'), 'utf8');
+  assert.match(layout, /tabBarLabel: \(\{ color, children \}\) => <TabLabel color=\{color\}>\{children\}<\/TabLabel>/);
+  assert.doesNotMatch(layout, /allowFontScaling=\{false\}|allowFontScaling: false/);
+  assert.match(layout, /\.\.\.tabBarInsets\(insets\.bottom\)/, 'safe-area fix kept');
+});
+
+test('journal card: like control never overlapped; author and read time shrink/wrap (SM-S711U, 2026-10-18)', () => {
+  const like = component('apps/mobile/components/posts/LikeButton.tsx', {
+    'react-native': rnStub, '@expo/vector-icons': { Ionicons: 'Ionicons' }, '@/components/ui': { Text: 'Text' },
+    '@/constants/theme': { Colors: {}, FontSize: { sm: 14 }, FontWeight: {} },
+  });
+  const countOf = (n) => textOf(nodes(like.LikeButton({ liked: false, count: n, onToggle() {} })).find((x) => x.type === 'Text') || '');
+  assert.deepEqual([0, 7, 999, 1000, 1500, 999_949, 999_950, 2_400_000].map(countOf), ['', '7', '999', '1k', '1.5k', '999.9k', '1M', '2.4M']);
+  const card = component('apps/mobile/components/journals/JournalCard.tsx', {
+    'react-native': rnStub, 'expo-router': { router: { push() {} } }, '@expo/vector-icons': { Ionicons: 'Ionicons' },
+    '@/hooks/useMediaSource': { useMediaSource: () => (u) => ({ uri: u }) },
+    '@/components/ui': { Text: 'Text', Avatar: 'Avatar' }, '@/components/posts/LikeButton': { LikeButton: 'LikeButton' },
+    '@/hooks/useJournals': { useLikeJournal: () => ({ liked: false, toggling: false, toggle() {} }) },
+    '@solotravelsoul/shared': { getUserInitials: () => 'AB' },
+    '@/constants/theme': { Colors: {}, Spacing: { xs: 4, sm: 8, md: 12, '2xl': 24 }, Radius: {}, FontSize: { xs: 12, sm: 14, xl: 20 }, FontWeight: {}, Shadow: {} },
+  });
+  const longName = 'Maximiliana Alexandrovna Featherstonehaugh-Whittingham';
+  const tree = card.JournalCard({ journal: { journalId: 'j', title: 'T', authorName: longName, readTimeMinutes: 1, likeCount: 1_234_567 } });
+  const all = nodes(tree);
+  const footer = all.find((n) => n.props.children.some((c) => nodes(c).some((x) => x.type === 'LikeButton')) && flat(n.props.style).flexDirection === 'row');
+  assert.ok(footer, 'footer row');
+  const [meta, likeSlot, ...rest] = footer.props.children.filter(Boolean);
+  assert.equal(rest.length, 0);
+  assert.ok(nodes(likeSlot).some((x) => x.type === 'LikeButton'), 'like control is its own footer slot');
+  assert.equal(flat(likeSlot.props.style).flexShrink, 0, 'like control is never compressed or overlapped');
+  const m = flat(meta.props.style);
+  assert.equal(m.flex, 1); assert.equal(m.minWidth, 0, 'metadata can shrink below its content width');
+  assert.equal(m.flexWrap, 'wrap', 'read time wraps under the author instead of running into the like count');
+  const name = nodes(meta).find((x) => x.type === 'Text' && textOf(x) === longName);
+  assert.ok(name, 'full name rendered (ellipsised visually, readable by screen readers)');
+  assert.equal(name.props.numberOfLines, 1);
+  assert.equal(flat(name.props.style).flexShrink, 1);
+  const author = meta.props.children.find((c) => nodes(c).includes(name));
+  assert.ok(flat(author.props.style).flexShrink >= 1 && flat(author.props.style).minWidth === 0, 'author group shrinks');
+  const readTime = meta.props.children.find((c) => /min read/.test(textOf(c)));
+  assert.ok(readTime && readTime !== author, 'read time is its own wrap unit');
+  assert.equal(flat(readTime.props.style).flexShrink, 0, 'read time stays whole ("1 min read")');
+});
+
 test('native Android findings (staging APK, 2026-10-09) stay fixed', () => {
   const read = (f) => fs.readFileSync(path.join(root, 'apps/mobile', f), 'utf8');
   const walk = (d, out = []) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p, out); else if (/\.tsx?$/.test(e.name)) out.push(p); } return out; };

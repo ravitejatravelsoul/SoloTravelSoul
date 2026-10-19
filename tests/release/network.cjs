@@ -10,10 +10,10 @@ const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '../..');
 const ts = require(path.join(root, 'node_modules/typescript'));
 
-function load(file, deps) {
+function load(file, deps, globals = {}) {
   const m = { exports: {} };
   const src = ts.transpileModule(fs.readFileSync(path.join(root, file), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(src, { module: m, exports: m.exports, console: { error() {}, log() {}, warn() {} }, process: { env: {} }, Date, Math,
+  vm.runInNewContext(src, { module: m, exports: m.exports, console: { error() {}, log() {}, warn() {} }, process: { env: {} }, Date, Math, ...globals,
     require: (n) => { if (n in deps) return deps[n]; throw Error('Unexpected ' + n); } }, { filename: file });
   return m.exports;
 }
@@ -62,11 +62,31 @@ function fakeNetwork() {
   n.emit = (online) => { n.online = online; for (const l of [...n.listeners]) l({ type: online ? 'WIFI' : 'NONE', isConnected: online, isInternetReachable: online }); };
   n.resolveChecks = (online = n.online) => { for (const r of n.checks.splice(0)) r({ isConnected: online, isInternetReachable: online }); };
   n.foreground = () => { for (const l of [...n.appListeners]) l('active'); };
+  // Raw native payloads, e.g. Android's onLost delivered while activeNetwork is still the lost network.
+  n.emitRaw = (payload) => { for (const l of [...n.listeners]) l(payload); };
+  n.resolveRaw = (payload) => { for (const r of n.checks.splice(0)) r(payload); };
+  n.expoNetwork.NetworkStateType = { UNKNOWN: 'UNKNOWN', NONE: 'NONE', WIFI: 'WIFI' };
+  // Fake clock for the hook's timers.
+  let tid = 0;
+  n.now = 0; n.timers = [];
+  n.clock = {
+    setTimeout: (fn, ms) => { const t = { id: ++tid, at: n.now + (ms || 0), fn }; n.timers.push(t); return t.id; },
+    clearTimeout: (id) => { n.timers = n.timers.filter((t) => t.id !== id); },
+  };
+  n.advance = (ms) => {
+    const end = n.now + ms;
+    for (;;) {
+      const due = n.timers.filter((t) => t.at <= end).sort((a, b) => a.at - b.at)[0];
+      if (!due) break;
+      n.timers = n.timers.filter((t) => t !== due); n.now = due.at; due.fn();
+    }
+    n.now = end;
+  };
   return n;
 }
 
 function networkHook(rt, net) {
-  return load('apps/mobile/hooks/useNetworkState.ts', { react: rt.react, 'react-native': { AppState: net.AppState }, 'expo-network': net.expoNetwork }).useNetworkState;
+  return load('apps/mobile/hooks/useNetworkState.ts', { react: rt.react, 'react-native': { AppState: net.AppState }, 'expo-network': net.expoNetwork }, net.clock).useNetworkState;
 }
 
 const tests = [];
@@ -131,7 +151,7 @@ function app(net) {
   const firebase = { subscribeToDirectMessages: (_c, cb) => { be.snapshot = cb; return () => {}; }, sendDirectMessage: write, markDirectChatRead: async () => {} };
   const lock = load('apps/mobile/utils/queueLock.ts', {});
   const cq = load('apps/mobile/utils/chatQueue.ts', { './queueLock': lock, '@react-native-async-storage/async-storage': { default: storage }, '@solotravelsoul/firebase': { sendDirectMessage: write, sendGroupMessage: async () => {} } });
-  const netMod = load('apps/mobile/hooks/useNetworkState.ts', { react: rt.react, 'react-native': { AppState: net.AppState }, 'expo-network': net.expoNetwork });
+  const netMod = load('apps/mobile/hooks/useNetworkState.ts', { react: rt.react, 'react-native': { AppState: net.AppState }, 'expo-network': net.expoNetwork }, net.clock);
   const user = { uid: 'u' };
   const auth = (sel) => sel({ user }); auth.getState = () => ({ user });
   const toasts = [];
@@ -198,6 +218,111 @@ test('queued while offline, refused on reconnect (suspended): dropped, reported,
   a.be.refuse = false;
   net.emit(false); net.emit(true); await a.rt.flush(); await tick(); await a.rt.flush();
   assert.equal(a.be.delivered.length, 0);
+});
+
+// ── Android event races (SM-S711U, Android 16) ─────────────────────────────────
+// ConnectivityService calls onLost ~90 ms before it moves the default network, so expo-network's
+// event (read from activeNetwork inside the callback) can still report the lost Wi-Fi as connected,
+// and no later event follows. The same can happen around onAvailable on reconnect.
+const STALE_ONLINE = { type: 'WIFI', isConnected: true, isInternetReachable: true };
+const STALE_OFFLINE = { type: 'NONE', isConnected: false, isInternetReachable: false };
+const UNKNOWN = { type: 'UNKNOWN', isConnected: false, isInternetReachable: true }; // activeNetwork set, capabilities gone
+
+test('onLost race: an event still reporting the lost network is corrected in the foreground within seconds', async () => {
+  const rt = runtime(); const net = fakeNetwork();
+  const useNetworkState = networkHook(rt, net);
+  const c = rt.mount(() => useNetworkState());
+  net.resolveChecks(true); await rt.flush();
+  net.online = false; net.emitRaw(STALE_ONLINE); await rt.flush();
+  assert.equal(net.checks.length, 0, 'no check fired synchronously by the event');
+  net.advance(1000);
+  assert.equal(net.checks.length, 1, 'one confirmation check about a second after the event');
+  net.resolveChecks(); await rt.flush();
+  assert.equal(c.value.isConnected, false, 'offline without backgrounding');
+  assert.equal(c.value.isInternetReachable, false);
+  net.advance(60_000); net.resolveChecks(); await rt.flush();
+  assert.equal(c.value.isConnected, false);
+  net.advance(10 * 60_000);
+  assert.equal(net.checks.length + net.timers.length, 0, 'no polling while nothing changes');
+});
+
+test('onAvailable race: a reconnect event still reporting no network is corrected', async () => {
+  const rt = runtime(); const net = fakeNetwork();
+  const useNetworkState = networkHook(rt, net);
+  const c = rt.mount(() => useNetworkState());
+  net.resolveChecks(true); await rt.flush();
+  net.emit(false); await rt.flush(); net.advance(10_000); net.resolveChecks(); await rt.flush();
+  assert.equal(c.value.isConnected, false);
+  net.online = true; net.emitRaw(STALE_OFFLINE); await rt.flush();
+  assert.equal(c.value.isConnected, false);
+  net.advance(1000); net.resolveChecks(); await rt.flush();
+  assert.equal(c.value.isConnected, true, 'online again without backgrounding');
+});
+
+test('unknown native state keeps the last known state until confirmed; still unknown after the last confirmation counts as offline', async () => {
+  const rt = runtime(); const net = fakeNetwork();
+  const useNetworkState = networkHook(rt, net);
+  const c = rt.mount(() => useNetworkState());
+  net.resolveChecks(true); await rt.flush();
+  net.emitRaw(UNKNOWN); await rt.flush();
+  assert.equal(c.value.isConnected, true, 'a transitional UNKNOWN does not flip the state by itself');
+  net.advance(1000); net.resolveRaw(UNKNOWN); await rt.flush();
+  assert.equal(c.value.isConnected, true, 'still unconfirmed');
+  net.advance(10_000); net.resolveRaw(UNKNOWN); await rt.flush();
+  assert.equal(c.value.isConnected, false, 'deliberately offline: writes queue rather than fail');
+  assert.equal(c.value.isInternetReachable, false);
+  // Unknown on a direct check (mount/foreground) is confirmed the same way.
+  net.foreground(); net.resolveRaw(UNKNOWN); await rt.flush();
+  assert.equal(c.value.isConnected, false);
+  net.advance(1000); net.resolveChecks(true); await rt.flush();
+  assert.equal(c.value.isConnected, true);
+});
+
+test('connection and reachability: never reachable without a connection', async () => {
+  const rt = runtime(); const net = fakeNetwork();
+  const useNetworkState = networkHook(rt, net);
+  const c = rt.mount(() => useNetworkState());
+  net.resolveChecks(true); await rt.flush();
+  net.emitRaw({ type: 'NONE', isConnected: false, isInternetReachable: true }); await rt.flush();
+  assert.deepEqual([c.value.isConnected, c.value.isInternetReachable], [false, false]);
+  net.emitRaw({ type: 'WIFI', isConnected: true, isInternetReachable: false }); await rt.flush();
+  assert.deepEqual([c.value.isConnected, c.value.isInternetReachable], [true, false], 'connected but not reachable is kept distinct');
+});
+
+test('event bursts keep confirmations bounded; a newer event supersedes a confirmation check; unmount clears timers', async () => {
+  const rt = runtime(); const net = fakeNetwork();
+  const useNetworkState = networkHook(rt, net);
+  const c = rt.mount(() => useNetworkState());
+  net.resolveChecks(true); await rt.flush();
+  for (let i = 0; i < 5; i++) net.emit(i % 2 === 1);
+  await rt.flush();
+  assert.ok(net.timers.length > 0 && net.timers.length <= 2, `bounded confirmations (${net.timers.length} timers)`);
+  net.advance(1000); // confirmation in flight...
+  assert.equal(net.checks.length, 1);
+  net.emit(false); await rt.flush(); // ...superseded by a newer event
+  net.resolveChecks(true); await rt.flush();
+  assert.equal(c.value.isConnected, false, 'stale confirmation discarded');
+  rt.unmount(c);
+  assert.equal(net.timers.length, 0, 'timers cleared on unmount');
+  assert.deepEqual(net.removed, { net: 1, app: 1 });
+});
+
+test('foreground onLost race end to end: banner, queue, single delivery after a raced reconnect', async () => {
+  const net = fakeNetwork(); const a = app(net);
+  net.resolveChecks(true); await a.rt.flush();
+  net.online = false; net.emitRaw(STALE_ONLINE); await a.rt.flush();
+  net.advance(1000); net.resolveChecks(); await a.rt.flush();
+  assert.equal(a.banner.value, false, 'banner shown while still in the foreground');
+  await a.screen.value.sendMessage('raced offline hello'); await a.rt.flush();
+  assert.equal(await a.cq.getChatQueueSize('u'), 1);
+  net.advance(10_000); net.resolveChecks(); await a.rt.flush();
+  net.online = true; net.emitRaw(STALE_OFFLINE); await a.rt.flush();
+  net.advance(1000); net.resolveChecks(); await a.rt.flush(); await tick(); await a.rt.flush();
+  assert.equal(a.banner.value, true);
+  assert.equal(a.be.delivered.length, 1, 'delivered once');
+  net.advance(10_000); net.resolveChecks(); await a.rt.flush(); await tick(); await a.rt.flush();
+  assert.equal(a.be.delivered.length, 1, 'confirmation checks do not resend');
+  assert.equal(await a.cq.getChatQueueSize('u'), 0);
 });
 
 (async () => {

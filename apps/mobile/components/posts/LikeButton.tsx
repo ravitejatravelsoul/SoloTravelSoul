@@ -4,6 +4,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui';
 import { Colors, FontSize, FontWeight } from '@/constants/theme';
 
+/** 999, 1.5k, 999.9k, 1M, 2.4M — short enough to sit beside the heart at large text sizes. */
+function formatCount(n: number): string {
+  if (n < 1000) return String(n);
+  const k = Math.round(n / 100) / 10;
+  if (k < 1000) return `${k}k`;
+  return `${Math.round(n / 100_000) / 10}M`;
+}
+
 interface Props {
   liked: boolean;
   count: number;
@@ -28,7 +36,7 @@ export const LikeButton = memo(function LikeButton({ liked, count, onToggle, dis
       />
       {count > 0 && (
         <Text style={[styles.count, liked && styles.countLiked]}>
-          {count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count)}
+          {formatCount(count)}
         </Text>
       )}
     </TouchableOpacity>

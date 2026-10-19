@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tabBarInsets } from '@/utils/tabBar';
+import { TabLabel } from '@/components/ui/TabLabel';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useNetworkState } from '@/hooks/useNetworkState';
 import { useSyncEngine } from '@/hooks/useSyncEngine';
@@ -86,12 +87,8 @@ export default function AppLayout() {
           shadowRadius: 12,
           elevation: 16,
         },
-        tabBarLabelStyle: {
-          fontSize: 10,
-          fontWeight: '600',
-          letterSpacing: 0.2,
-          marginTop: 2,
-        },
+        // One line that shrinks to fit the tab width (never "Communi…"), following the system text size.
+        tabBarLabel: ({ color, children }) => <TabLabel color={color}>{children}</TabLabel>,
         tabBarItemStyle: {
           paddingVertical: 0,
         },
