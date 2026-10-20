@@ -6,7 +6,7 @@ interface BlockState {
   _unsubscribe: (() => void) | null;
 
   loadBlockList: (uid: string) => void;
-  blockUser: (blockedUid: string) => Promise<void>;
+  blockUser: (blockedUid: string, displayName?: string) => Promise<void>;
   unblockUser: (blockedUid: string) => Promise<void>;
   reset: () => void;
 }
@@ -31,9 +31,9 @@ export const useBlockStore = create<BlockState>((set, get) => ({
     set({ _unsubscribe: unsub });
   },
 
-  blockUser: async (blockedUid: string) => {
+  blockUser: async (blockedUid: string, displayName?: string) => {
     if (!_currentUid) return;
-    await fbBlock(_currentUid, blockedUid);
+    await fbBlock(_currentUid, blockedUid, displayName);
     set((s) => ({ blockedUids: [...s.blockedUids, blockedUid] }));
   },
 

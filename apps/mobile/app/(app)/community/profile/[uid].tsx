@@ -69,7 +69,7 @@ export default function PublicProfileScreen() {
         'They will not be able to see your profile, send you messages, or find you in discovery.',
         [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Block', style: 'destructive', onPress: () => blockUser(uid) },
+          { text: 'Block', style: 'destructive', onPress: () => blockUser(uid, profile?.displayName) },
         ]
       );
     }

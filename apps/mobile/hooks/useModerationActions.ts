@@ -31,7 +31,7 @@ export function useModerationActions() {
             style: 'destructive',
             onPress: async () => {
               try {
-                await blockUser(authorId);
+                await blockUser(authorId, authorName);
                 addToast('Blocked.', 'success');
                 onBlocked?.();
               } catch {

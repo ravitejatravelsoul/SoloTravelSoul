@@ -110,6 +110,7 @@ export function TripRemindersCard({ trip }: Props) {
                 </Text>
               </View>
               <Switch
+                accessibilityLabel={`${meta.label} reminder`}
                 value={enabled}
                 onValueChange={() => {
                   if (permStatus === 'undetermined' || permStatus === 'granted') {

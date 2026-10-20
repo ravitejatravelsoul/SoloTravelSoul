@@ -1,13 +1,24 @@
+import { useEffect, useState } from 'react';
 import { View, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui';
+import { getBlockedList } from '@solotravelsoul/firebase';
+import { useAuthStore } from '@/stores/authStore';
 import { useBlockStore } from '@/stores/blockStore';
 import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 
 export default function BlockedUsersScreen() {
   const { blockedUids, unblockUser } = useBlockStore();
+  const myUid = useAuthStore((s) => s.user?.uid ?? '');
+  const [names, setNames] = useState<Record<string, string | null>>({});
+
+  // Names saved when blocking (older blocks have none: shown as "Traveler" with a short reference, never the raw id alone).
+  useEffect(() => {
+    if (!myUid) return;
+    getBlockedList(myUid).then((list) => setNames(Object.fromEntries(list.map((b) => [b.uid, b.displayName])))).catch(() => {});
+  }, [myUid, blockedUids.length]);
 
   const handleUnblock = (uid: string) => {
     Alert.alert('Unblock this user?', 'They will be able to see your profile again.', [
@@ -43,7 +54,7 @@ export default function BlockedUsersScreen() {
               <View style={styles.iconBox}>
                 <Ionicons name="person-outline" size={20} color={Colors.textSecondary} />
               </View>
-              <Text style={styles.uidText} numberOfLines={1}>{uid}</Text>
+              <Text style={styles.uidText} numberOfLines={1}>{names[uid] ?? `Traveler (ref ${uid.slice(0, 6)})`}</Text>
               <TouchableOpacity onPress={() => handleUnblock(uid)} style={styles.unblockBtn} activeOpacity={0.7}>
                 <Text style={styles.unblockLabel}>Unblock</Text>
               </TouchableOpacity>
@@ -75,7 +86,7 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: Colors.borderLight, marginLeft: 56 },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg },
   iconBox: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.chipBackground, alignItems: 'center', justifyContent: 'center' },
-  uidText: { flex: 1, fontSize: FontSize.sm, color: Colors.textSecondary },
+  uidText: { flex: 1, fontSize: FontSize.md, color: Colors.textPrimary },
   unblockBtn: { paddingVertical: 6, paddingHorizontal: Spacing.md, borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.primary },
   unblockLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.primary },
 });

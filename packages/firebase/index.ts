@@ -33,6 +33,7 @@ export {
   setTripVisibility,
   getPublicTrip,
   getNearbyTraveler,
+  getBlockedList,
   leavePublicTrip,
   acceptTerms,
   subscribePublicTrips,

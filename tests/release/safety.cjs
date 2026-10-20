@@ -170,9 +170,18 @@ test('editing a public trip is an update (not a replace), and the join request l
   assert.doesNotMatch(modal, /AsyncStorage\.(get|set)Item\(DAILY_LIMIT_KEY/);
 });
 
+test('the blocked list shows names saved when blocking, not raw ids', () => {
+  const list = read('apps/mobile/app/(app)/profile/blocked-users.tsx');
+  assert.match(list, /getBlockedList\(myUid\)/);
+  assert.match(list, /names\[uid\] \?\? `Traveler \(ref \$\{uid\.slice\(0, 6\)\}\)`/);
+  assert.match(read('packages/firebase/src/firestore.ts'), /displayName: displayName\.trim\(\)\.slice\(0, 60\)/);
+  assert.match(read('apps/mobile/hooks/useModerationActions.ts'), /blockUser\(authorId, authorName\)/);
+  assert.match(read('apps/mobile/app/(app)/community/profile/[uid].tsx'), /blockUser\(uid, profile\?\.displayName\)/);
+});
+
 test('layout and accessibility fixes: comments sheet clears the system bar; every switch has a name; logo is not clipped', () => {
   assert.match(read('apps/mobile/components/posts/CommentsSheet.tsx'), /useSafeAreaInsets\(\)[\s\S]*Math\.max\(Platform\.OS === 'ios' \? 34 : Spacing\.lg, insets\.bottom\)/);
-  for (const rel of ['apps/mobile/app/(app)/profile/privacy.tsx', 'apps/mobile/app/(app)/trips/[id]/edit.tsx', 'apps/mobile/app/(app)/discover/trips/index.tsx', 'apps/mobile/app/(app)/community/groups/index.tsx']) {
+  for (const rel of ['apps/mobile/app/(app)/profile/privacy.tsx', 'apps/mobile/app/(app)/trips/[id]/edit.tsx', 'apps/mobile/app/(app)/discover/trips/index.tsx', 'apps/mobile/app/(app)/community/groups/index.tsx', 'apps/mobile/components/trips/TripRemindersCard.tsx', 'apps/mobile/components/trips/ExportPreviewModal.tsx']) {
     const src = read(rel);
     for (const m of src.matchAll(/<Switch\b[^>]*?(?:\/>|>)/gs)) assert.match(src.slice(m.index, m.index + 400), /accessibilityLabel=/, `${rel} switch at ${m.index}`);
   }

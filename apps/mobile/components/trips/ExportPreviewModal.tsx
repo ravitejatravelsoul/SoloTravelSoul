@@ -100,6 +100,7 @@ export function ExportPreviewModal({ visible, onClose, trip, itinerary, checklis
               </View>
             </View>
             <Switch
+              accessibilityLabel="Include journal entries in the export"
               value={includeJournal}
               onValueChange={setIncludeJournal}
               disabled={totalEntries === 0}

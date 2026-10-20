@@ -1565,11 +1565,20 @@ export async function updateOwnerPhotoInCommunityDocs(
 
 // â”€â”€ Community: Block / Report â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export async function blockUser(blockerUid: string, blockedUid: string): Promise<void> {
+export async function blockUser(blockerUid: string, blockedUid: string, displayName?: string): Promise<void> {
+  // The name is kept only in the blocker's own block list so the list can show who was blocked (a blocked
+  // person's profile can no longer be read by the blocker, so it cannot be looked up later).
   await setDoc(doc(db, 'blocks', blockerUid, 'blocked', blockedUid), {
     blockedUid,
+    ...(displayName?.trim() ? { displayName: displayName.trim().slice(0, 60) } : {}),
     blockedAt: serverTimestamp(),
   });
+}
+
+/** The signed-in user's block list with the names saved when blocking (null for older entries). */
+export async function getBlockedList(blockerUid: string): Promise<{ uid: string; displayName: string | null }[]> {
+  const snap = await getDocs(collection(db, 'blocks', blockerUid, 'blocked'));
+  return snap.docs.map((d) => ({ uid: d.id, displayName: typeof d.data().displayName === 'string' ? (d.data().displayName as string) : null }));
 }
 
 export async function unblockUser(blockerUid: string, blockedUid: string): Promise<void> {
