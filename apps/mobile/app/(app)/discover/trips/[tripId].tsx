@@ -13,11 +13,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Avatar, Chip, Button } from '@/components/ui';
 import { JoinRequestModal } from '@/components/community/JoinRequestModal';
-import { getPublicTrip, getPublicProfile, subscribePublicTripMembers, getTripJoinRequestStatus, cancelTripJoinRequest } from '@solotravelsoul/firebase';
-import type { PublicTrip, TripMember, RequestStatus } from '@solotravelsoul/shared';
+import { JoinSummary } from '@/components/community/JoinSummary';
+import { getPublicTrip, getPublicProfile, subscribePublicTripMembers, getTripJoinRequestStatus, cancelTripJoinRequest, getNearbyTraveler, leavePublicTrip, getOrCreateDirectChat } from '@solotravelsoul/firebase';
+import type { PublicTrip, TripMember, RequestStatus, NearbyTraveler } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
-import { getUserInitials } from '@solotravelsoul/shared';
+import { getUserInitials, preferencesOf } from '@solotravelsoul/shared';
 
 function formatDateRange(start: Date, end: Date): string {
   const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };
@@ -38,6 +39,8 @@ export default function PublicTripDetailScreen() {
   const [requestStatus, setRequestStatus] = useState<RequestStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [organizer, setOrganizer] = useState<NearbyTraveler | null>(null);
+  const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
     if (!tripId) return;
@@ -48,6 +51,8 @@ export default function PublicTripDetailScreen() {
       setLoading(false);
       if (t) {
         unsub = subscribePublicTripMembers(tripId, setMembers);
+        // The organizer's own answers exist only when they chose to share them (public + discoverable + consent).
+        if (t.ownerUid !== uid) getNearbyTraveler(t.ownerUid).then(setOrganizer).catch(() => setOrganizer(null));
       }
     }).catch(() => setLoading(false));
 
@@ -79,6 +84,45 @@ export default function PublicTripDetailScreen() {
     } catch {
       Alert.alert('Not cancelled', 'Could not cancel your request. Please try again.');
     }
+  };
+
+  const messageOrganizer = async () => {
+    if (!trip || !uid) return;
+    try {
+      const myName = profile?.name ?? 'Traveler';
+      const chatId = await getOrCreateDirectChat(
+        uid,
+        { name: myName, initials: getUserInitials(myName) || myName[0]?.toUpperCase() || 'T' },
+        trip.ownerUid,
+        { name: trip.ownerName, initials: getUserInitials(trip.ownerName) || 'T' },
+      );
+      router.push(`/chats/${chatId}` as never);
+    } catch {
+      Alert.alert('Could not open chat', 'Please try again.');
+    }
+  };
+
+  const confirmLeave = () => {
+    if (!trip || !uid) return;
+    Alert.alert('Leave this trip?', 'You will no longer be a member. You can ask to join again later if the organizer is accepting requests.', [
+      { text: 'Stay', style: 'cancel' },
+      {
+        text: 'Leave trip',
+        style: 'destructive',
+        onPress: async () => {
+          setLeaving(true);
+          try {
+            await leavePublicTrip(trip.tripId, uid);
+            setRequestStatus(null);
+            setTrip({ ...trip, memberCount: Math.max(1, trip.memberCount - 1) });
+          } catch {
+            Alert.alert('Could not leave', 'Please check your connection and try again.');
+          } finally {
+            setLeaving(false);
+          }
+        },
+      },
+    ]);
   };
 
   if (loading) {
@@ -156,7 +200,7 @@ export default function PublicTripDetailScreen() {
             <DetailRow
               icon="people-outline"
               label={trip.maxMembers ? `${trip.memberCount} / ${trip.maxMembers} members` : `${trip.memberCount} member${trip.memberCount !== 1 ? 's' : ''}`}
-              sublabel={trip.isAcceptingMembers ? 'Open to join' : 'Not accepting'}
+              sublabel={isFull ? 'Trip is full' : trip.isAcceptingMembers ? 'Open to join' : 'Not accepting'}
             />
           </View>
           {trip.tags.length > 0 && (
@@ -165,6 +209,13 @@ export default function PublicTripDetailScreen() {
             </View>
           )}
         </Section>
+
+        {/* What to know before asking to join (organizer's expectations, shared answers, safety reminder) */}
+        {!isOwner && (
+          <Section title={isMember ? 'ABOUT THIS TRIP' : 'BEFORE YOU REQUEST TO JOIN'}>
+            <JoinSummary trip={trip} organizer={organizer} viewer={preferencesOf(profile)} />
+          </Section>
+        )}
 
         {/* Members */}
         {members.length > 0 && (
@@ -196,7 +247,11 @@ export default function PublicTripDetailScreen() {
               fullWidth
             />
           ) : isMember ? (
-            <Button label="View Trip" variant="secondary" onPress={() => router.push(`/(app)/trips/${tripId}` as never)} fullWidth />
+            <View style={{ gap: Spacing.sm }}>
+              <Text style={styles.memberNote}>You are a member of this trip.</Text>
+              <Button label="Message organizer" onPress={messageOrganizer} fullWidth />
+              <Button label="Leave trip" variant="secondary" onPress={confirmLeave} loading={leaving} fullWidth />
+            </View>
           ) : isPending ? (
             <Button
               label="Request Pending — Cancel?"
@@ -209,6 +264,8 @@ export default function PublicTripDetailScreen() {
             />
           ) : isFull ? (
             <Button label="Trip is Full" variant="secondary" onPress={() => {}} disabled fullWidth />
+          ) : !trip.isAcceptingMembers ? (
+            <Button label="Not accepting requests" variant="secondary" onPress={() => {}} disabled fullWidth />
           ) : (
             <Button
               label="Request to Join"
@@ -343,5 +400,6 @@ const styles = StyleSheet.create({
   },
   secondaryBtn: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, padding: Spacing.sm },
   secondaryBtnLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
+  memberNote: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center' },
   emptyTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
 });

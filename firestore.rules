@@ -23,7 +23,8 @@ service cloud.firestore {
     }
     function cleanFields(data, keys) {
       return clean(data.get(keys[0], null)) && (keys.size() < 2 || clean(data.get(keys[1], null)))
-        && (keys.size() < 3 || clean(data.get(keys[2], null))) && (keys.size() < 4 || clean(data.get(keys[3], null)));
+        && (keys.size() < 3 || clean(data.get(keys[2], null))) && (keys.size() < 4 || clean(data.get(keys[3], null)))
+        && (keys.size() < 5 || clean(data.get(keys[4], null)));
     }
     // A reporter's +1 on a post/journal, backed by their report created in the
     // same write. At the hide threshold a public item must become 'under_review'.
@@ -233,9 +234,15 @@ service cloud.firestore {
         && v.status in ['in_progress', 'completed', 'skipped']
         && v.step is int && v.step >= 0 && v.step <= 6 && v.updatedAtMs is int;
     }
+    // Terms acceptance record: a version string and the server time of acceptance.
+    function validTerms() {
+      let d = request.resource.data;
+      return (!changedKey('termsAcceptedVersion') || (d.termsAcceptedVersion is string && d.termsAcceptedVersion.size() > 0 && d.termsAcceptedVersion.size() <= 20))
+        && (!changedKey('termsAcceptedAt') || d.termsAcceptedAt == request.time);
+    }
     function validUserPreferences() {
       let d = request.resource.data;
-      return (!changedKey('travelPace') || enumOrNull(d, 'travelPace', paceOptions()))
+      return validTerms() && (!changedKey('travelPace') || enumOrNull(d, 'travelPace', paceOptions()))
         && (!changedKey('travelSchedule') || enumOrNull(d, 'travelSchedule', scheduleOptions()))
         && (!changedKey('groupSizePreference') || enumOrNull(d, 'groupSizePreference', groupSizeOptions()))
         && (!changedKey('shareCompatibility') || d.shareCompatibility is bool)
@@ -516,16 +523,35 @@ service cloud.firestore {
     }
 
     // ── Community: Public Trips ───────────────────────────────────────
+    // Optional organizer-written context (expectations, budget note): short strings, same text filter.
+    function validTripContext(d) {
+      return (d.get('expectations', '') is string && d.get('expectations', '').size() <= 300)
+        && (d.get('budgetNote', '') is string && d.get('budgetNote', '').size() <= 80);
+    }
+    // A member (never the organizer) leaving: their member document goes away in the same write and the
+    // public member count drops by exactly one. Nothing else about the trip may change.
+    function memberLeavingTrip(tripId) {
+      let mine = /databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid);
+      return request.auth != null
+        && exists(mine) && !existsAfter(mine)
+        && get(mine).data.role == 'member'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount', 'updatedAt'])
+        && request.resource.data.memberCount == resource.data.memberCount - 1
+        && request.resource.data.memberCount >= 1;
+    }
     match /publicTrips/{tripId} {
       allow read: if request.auth != null;
       allow create: if notDeleting() && (request.auth != null
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.get('destinationKey', '') is string && request.resource.data.get('destinationKey', '').size() <= 80
-        && cleanFields(request.resource.data, ['title', 'description', 'destination']));
+        && validTripContext(request.resource.data)
+        && cleanFields(request.resource.data, ['title', 'description', 'destination', 'expectations', 'budgetNote']));
       allow update: if notDeleting() && (request.auth != null
         && resource != null
-        && resource.data.ownerUid == request.auth.uid
-        && cleanFields(request.resource.data, ['title', 'description', 'destination']));
+        && ((resource.data.ownerUid == request.auth.uid
+            && validTripContext(request.resource.data)
+            && cleanFields(request.resource.data, ['title', 'description', 'destination', 'expectations', 'budgetNote']))
+          || memberLeavingTrip(tripId)));
       // Allow delete even when doc doesn't exist (batch delete when trip goes private).
       allow delete: if notDeleting() && (request.auth != null
         && (resource == null

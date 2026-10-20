@@ -8,9 +8,10 @@ import {
   resetPassword,
   reauthenticate,
   createUserProfile,
+  acceptTerms,
   upsertUserLookup,
 } from '@solotravelsoul/firebase';
-import { getUserInitials } from '@solotravelsoul/shared';
+import { getUserInitials, TERMS_VERSION } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { setSyncPaused } from '@/hooks/useSyncEngine';
@@ -92,6 +93,8 @@ export function useAuth() {
       try {
         const firebaseUser = await signUp(email, password);
         await createUserProfile(firebaseUser.uid, { email, name });
+        // The sign-up screen requires the agreement; store it so the accept-terms gate does not ask again.
+        await acceptTerms(firebaseUser.uid, TERMS_VERSION).catch(() => {});
         const initials = getUserInitials(name) || name[0]?.toUpperCase() || 'T';
         await upsertUserLookup(firebaseUser.uid, name, email, initials).catch(() => {});
         // Optional travel-preference setup; every step can be skipped.

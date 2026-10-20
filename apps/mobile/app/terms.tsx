@@ -4,11 +4,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen, Text, Divider } from '@/components/ui';
 import { Colors, Spacing } from '@/constants/theme';
 import { CONTACT_EMAIL } from '@/constants/contact';
+import { TERMS_VERSION, COMPATIBILITY_NOTICE, PLATFORM_ROLE, NOT_EMERGENCY_SERVICE, REPORT_BLOCK_LEAVE, SAFETY_TIPS } from '@solotravelsoul/shared';
 
 const SECTIONS = [
   {
     title: '1. Acceptance',
-    body: 'By using SoloTravelSoul, you agree to these Terms of Service. If you do not agree, do not use the app.',
+    body: 'By using SoloTravelSoul, you agree to these Terms of Service and the Privacy Policy. You must accept them before you can post, send messages or ask to join a trip. If you do not agree, do not use the app.',
   },
   {
     title: '2. Your account',
@@ -16,7 +17,7 @@ const SECTIONS = [
   },
   {
     title: '3. Your content',
-    body: 'You own all journal entries, photos, and trip data you create. By uploading content you grant SoloTravelSoul a limited license to store and display it to you within the app. We do not use your content for any other purpose.',
+    body: 'You own the journal entries, photos, posts and trip data you create. By adding content you give SoloTravelSoul a limited license to store, process and display it in the app to the audience you choose (for example, public posts and public trips are visible to other signed-in users, private items only to you), and to review it when it is reported. We do not use your content for advertising or sell it.',
   },
   {
     title: '4. Acceptable use',
@@ -24,15 +25,23 @@ const SECTIONS = [
   },
   {
     title: '5. Community standards',
-    body: 'SoloTravelSoul has zero tolerance for objectionable content and abusive users. Do not post or send content that is illegal, sexually explicit, hateful, harassing, threatening, violent, deceptive or that infringes the rights of others, and do not impersonate anyone. You can report posts, journals, comments, messages, profiles, trips and groups, and block any user, from the app. We review reports, remove content that breaks these rules and suspend or remove the accounts responsible.',
+    body: 'SoloTravelSoul has zero tolerance for objectionable content and abusive users. Do not post or send content that is illegal, sexually explicit, hateful, harassing, threatening, violent, deceptive or that infringes the rights of others, and do not impersonate anyone. ' + REPORT_BLOCK_LEAVE + ' We review reports, remove content that breaks these rules and suspend or remove the accounts responsible.',
   },
   {
-    title: '6. Disclaimer',
-    body: 'SoloTravelSoul is provided "as is" without warranty of any kind. Travel information shown in the app (local attractions, recommendations) is for inspiration only. Always verify travel requirements, safety conditions, and entry requirements from official sources before traveling.',
+    title: '6. Meeting other travelers',
+    body: COMPATIBILITY_NOTICE + '\n\n' + SAFETY_TIPS.map((t) => t.title + ': ' + t.body).join('\n') + '\n\n' + NOT_EMERGENCY_SERVICE,
   },
   {
-    title: '7. Changes',
-    body: 'We may update these terms. Continued use after changes constitutes acceptance. We will notify you of material changes via the app.\n\nLast updated: October 2026\n\nContact: ' + CONTACT_EMAIL,
+    title: '7. What SoloTravelSoul does and does not do',
+    body: PLATFORM_ROLE + ' We moderate reported content and accounts as described above, but we cannot supervise every conversation or meeting between users.',
+  },
+  {
+    title: '8. Disclaimer',
+    body: 'SoloTravelSoul is provided "as is" without warranty of any kind. Travel information shown in the app (local attractions, recommendations) is for inspiration only. Always verify travel requirements, safety conditions, and entry requirements from official sources before traveling. Nothing in these Terms limits any right you have under the law that applies to you.',
+  },
+  {
+    title: '9. Changes',
+    body: 'We may update these terms. If a change is material we will ask you to review and accept the new version in the app before you continue to post or message. Continued use after other changes constitutes acceptance.\n\nVersion: ' + TERMS_VERSION + '\nLast updated: October 2026\n\nContact: ' + CONTACT_EMAIL,
   },
 ];
 

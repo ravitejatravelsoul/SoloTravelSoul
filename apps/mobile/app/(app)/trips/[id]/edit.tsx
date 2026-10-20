@@ -40,6 +40,8 @@ export default function EditTripScreen() {
     trip?.maxMembers != null ? String(trip.maxMembers) : ''
   );
   const [isAccepting, setIsAccepting] = useState(trip?.isAcceptingMembers ?? true);
+  const [expectations, setExpectations] = useState(trip?.expectations ?? '');
+  const [budgetNote, setBudgetNote] = useState(trip?.budgetNote ?? '');
   const [visibilitySaving, setVisibilitySaving] = useState(false);
 
   if (!trip) {
@@ -91,6 +93,8 @@ export default function EditTripScreen() {
         tags,
         maxMembers: isNaN(maxMembers as number) ? null : maxMembers,
         isAcceptingMembers: isAccepting,
+        expectations: expectations.trim(),
+        budgetNote: budgetNote.trim(),
         coverPhotoURL: trip.coverPhotoURL,
         ownerName: profile?.name ?? '',
         ownerPhotoURL: profile?.photoURL ?? null,
@@ -176,7 +180,7 @@ export default function EditTripScreen() {
                   color={isPublic ? Colors.primary : Colors.textSecondary}
                 />
               </View>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.rowTitle}>{isPublic ? 'Public' : 'Private'}</Text>
                 <Text style={styles.rowSubtitle}>
                   {isPublic ? 'Anyone can discover and request to join' : 'Only you can see this trip'}
@@ -184,6 +188,7 @@ export default function EditTripScreen() {
               </View>
             </View>
             <Switch
+              accessibilityLabel="Make this trip public"
               value={isPublic}
               onValueChange={setIsPublic}
               trackColor={{ false: Colors.border, true: Colors.primary }}
@@ -210,6 +215,26 @@ export default function EditTripScreen() {
               <Text style={styles.fieldLabel}>Tags (up to 5)</Text>
               <TagInput tags={tags} onChange={setTags} maxTags={5} placeholder="beach, budget, Asia…" />
 
+              <Text style={styles.fieldLabel}>What you expect of companions (optional, shown before people request)</Text>
+              <TextInput
+                style={styles.descInput}
+                value={expectations}
+                onChangeText={(t) => setExpectations(t.slice(0, 300))}
+                multiline
+                numberOfLines={3}
+                maxLength={300}
+                placeholder="Pace, plans, house rules, how decisions are made…"
+                placeholderTextColor={Colors.placeholder}
+                textAlignVertical="top"
+              />
+              <Text style={styles.fieldLabel}>Budget (optional)</Text>
+              <Input
+                value={budgetNote}
+                onChangeText={(t) => setBudgetNote(t.slice(0, 80))}
+                maxLength={80}
+                placeholder="e.g. mid-range, costs split evenly"
+              />
+
               <Text style={styles.fieldLabel}>Max members (leave blank for no limit)</Text>
               <Input
                 value={maxMembersStr}
@@ -221,6 +246,7 @@ export default function EditTripScreen() {
               <View style={styles.acceptingRow}>
                 <Text style={styles.rowTitle}>Accepting join requests</Text>
                 <Switch
+                  accessibilityLabel="Accepting join requests"
                   value={isAccepting}
                   onValueChange={setIsAccepting}
                   trackColor={{ false: Colors.border, true: Colors.primary }}

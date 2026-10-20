@@ -373,6 +373,14 @@ export default function ProfileScreen() {
           <Text style={styles.sectionLabel}>APP</Text>
           <View style={styles.settingsCard}>
             <SettingsRow
+              icon="document-text-outline"
+              label="Terms of Service"
+              iconBg={Colors.primary + '15'}
+              iconColor={Colors.primary}
+              onPress={() => router.push('/terms')}
+            />
+            <View style={styles.rowDivider} />
+            <SettingsRow
               icon="shield-checkmark-outline"
               label="Privacy Policy"
               iconBg={Colors.primary + '15'}

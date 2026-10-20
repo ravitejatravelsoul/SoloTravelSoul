@@ -22,11 +22,11 @@ const SECTIONS = [
   },
   {
     title: 'Photos and uploads',
-    body: 'Uploaded photos are stored in Firebase Storage or Cloudflare R2. Photos served through download links or public R2 URLs can be accessed by anyone who has the link, even when the associated journal or profile is private. We compress images before upload to minimize storage use.',
+    body: 'Photos you upload with this version are stored in Cloudflare R2 and delivered only to signed-in users who are allowed to see the post, journal or profile they belong to. Photos uploaded with earlier versions may sit on direct storage links that anyone who has the link can open, even when the associated journal or profile is private. Cached copies on a device may remain visible until the app clears them. We compress images before upload to minimize storage use.',
   },
   {
     title: 'Third-party services',
-    body: 'We use Firebase (auth, Firestore, Storage) by Google. Firebase collects basic telemetry as part of its infrastructure. Map tiles are provided by OpenStreetMap contributors (openstreetmap.org). No other third-party analytics or tracking SDKs are included in this version.',
+    body: 'We use Firebase (auth, Firestore, Storage) by Google and Cloudflare (Workers and R2) to run the app and store photos. These providers process data on our behalf and collect basic telemetry as part of their infrastructure. Map tiles are provided by OpenStreetMap contributors (openstreetmap.org). No other third-party analytics or tracking SDKs are included in this version.',
   },
   {
     title: 'Data deletion',
@@ -34,7 +34,11 @@ const SECTIONS = [
   },
   {
     title: 'Community features',
-    body: 'When you set your profile to Public, your display name, photo, bio, travel style, and destinations are visible to other authenticated users. Your email address is never shown publicly. The Nearby Travelers feature uses city-level text only — no GPS coordinates are stored or shared. Traveler discovery is off unless you turn it on in Profile → Privacy Settings, and you can turn it off at any time, which removes your discovery entry. Travel preferences are optional: travel styles, interests and languages are part of your public profile; pace, schedule and preferred group size are shown to other travelers only if you turn on sharing for them and discovery is on. If you choose one of your trips to show in discovery, only its destination and dates are shown — never its itinerary or notes. Companion matching is calculated on your device from what travelers chose to share; missing answers are never treated as a mismatch, and nothing is inferred about you. Starting account deletion or a moderator suspension removes you from discovery immediately. Blocking a user prevents new direct messages and hides your profile from direct lookup. Existing chat history remains visible to chat participants. Blocking does not make publicly shared content or photo links private.',
+    body: 'When you set your profile to Public, your display name, photo, bio, travel style, and destinations are visible to other authenticated users. Your email address is never shown publicly. The Nearby Travelers feature uses city-level text only — no GPS coordinates are stored or shared. Traveler discovery is off unless you turn it on in Profile → Privacy Settings, and you can turn it off at any time, which removes your discovery entry. Travel preferences are optional: travel styles, interests and languages are part of your public profile; pace, schedule and preferred group size are shown to other travelers only if you turn on sharing for them and discovery is on. If you choose one of your trips to show in discovery, only its destination and dates are shown — never its itinerary or notes. Companion matching is calculated on your device from what travelers chose to share; missing answers are never treated as a mismatch, and nothing is inferred about you. Starting account deletion or a moderator suspension removes you from discovery immediately. Blocking a user prevents their new direct messages, join requests, follows and comments, hides your profile from them when they open it, and is private. You may still appear in shared lists such as Nearby Travelers, existing chat history remains visible to chat participants, and blocking does not make publicly shared content or photo links private.',
+  },
+  {
+    title: 'Join requests, groups and chats',
+    body: 'When you ask to join a trip, the organizer sees your name, photo, bio and message, and (only if you share them) your travel answers. Trip organizers publish the trip, its dates, size and any expectations or budget note they write. People who know your email address can find your name and start a direct chat or add you to a group chat; you can leave a group chat at any time and block anyone. Members of a group chat can read its messages. We store a record of the Terms version you accepted and when. Safety reports you submit, and what they say, are visible to moderators.',
   },
   {
     title: 'Location data',

@@ -24,7 +24,7 @@ export interface TripWindow {
 }
 
 export type TripMatch = 'overlap' | 'no_overlap' | 'dates_unknown' | 'other_destination' | 'no_trip';
-export type PreferenceLevel = 'strong' | 'good' | 'some' | 'not_enough_info';
+export type PreferenceLevel = 'strong' | 'good' | 'some' | 'few' | 'not_enough_info';
 /** Overall level for the selected trip. Known non-overlapping dates are never Strong/Good. */
 export type CompatibilityLevel = PreferenceLevel | 'dates_differ';
 export type DatesStatus = 'overlap' | 'no_overlap' | 'unknown' | 'not_applicable';
@@ -47,11 +47,11 @@ export interface CompatibilityResult {
 }
 
 export const LEVEL_LABELS: Record<CompatibilityLevel, string> = {
-  strong: 'Strong match', good: 'Good match', some: 'Possible match', not_enough_info: 'Not enough information',
+  strong: 'Strong match', good: 'Good match', some: 'Possible match', few: 'Possible match', not_enough_info: 'Not enough information',
   dates_differ: "Dates don't overlap",
 };
 export const PREFERENCE_LABELS: Record<PreferenceLevel, string> = {
-  strong: 'Strong preference match', good: 'Good preference match', some: 'Some shared preferences', not_enough_info: 'Not enough information',
+  strong: 'Strong preference match', good: 'Good preference match', some: 'Some shared preferences', few: 'Few shared preferences', not_enough_info: 'Not enough information',
 };
 
 const dayIndex = (d: Date) => Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000);
@@ -141,7 +141,8 @@ export function compareTravelers(me: CompatibilityAnswers, them: CompatibilityAn
 
   // 3. Levels: explicit thresholds on what was actually compared.
   // Preferences alone:
-  const prefLevel: PreferenceLevel = compared < 2 ? 'not_enough_info' : agreements >= 4 ? 'strong' : agreements >= 2 ? 'good' : 'some';
+  // 'few' = enough answers on both sides to compare, but nothing shared (previously mislabelled "Some shared preferences").
+  const prefLevel: PreferenceLevel = compared < 2 ? 'not_enough_info' : agreements >= 4 ? 'strong' : agreements >= 2 ? 'good' : agreements === 1 ? 'some' : 'few';
   // For the selected trip: known non-overlapping dates are never Strong/Good; unknown dates
   // stay unknown (at most "Possible match"); without a trip it is the preference level.
   let level: CompatibilityLevel;

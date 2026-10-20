@@ -6,10 +6,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { getGroup } from '@solotravelsoul/firebase';
+import { getGroup, leaveChatGroup } from '@solotravelsoul/firebase';
 import { useAuthStore } from '@/stores/authStore';
 import { Colors, FontSize, FontWeight, Radius, Spacing } from '@/constants/theme';
 import { format } from 'date-fns';
@@ -19,9 +20,11 @@ export default function GroupDetailScreen() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const router = useRouter();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
+  const myName = useAuthStore((s) => s.profile?.name ?? 'A member');
 
   const [group, setGroup] = useState<TravelGroup | null>(null);
   const [loading, setLoading] = useState(true);
+  const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
     if (!groupId) return;
@@ -47,6 +50,26 @@ export default function GroupDetailScreen() {
   }
 
   const isCreator = group.createdBy === uid;
+
+  const confirmLeave = () => {
+    Alert.alert('Leave this group?', 'You will stop receiving its messages and will no longer see the chat. Someone with your email address can add you again, and you can block them if that is unwanted.', [
+      { text: 'Stay', style: 'cancel' },
+      {
+        text: 'Leave group',
+        style: 'destructive',
+        onPress: async () => {
+          setLeaving(true);
+          try {
+            await leaveChatGroup(group.id, uid, myName);
+            router.replace('/(app)/chats' as never);
+          } catch {
+            setLeaving(false);
+            Alert.alert('Could not leave', 'Please check your connection and try again.');
+          }
+        },
+      },
+    ]);
+  };
 
   return (
     <View style={styles.root}>
@@ -107,12 +130,26 @@ export default function GroupDetailScreen() {
             );
           })}
         </View>
+
+        {/* Leave (the admin who created the group cannot leave yet) */}
+        {!isCreator && group.members.includes(uid) && (
+          <TouchableOpacity style={styles.leaveBtn} onPress={confirmLeave} disabled={leaving} accessibilityRole="button" accessibilityLabel="Leave group" activeOpacity={0.75}>
+            {leaving ? <ActivityIndicator color={Colors.error} /> : (
+              <>
+                <Ionicons name="exit-outline" size={20} color={Colors.error} />
+                <Text style={styles.leaveText}>Leave group</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  leaveBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, marginTop: Spacing['2xl'], minHeight: 48, borderRadius: Radius.xl, borderWidth: 1, borderColor: Colors.error + '60' },
+  leaveText: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.error },
   root: { flex: 1, backgroundColor: Colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   errorText: { fontSize: FontSize.sm, color: Colors.textSecondary },

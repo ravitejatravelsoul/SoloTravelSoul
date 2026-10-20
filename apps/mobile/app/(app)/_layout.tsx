@@ -15,6 +15,7 @@ import { Badge, OfflineBanner } from '@/components/ui';
 import { Colors } from '@/constants/theme';
 import { useBlockStore } from '@/stores/blockStore';
 import { useEffect } from 'react';
+import { TERMS_VERSION } from '@solotravelsoul/shared';
 
 const ICON_SIZE = 26;
 
@@ -48,6 +49,7 @@ export default function AppLayout() {
   const { isConnected } = useNetworkState();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const initialized = useAuthStore((s) => s.initialized);
+  const profile = useAuthStore((s) => s.profile);
   const haptics = useHaptics();
   // Real bottom inset (system navigation bar / home indicator): the tab bar ends above it.
   const insets = useSafeAreaInsets();
@@ -67,6 +69,8 @@ export default function AppLayout() {
 
   if (!initialized) return null;
   if (!uid) return <Redirect href="/(auth)/login" />;
+  // Terms must be accepted before anything can be posted or sent (see app/accept-terms.tsx). Not applied while the profile is still loading.
+  if (profile && profile.termsAcceptedVersion !== TERMS_VERSION) return <Redirect href={"/accept-terms" as never} />;
 
   return (
     <View style={styles.root}>

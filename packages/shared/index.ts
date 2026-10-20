@@ -17,3 +17,4 @@ export * from './src/moderation';
 export * from './src/preferences';
 export * from './src/compatibility';
 export * from './src/environment';
+export * from './src/policy';

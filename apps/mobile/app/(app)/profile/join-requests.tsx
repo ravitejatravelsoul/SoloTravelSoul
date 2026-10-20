@@ -119,7 +119,7 @@ export default function JoinRequestsScreen() {
               <SentRequestCard
                 request={item}
                 onCancel={item.status === 'pending' ? () => handleCancel(item) : undefined}
-                onViewTrip={item.status === 'approved' ? () => router.push(`/(app)/trips/${item.tripId}` as never) : undefined}
+                onViewTrip={item.status === 'approved' ? () => router.push(`/(app)/discover/trips/${item.tripId}` as never) : undefined}
               />
             ) : (
               <ReceivedRequestCard

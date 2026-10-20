@@ -13,18 +13,24 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { Text } from '@/components/ui';
+import { JoinSummary } from './JoinSummary';
 import { submitTripJoinRequest, getTripJoinRequestStatus } from '@solotravelsoul/firebase';
 import type { PublicTrip, UserProfile } from '@solotravelsoul/shared';
+import { preferencesOf } from '@solotravelsoul/shared';
 import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 
 const MESSAGE_MAX = 300;
 const DAILY_LIMIT_KEY = 'community_join_requests_daily';
 const DAILY_LIMIT = 3;
 
-async function checkDailyLimit(): Promise<boolean> {
+// Kept per account: a device shared by several accounts must not share one counter (and a counter must not follow a sign-out).
+const limitKey = (uid: string) => `${DAILY_LIMIT_KEY}:${uid}`;
+
+async function checkDailyLimit(uid: string): Promise<boolean> {
   try {
-    const raw = await AsyncStorage.getItem(DAILY_LIMIT_KEY);
+    const raw = await AsyncStorage.getItem(limitKey(uid));
     if (!raw) return true;
     const { date, count } = JSON.parse(raw);
     const today = new Date().toDateString();
@@ -35,13 +41,13 @@ async function checkDailyLimit(): Promise<boolean> {
   }
 }
 
-async function incrementDailyCount(): Promise<void> {
+async function incrementDailyCount(uid: string): Promise<void> {
   try {
-    const raw = await AsyncStorage.getItem(DAILY_LIMIT_KEY);
+    const raw = await AsyncStorage.getItem(limitKey(uid));
     const today = new Date().toDateString();
     const prev = raw ? JSON.parse(raw) : { date: today, count: 0 };
     const count = prev.date === today ? prev.count + 1 : 1;
-    await AsyncStorage.setItem(DAILY_LIMIT_KEY, JSON.stringify({ date: today, count }));
+    await AsyncStorage.setItem(limitKey(uid), JSON.stringify({ date: today, count }));
   } catch {}
 }
 
@@ -57,7 +63,7 @@ export function JoinRequestModal({ trip, requestor, onClose, onSubmitted }: Join
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
-    const allowed = await checkDailyLimit();
+    const allowed = await checkDailyLimit(requestor.id);
     if (!allowed) {
       Alert.alert('Daily limit reached', `You can send up to ${DAILY_LIMIT} join requests per day. Try again tomorrow.`);
       return;
@@ -71,7 +77,7 @@ export function JoinRequestModal({ trip, requestor, onClose, onSubmitted }: Join
         requestor,
         message
       );
-      await incrementDailyCount();
+      await incrementDailyCount(requestor.id);
       onSubmitted();
     } catch (err: unknown) {
       const code = (err as { code?: string }).code;
@@ -110,6 +116,8 @@ export function JoinRequestModal({ trip, requestor, onClose, onSubmitted }: Join
               </View>
             </View>
 
+            <JoinSummary trip={trip} organizer={null} viewer={preferencesOf(requestor)} showAnswers={false} />
+
             <Text style={styles.fieldLabel}>Message to the trip organizer (optional)</Text>
             <View style={styles.messageBox}>
               <TextInput
@@ -126,7 +134,10 @@ export function JoinRequestModal({ trip, requestor, onClose, onSubmitted }: Join
             </View>
 
             <Text style={styles.disclaimer}>
-              By requesting, you agree to the community guidelines. The organizer will review your request.
+              By requesting, you agree to the{' '}
+              <Text style={styles.link} onPress={() => { onClose(); router.push('/terms'); }}>Terms</Text> and the community guidelines in{' '}
+              <Text style={styles.link} onPress={() => { onClose(); router.push('/(app)/profile/safety' as never); }}>Safety &amp; Guidelines</Text>.
+              The organizer decides whether to approve your request, and you can cancel it at any time. The organizer will see your name, your bio and your message.
             </Text>
           </ScrollView>
 
@@ -190,6 +201,7 @@ const styles = StyleSheet.create({
   messageInput: { fontSize: FontSize.md, color: Colors.textPrimary, minHeight: 120 },
   charCount: { fontSize: FontSize.xs, color: Colors.placeholder, textAlign: 'right', marginTop: 4 },
   disclaimer: { fontSize: FontSize.sm, color: Colors.textSecondary, lineHeight: 18, textAlign: 'center' },
+  link: { color: Colors.primary, fontWeight: FontWeight.semibold },
   footer: {
     flexDirection: 'row',
     padding: Spacing.lg,

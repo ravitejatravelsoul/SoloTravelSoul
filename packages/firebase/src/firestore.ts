@@ -598,6 +598,8 @@ function publicTripFromDoc(id: string, d: DocumentData): PublicTrip {
     isAcceptingMembers: (d.isAcceptingMembers as boolean) ?? true,
     coverPhotoURL: (d.coverPhotoURL as string | null) ?? null,
     ...(typeof d.destinationKey === 'string' ? { destinationKey: d.destinationKey } : {}),
+    ...(typeof d.expectations === 'string' && d.expectations ? { expectations: d.expectations } : {}),
+    ...(typeof d.budgetNote === 'string' && d.budgetNote ? { budgetNote: d.budgetNote } : {}),
     createdAt: tsToDate(d.createdAt),
     updatedAt: tsToDate(d.updatedAt),
   };
@@ -620,6 +622,9 @@ export async function setTripVisibility(
     ownerName: string;
     ownerPhotoURL: string | null;
     memberCount: number;
+    /** Optional organizer-written context shown before people request to join. */
+    expectations?: string;
+    budgetNote?: string;
   }
 ): Promise<void> {
   const batch = writeBatch(db);
@@ -633,11 +638,38 @@ export async function setTripVisibility(
       maxMembers: publicData.maxMembers,
       isAcceptingMembers: publicData.isAcceptingMembers,
       coverPhotoURL: publicData.coverPhotoURL,
+      expectations: publicData.expectations ?? '',
+      budgetNote: publicData.budgetNote ?? '',
     } : {}),
   });
 
   const publicRef = doc(db, 'publicTrips', tripId);
   if (visibility === 'public' && publicData) {
+    // Editing an already-public trip must be an update: a set() would replace the public document (resetting
+    // memberCount and createdAt) and rewrite the owner's member document, which the rules never allow, so the
+    // whole batch used to fail with "Visibility update failed" on every edit after publishing.
+    const existing = await getDoc(publicRef);
+    if (existing.exists()) {
+      batch.update(publicRef, {
+        ownerName: publicData.ownerName,
+        ownerPhotoURL: publicData.ownerPhotoURL,
+        title: publicData.title,
+        destination: publicData.destination,
+        destinationKey: toDestinationKey(publicData.destination) ?? '',
+        startDate: dateToTs(publicData.startDate),
+        endDate: dateToTs(publicData.endDate),
+        description: publicData.description,
+        tags: publicData.tags,
+        maxMembers: publicData.maxMembers,
+        isAcceptingMembers: publicData.isAcceptingMembers,
+        coverPhotoURL: publicData.coverPhotoURL,
+        expectations: publicData.expectations ?? '',
+        budgetNote: publicData.budgetNote ?? '',
+        updatedAt: serverTimestamp(),
+      });
+      await batch.commit();
+      return;
+    }
     batch.set(publicRef, {
       tripId,
       ownerUid: uid,
@@ -654,6 +686,8 @@ export async function setTripVisibility(
       maxMembers: publicData.maxMembers,
       isAcceptingMembers: publicData.isAcceptingMembers,
       coverPhotoURL: publicData.coverPhotoURL,
+      expectations: publicData.expectations ?? '',
+      budgetNote: publicData.budgetNote ?? '',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -682,6 +716,33 @@ export async function getPublicTrip(tripId: string): Promise<PublicTrip | null> 
     if (isOfflineError(err)) return null;
     throw err;
   }
+}
+
+/** One traveler's discovery record (only exists while they are public and discoverable). */
+export async function getNearbyTraveler(uid: string): Promise<NearbyTraveler | null> {
+  try {
+    const snap = await getDoc(doc(db, 'nearbyTravelers', uid));
+    return snap.exists() ? nearbyTravelerFromDoc({ ...snap.data(), uid }) : null;
+  } catch (err) {
+    if (isOfflineError(err)) return null;
+    throw err;
+  }
+}
+
+/**
+ * A member (not the organizer) leaves a public trip: their member document is removed and the public
+ * member count goes down by one in the same batch (the rules accept exactly that change from a member).
+ */
+export async function leavePublicTrip(tripId: string, uid: string): Promise<void> {
+  const batch = writeBatch(db);
+  batch.delete(doc(db, 'trips', tripId, 'members', uid));
+  batch.update(doc(db, 'publicTrips', tripId), { memberCount: increment(-1), updatedAt: serverTimestamp() });
+  await batch.commit();
+}
+
+/** Records that the signed-in user accepted the Terms and Privacy Policy version (checked before posting or messaging). */
+export async function acceptTerms(uid: string, version: string): Promise<void> {
+  await updateDoc(doc(db, 'users', uid), { termsAcceptedVersion: version, termsAcceptedAt: serverTimestamp() });
 }
 
 export function subscribePublicTrips(

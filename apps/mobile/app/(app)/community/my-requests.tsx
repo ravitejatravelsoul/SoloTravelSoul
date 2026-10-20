@@ -11,6 +11,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Avatar } from '@/components/ui';
+import { RequesterAnswers } from '@/components/community/RequesterAnswers';
 import {
   subscribeTripJoinRequestsForOwner,
   subscribeGroupJoinRequestsForOwner,
@@ -56,6 +57,7 @@ function RequestCard({
       </View>
       {bio ? <Text style={styles.bio} numberOfLines={2}>{bio}</Text> : null}
       {message ? <Text style={styles.message}>&ldquo;{message}&rdquo;</Text> : null}
+      {item.kind === 'trip' && <RequesterAnswers requestorUid={(item as TripJoinRequest).requestorUid} />}
       <View style={styles.actions}>
         <TouchableOpacity style={[styles.btn, styles.rejectBtn]} onPress={onReject} activeOpacity={0.8}>
           <Text style={[styles.btnLabel, styles.rejectLabel]}>Reject</Text>

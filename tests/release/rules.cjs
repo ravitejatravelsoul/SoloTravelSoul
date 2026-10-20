@@ -644,6 +644,78 @@ function client(file, db) {
       await assertFails(quin.cancelTripJoinRequest('t-ok_quin', 'quin')); // approved is not cancellable
       await assertFails(sdk.updateDoc(sdk.doc(piaDb, 'tripJoinRequests/t-ok_quin'), { status: 'rejected' }));
     });
+    // QA phase (2026-10-19): public trip editing, member leave, organizer context, terms, group leave
+    const FS = 'packages/firebase/src/firestore.ts';
+    const tripData = (over = {}) => ({ title: 'Lisbon', destination: 'Lisbon, Portugal', startDate: new Date('2026-11-19'), endDate: new Date('2026-11-27'), description: 'Walking week', tags: [], maxMembers: 3,
+      isAcceptingMembers: true, coverPhotoURL: null, ownerName: 'Rho', ownerPhotoURL: null, memberCount: 1, expectations: 'Easy pace, no early starts', budgetNote: 'Mid-range, costs split evenly', ...over });
+    const rhoDb = ctxDb('rho'), samDb = ctxDb('sam'), tessDb = ctxDb('tess');
+    const rho = client(FS, rhoDb), sam = client(FS, samDb);
+    let qaTrip;
+    await check('public trip: the organizer can edit after publishing (update, not replace); member count and members survive; expectations and budget are stored', async () => {
+      qaTrip = await rho.createTrip('rho', { destination: 'Lisbon, Portugal', startDate: new Date('2026-11-19'), endDate: new Date('2026-11-27'), notes: '', coverPhotoURL: null });
+      await rho.setTripVisibility('rho', qaTrip, 'public', tripData());
+      await sam.submitTripJoinRequest(qaTrip, { ownerUid: 'rho', destination: 'Lisbon, Portugal', title: 'Lisbon' }, { id: 'sam', name: 'Sam', photoURL: null, bio: '' }, 'hi');
+      await rho.approveTripJoinRequest(`${qaTrip}_sam`, qaTrip, 'rho', { requestorUid: 'sam', requestorName: 'Sam', requestorPhotoURL: null });
+      const before = (await sdk.getDoc(sdk.doc(rhoDb, `publicTrips/${qaTrip}`))).data();
+      assert.equal(before.memberCount, 2);
+      // Second save: the app passes the stale private count (1) and a changed description and capacity.
+      await rho.setTripVisibility('rho', qaTrip, 'public', tripData({ description: 'Changed', maxMembers: 4, memberCount: 1, budgetNote: 'Budget' }));
+      const after = (await sdk.getDoc(sdk.doc(rhoDb, `publicTrips/${qaTrip}`))).data();
+      assert.equal(after.description, 'Changed'); assert.equal(after.maxMembers, 4); assert.equal(after.memberCount, 2, 'count not reset');
+      assert.equal(after.expectations, 'Easy pace, no early starts'); assert.equal(after.budgetNote, 'Budget');
+      assert.equal(after.createdAt.toMillis(), before.createdAt.toMillis(), 'createdAt kept');
+      assert.equal((await sdk.getDoc(sdk.doc(rhoDb, `trips/${qaTrip}/members/rho`))).data().role, 'owner');
+      assert.equal((await sdk.getDoc(sdk.doc(rhoDb, `trips/${qaTrip}/members/sam`))).exists(), true);
+      assert.equal(after.ownerUid, 'rho');
+    });
+    await check('public trip: expectations (300) and budget (80) are length-limited and text-filtered; a stranger cannot edit', async () => {
+      await assertFails(rho.setTripVisibility('rho', qaTrip, 'public', tripData({ expectations: 'x'.repeat(301) })));
+      await assertFails(rho.setTripVisibility('rho', qaTrip, 'public', tripData({ budgetNote: 'x'.repeat(81) })));
+      await assertFails(rho.setTripVisibility('rho', qaTrip, 'public', tripData({ expectations: 'no kill yourself talk' })));
+      await assertFails(sdk.updateDoc(sdk.doc(tessDb, `publicTrips/${qaTrip}`), { description: 'hijack', updatedAt: sdk.serverTimestamp() }));
+      assert.equal((await sdk.getDoc(sdk.doc(rhoDb, `publicTrips/${qaTrip}`))).data().description, 'Changed');
+    });
+    await check('leave trip: a member leaves and the count drops by one; strangers and extra changes are refused', async () => {
+      await assertFails(sdk.updateDoc(sdk.doc(tessDb, `publicTrips/${qaTrip}`), { memberCount: sdk.increment(-1), updatedAt: sdk.serverTimestamp() })); // not a member
+      await assertFails(sdk.updateDoc(sdk.doc(samDb, `publicTrips/${qaTrip}`), { memberCount: sdk.increment(-1), updatedAt: sdk.serverTimestamp() })); // member document not removed in the same write
+      const b = sdk.writeBatch(samDb);
+      b.delete(sdk.doc(samDb, `trips/${qaTrip}/members/sam`)); b.update(sdk.doc(samDb, `publicTrips/${qaTrip}`), { memberCount: sdk.increment(-2), updatedAt: sdk.serverTimestamp() });
+      await assertFails(b.commit()); // more than one
+      const c = sdk.writeBatch(samDb);
+      c.delete(sdk.doc(samDb, `trips/${qaTrip}/members/sam`)); c.update(sdk.doc(samDb, `publicTrips/${qaTrip}`), { memberCount: sdk.increment(-1), description: 'changed by member', updatedAt: sdk.serverTimestamp() });
+      await assertFails(c.commit()); // anything else
+      await sam.leavePublicTrip(qaTrip, 'sam');
+      assert.equal((await sdk.getDoc(sdk.doc(rhoDb, `publicTrips/${qaTrip}`))).data().memberCount, 1);
+      assert.equal((await sdk.getDoc(sdk.doc(rhoDb, `trips/${qaTrip}/members/sam`))).exists(), false);
+      await assertFails(sam.leavePublicTrip(qaTrip, 'sam')); // no longer a member
+    });
+    await check('terms acceptance: only a version string and the server time', async () => {
+      const tomDb = ctxDb('tom'); const tom = client(FS, tomDb);
+      await sdk.setDoc(sdk.doc(tomDb, 'users/tom'), { name: 'Tom', email: 'tom@example.test' });
+      await tom.acceptTerms('tom', '2026-10-19');
+      const d = (await sdk.getDoc(sdk.doc(tomDb, 'users/tom'))).data();
+      assert.equal(d.termsAcceptedVersion, '2026-10-19'); assert.ok(d.termsAcceptedAt.toMillis() > 0);
+      await assertFails(sdk.updateDoc(sdk.doc(tomDb, 'users/tom'), { termsAcceptedVersion: 'v'.repeat(21), termsAcceptedAt: sdk.serverTimestamp() }));
+      await assertFails(sdk.updateDoc(sdk.doc(tomDb, 'users/tom'), { termsAcceptedVersion: 7, termsAcceptedAt: sdk.serverTimestamp() }));
+      await assertFails(sdk.updateDoc(sdk.doc(tomDb, 'users/tom'), { termsAcceptedVersion: '2026-10-19', termsAcceptedAt: new Date('2020-01-01') })); // not the server time
+      await assertFails(sdk.updateDoc(sdk.doc(tessDb, 'users/tom'), { termsAcceptedVersion: '2026-10-19', termsAcceptedAt: sdk.serverTimestamp() })); // someone else's account
+    });
+    await check('leave group chat: a member removes only themselves; others cannot be removed; non-members cannot', async () => {
+      await env.withSecurityRulesDisabled(async ctx => {
+        await sdk.setDoc(sdk.doc(ctx.firestore(), 'groups/qag'), { name: 'QA group', createdBy: 'gcreator', members: ['gcreator', 'gmember'], memberInfo: {}, lastMessage: null, unreadCounts: { gcreator: 0, gmember: 0 } });
+      });
+      const gDb = ctxDb('gmember'); const g = client('packages/firebase/src/chat.ts', gDb);
+      await assertFails(sdk.updateDoc(sdk.doc(gDb, 'groups/qag'), { members: sdk.arrayRemove('gcreator') })); // cannot remove someone else
+      await assertFails(client('packages/firebase/src/chat.ts', ctxDb('stranger')).leaveChatGroup('qag', 'stranger', 'S')); // not a member
+      await g.leaveChatGroup('qag', 'gmember', 'Gem');
+      await env.withSecurityRulesDisabled(async ctx => {
+        const d = (await sdk.getDoc(sdk.doc(ctx.firestore(), 'groups/qag'))).data();
+        assert.deepEqual(d.members, ['gcreator']);
+        const msgs = await sdk.getDocs(sdk.collection(ctx.firestore(), 'groups/qag/messages'));
+        assert.equal(msgs.size, 1); assert.equal(msgs.docs[0].data().text, 'Gem left the group'); assert.equal(msgs.docs[0].data().type, 'system');
+      });
+      await assertFails(sdk.getDocs(sdk.collection(gDb, 'groups/qag/messages'))); // no longer a member: cannot read it
+    });
     console.log(`${checks} release rule checks passed`);
   } finally { await env.cleanup(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

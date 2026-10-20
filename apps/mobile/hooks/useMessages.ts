@@ -102,7 +102,7 @@ export function useMessages(chatId: string, otherUids: string[]) {
         // Refused by the rules (e.g. suspended account): retrying cannot succeed.
         if (isPermanentRejection(e)) {
           setPending((prev) => prev.filter((m) => m.clientId !== clientId));
-          useUIStore.getState().addToast('Message not sent. This account cannot send messages.', 'error');
+          useUIStore.getState().addToast('Message not sent. You cannot send to this chat right now (your account or the conversation is restricted).', 'error');
           return;
         }
         // Snapshot didn't arrive in time or send failed — queue for retry

@@ -66,6 +66,7 @@ export default function PublicTripsScreen() {
         <View style={styles.filterRow}>
           <Text style={styles.filterLabel}>Open to join</Text>
           <Switch
+            accessibilityLabel="Show only trips open to join"
             value={acceptingOnly}
             onValueChange={setAcceptingOnly}
             trackColor={{ false: Colors.border, true: Colors.primary }}

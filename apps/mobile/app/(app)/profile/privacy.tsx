@@ -133,6 +133,7 @@ export default function PrivacySettingsScreen() {
               <ActivityIndicator size="small" color={Colors.primary} />
             ) : (
               <Switch
+                accessibilityLabel="Public profile"
                 value={isPublic}
                 onValueChange={handleVisibilityToggle}
                 trackColor={{ false: Colors.border, true: Colors.primary }}
@@ -170,6 +171,7 @@ export default function PrivacySettingsScreen() {
               <ActivityIndicator size="small" color={Colors.primary} />
             ) : (
               <Switch
+                accessibilityLabel="Show me to other travelers"
                 value={discoverable}
                 onValueChange={handleDiscoveryToggle}
                 trackColor={{ false: Colors.border, true: Colors.primary }}

@@ -65,7 +65,7 @@ export default function TravelGroupsScreen() {
         </View>
         <View style={styles.filterRow}>
           <Text style={styles.filterLabel}>Open to join</Text>
-          <Switch value={acceptingOnly} onValueChange={setAcceptingOnly} trackColor={{ false: Colors.border, true: Colors.primary }} thumbColor={Colors.white} />
+          <Switch accessibilityLabel="Show only groups open to join" value={acceptingOnly} onValueChange={setAcceptingOnly} trackColor={{ false: Colors.border, true: Colors.primary }} thumbColor={Colors.white} />
         </View>
       </View>
 

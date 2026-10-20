@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { CONTACT_EMAIL } from '@/constants/contact';
+import { SAFETY_TIPS, PLATFORM_ROLE, COMPATIBILITY_NOTICE, NOT_EMERGENCY_SERVICE, REPORT_BLOCK_LEAVE } from '@solotravelsoul/shared';
 
 const GUIDELINES = [
   {
@@ -82,10 +83,37 @@ export default function SafetyScreen() {
           ))}
         </View>
 
+        {/* Meeting people safely */}
+        <Text style={styles.sectionLabel}>MEETING PEOPLE SAFELY</Text>
+        <View style={styles.card}>
+          {SAFETY_TIPS.map((t, idx) => (
+            <View key={t.title}>
+              <View style={styles.guidelineRow}>
+                <View style={styles.guidelineIcon}>
+                  <Ionicons name="checkmark-circle-outline" size={20} color={Colors.primary} />
+                </View>
+                <View style={styles.guidelineText}>
+                  <Text style={styles.guidelineTitle}>{t.title}</Text>
+                  <Text style={styles.guidelineBody}>{t.body}</Text>
+                </View>
+              </View>
+              {idx < SAFETY_TIPS.length - 1 && <View style={styles.divider} />}
+            </View>
+          ))}
+        </View>
+
+        {/* What the app is and is not */}
+        <Text style={styles.sectionLabel}>WHAT SOLOTRAVELSOUL IS (AND IS NOT)</Text>
+        <View style={styles.card}>
+          <Text style={styles.bodyText}>{PLATFORM_ROLE}</Text>
+          <Text style={[styles.bodyText, { marginTop: Spacing.md }]}>{COMPATIBILITY_NOTICE}</Text>
+          <Text style={[styles.bodyText, { marginTop: Spacing.md }]}>{NOT_EMERGENCY_SERVICE}</Text>
+        </View>
+
         {/* How to Report */}
         <Text style={styles.sectionLabel}>HOW TO REPORT</Text>
         <View style={styles.card}>
-          {['Tap the 3-dot menu on any profile, trip, or group', 'Select "Report"', 'Choose the issue type and add details', 'Submit — we review all reports within 48 hours'].map((step, idx) => (
+          {['Tap the 3-dot menu on any profile, trip, or group', 'Select "Report"', 'Choose the issue type and add details', 'Submit. Reports are reviewed by our moderators, who act when the Community Guidelines or Terms are broken'].map((step, idx) => (
             <View key={idx} style={styles.stepRow}>
               <View style={styles.stepBadge}>
                 <Text style={styles.stepNumber}>{idx + 1}</Text>
@@ -96,10 +124,10 @@ export default function SafetyScreen() {
         </View>
 
         {/* How to Block */}
-        <Text style={styles.sectionLabel}>HOW TO BLOCK</Text>
+        <Text style={styles.sectionLabel}>HOW TO BLOCK OR LEAVE</Text>
         <View style={styles.card}>
           <Text style={styles.bodyText}>
-            Tap the 3-dot menu on any user&apos;s profile and select &quot;Block&quot;. Blocked users cannot see your profile, message you, or find you in discovery. Blocking is private and reversible.
+            {REPORT_BLOCK_LEAVE}{'\n\n'}Tap the 3-dot menu on a profile or chat and choose &quot;Block&quot;. Blocked people cannot message you, ask to join your trips, follow you, comment on your posts or open your profile, and blocking is private and reversible. You may still appear in shared lists such as Nearby Travelers. To leave a group chat, open the group and choose &quot;Leave group&quot;; to leave a trip you joined, open the trip and choose &quot;Leave trip&quot;.
           </Text>
         </View>
 
@@ -114,6 +142,17 @@ export default function SafetyScreen() {
             </TouchableOpacity>
           )}
           {moderator && <View style={styles.divider} />}
+          <TouchableOpacity
+            style={styles.linkRow}
+            onPress={() => router.push('/terms')}
+            activeOpacity={0.7}
+            accessibilityRole="link"
+          >
+            <Ionicons name="document-text-outline" size={18} color={Colors.primary} />
+            <Text style={styles.linkLabel}>Terms of Service</Text>
+            <Ionicons name="chevron-forward" size={14} color={Colors.placeholder} />
+          </TouchableOpacity>
+          <View style={styles.divider} />
           <TouchableOpacity
             style={styles.linkRow}
             onPress={() => router.push('/privacy')}
@@ -136,8 +175,7 @@ export default function SafetyScreen() {
         </View>
 
         <Text style={styles.footer}>
-          SoloTravelSoul is rated 17+ for travel planning and user-generated content.
-          All connections require host approval.
+          Trip join requests need the organizer&apos;s approval. Always use your own judgement when meeting people.
         </Text>
       </ScrollView>
     </SafeAreaView>

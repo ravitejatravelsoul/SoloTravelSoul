@@ -431,6 +431,16 @@ export async function sendGroupMessage(
   });
 }
 
+/**
+ * A member (not the creator) leaves a group chat. A short system message is posted first (only members may
+ * post); if that fails the member still leaves. The rules accept exactly this change from a non-creator:
+ * only `members`, minus the member themselves.
+ */
+export async function leaveChatGroup(groupId: string, uid: string, displayName: string): Promise<void> {
+  await sendGroupMessage(groupId, uid, displayName, `${displayName} left the group`, `left-${uid}-${Date.now()}`, 'system').catch(() => {});
+  await updateDoc(doc(db, 'groups', groupId), { members: arrayRemove(uid) });
+}
+
 export async function markGroupRead(groupId: string, uid: string): Promise<void> {
   await updateDoc(doc(db, 'groups', groupId), {
     [`unreadCounts.${uid}`]: 0,

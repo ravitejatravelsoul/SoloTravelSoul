@@ -1,6 +1,7 @@
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, Avatar } from '@/components/ui';
+import { RequesterAnswers } from './RequesterAnswers';
 import type { TripJoinRequest, RequestStatus } from '@solotravelsoul/shared';
 import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 
@@ -77,6 +78,7 @@ export function ReceivedRequestCard({ request, onApprove, onReject }: ReceivedCa
       {request.message ? (
         <Text style={styles.message} numberOfLines={3}>&ldquo;{request.message}&rdquo;</Text>
       ) : null}
+      {request.status === 'pending' && <RequesterAnswers requestorUid={request.requestorUid} />}
       {request.status === 'pending' && (
         <View style={styles.actionsRow}>
           <TouchableOpacity style={[styles.actionBtn, styles.rejectBtn]} onPress={onReject} activeOpacity={0.7}>

@@ -79,6 +79,10 @@ export interface PublicTrip {
   coverPhotoURL: string | null;
   /** Normalized destination for companion matching; absent on trips published before it existed. */
   destinationKey?: string;
+  /** Optional, organizer-written before people request to join: what they expect of companions. */
+  expectations?: string;
+  /** Optional, organizer-written budget context (for example "mid-range, costs split evenly"). */
+  budgetNote?: string;
   createdAt: Date;
   updatedAt: Date;
 }

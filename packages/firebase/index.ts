@@ -32,6 +32,9 @@ export {
   // Community: Public Trips
   setTripVisibility,
   getPublicTrip,
+  getNearbyTraveler,
+  leavePublicTrip,
+  acceptTerms,
   subscribePublicTrips,
   subscribePublicTripMembers,
   // Community: Join Requests
@@ -146,6 +149,7 @@ export {
   subscribeToGroupMessages,
   sendGroupMessage,
   markGroupRead,
+  leaveChatGroup,
   getGroup,
 } from './src/chat';
 export {

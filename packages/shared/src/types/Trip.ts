@@ -69,6 +69,9 @@ export interface PlannedTrip {
   maxMembers?: number | null;
   memberCount?: number;
   isAcceptingMembers?: boolean;
+  /** Organizer-written, shown to travelers before they request to join (optional). */
+  expectations?: string;
+  budgetNote?: string;
 }
 
 // Derive an array of ItineraryDay stubs from trip date range

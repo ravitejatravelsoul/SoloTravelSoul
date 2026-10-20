@@ -80,7 +80,7 @@ export function useSyncEngine(uid: string | undefined): SyncEngineState & {
       }
       if (chatResult.rejected.length > 0 && useAuthStore.getState().user?.uid === uid) {
         const n = chatResult.rejected.length;
-        useUIStore.getState().addToast(`${n} queued message${n === 1 ? ' was' : 's were'} not sent. This account cannot send messages.`, 'error');
+        useUIStore.getState().addToast(`${n} queued message${n === 1 ? ' was' : 's were'} not sent. Your account or the conversation is restricted.`, 'error');
       }
       const count = await pendingCount(uid);
       const lastSyncedAt = await getLatestSyncTime(uid);

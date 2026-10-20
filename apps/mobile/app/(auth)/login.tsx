@@ -114,7 +114,7 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   header: { alignItems: 'center', gap: Spacing.sm, marginTop: Spacing['3xl'], marginBottom: Spacing['3xl'] },
-  logo: { fontSize: 56 },
+  logo: { fontSize: 56, lineHeight: 72 },
   form: { gap: Spacing.lg },
   forgotRow: { alignSelf: 'flex-end', marginTop: -Spacing.sm },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing['3xl'] },

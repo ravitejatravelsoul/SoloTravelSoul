@@ -46,6 +46,8 @@ export interface UserProfile {
   preferenceSetup?: import('../preferences').PreferenceSetupProgress;
   /** The user's own trip shared in traveler discovery (destination and dates only), if any. */
   discoveryTripId?: string | null;
+  /** Terms/Privacy version the user accepted (see TERMS_VERSION); absent until they accept. */
+  termsAcceptedVersion?: string;
 }
 
 // Ported from Swift's computed `initials` property

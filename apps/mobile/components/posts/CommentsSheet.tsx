@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, EmptyState } from '@/components/ui';
 import { CommentItem } from './CommentItem';
 import { useComments } from '@/hooks/useComments';
@@ -29,6 +30,8 @@ export function CommentsSheet({ postId, authorId, onClose }: Props) {
   const [text, setText] = useState('');
   const [replyTo, setReplyTo] = useState<{ id: string; name: string } | null>(null);
   const inputRef = useRef<TextInput>(null);
+  // The modal is drawn edge to edge: without the bottom inset the input sits under the three-button navigation bar.
+  const insets = useSafeAreaInsets();
 
   const handleReply = useCallback((commentId: string, authorName: string) => {
     setReplyTo({ id: commentId, name: authorName });
@@ -52,7 +55,7 @@ export function CommentsSheet({ postId, authorId, onClose }: Props) {
         <TouchableOpacity style={styles.backdrop} onPress={onClose} />
         <KeyboardAvoidingView
           behavior="padding"
-          style={styles.sheet}
+          style={[styles.sheet, { paddingBottom: Math.max(Platform.OS === 'ios' ? 34 : Spacing.lg, insets.bottom) }]}
         >
           {/* ── Handle bar ── */}
           <View style={styles.handle} />

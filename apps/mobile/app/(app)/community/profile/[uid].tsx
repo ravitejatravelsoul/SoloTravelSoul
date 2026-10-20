@@ -11,7 +11,9 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Avatar, Chip } from '@/components/ui';
-import { getPublicProfile } from '@solotravelsoul/firebase';
+import { getPublicProfile, getOrCreateDirectChat } from '@solotravelsoul/firebase';
+import { FollowButton } from '@/components/profile/FollowButton';
+import { useIsFollowing } from '@/hooks/useFollows';
 import type { PublicProfile } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useBlockStore } from '@/stores/blockStore';
@@ -43,6 +45,8 @@ export default function PublicProfileScreen() {
 
   const isOwnProfile = uid === currentUid;
   const hasBlocked = blockedUids.includes(uid ?? '');
+  const follow = useIsFollowing(uid ?? '');
+  const myProfile = useAuthStore((s) => s.profile);
 
   useEffect(() => {
     if (!uid) return;
@@ -68,6 +72,22 @@ export default function PublicProfileScreen() {
           { text: 'Block', style: 'destructive', onPress: () => blockUser(uid) },
         ]
       );
+    }
+  };
+
+  const messageUser = async () => {
+    if (!uid || !profile || !currentUid) return;
+    try {
+      const myName = myProfile?.name ?? 'Traveler';
+      const chatId = await getOrCreateDirectChat(
+        currentUid,
+        { name: myName, initials: getUserInitials(myName) || myName[0]?.toUpperCase() || 'T' },
+        uid,
+        { name: profile.displayName, initials: getUserInitials(profile.displayName) || 'T' },
+      );
+      router.push(`/chats/${chatId}` as never);
+    } catch {
+      Alert.alert('Could not open chat', 'Please try again.');
     }
   };
 
@@ -166,6 +186,15 @@ export default function PublicProfileScreen() {
             </View>
           ) : null}
           <Text style={styles.memberSince}>Member since {formatDate(profile.memberSince)}</Text>
+          {!isOwnProfile && (
+            <View style={styles.heroActions}>
+              <FollowButton following={follow.following} loading={follow.loading} toggling={follow.toggling} onToggle={() => follow.toggle(profile.displayName, profile.photoURL)} />
+              <TouchableOpacity style={styles.messageBtn} onPress={messageUser} accessibilityRole="button" accessibilityLabel={`Message ${profile.displayName}`} activeOpacity={0.75}>
+                <Ionicons name="chatbubble-ellipses-outline" size={16} color={Colors.primary} />
+                <Text style={styles.messageLabel}>Message</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* Stats */}
@@ -291,6 +320,9 @@ const styles = StyleSheet.create({
   heroName: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: Colors.textPrimary },
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   locationText: { fontSize: FontSize.sm, color: Colors.textSecondary },
+  heroActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginTop: Spacing.md },
+  messageBtn: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, paddingHorizontal: Spacing.lg, minHeight: 40, borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.primary },
+  messageLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.primary },
   memberSince: { fontSize: FontSize.xs, color: Colors.placeholder },
   statsRow: {
     flexDirection: 'row',
