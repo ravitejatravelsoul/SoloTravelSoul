@@ -15,6 +15,11 @@ service cloud.firestore {
     function suspended(uid) {
       return exists(/databases/$(database)/documents/accountSuspensions/$(uid));
     }
+    // An e-mail address in a token proves ownership only when Firebase marked it verified: an unverified account can
+    // sign up with anyone's address. Invitations are addressed to an e-mail, so the invited side needs this.
+    function verifiedEmail() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
     // Server-side content filter for public text; pattern generated from
     // packages/shared/src/moderation.ts (BLOCKED_TERMS_RULES_PATTERN) — a
     // release test fails if they differ.
@@ -496,9 +501,9 @@ service cloud.firestore {
     // write on the group. Only the group's creator can invite; the creator can withdraw a pending invitation.
     match /groupInvites/{inviteId} {
       allow get: if request.auth != null && (resource == null || resource.data.inviterUid == request.auth.uid
-        || resource.data.inviteeEmail == request.auth.token.email.lower());
+        || (verifiedEmail() && resource.data.inviteeEmail == request.auth.token.email.lower()));
       allow list: if request.auth != null && (resource.data.inviterUid == request.auth.uid
-        || resource.data.inviteeEmail == request.auth.token.email.lower());
+        || (verifiedEmail() && resource.data.inviteeEmail == request.auth.token.email.lower()));
       function validInvite(inviteId) {
         return request.auth != null
           && request.resource.data.keys().hasOnly(['groupId', 'groupName', 'inviterUid', 'inviterName', 'inviteeEmail', 'status', 'createdAt', 'updatedAt', 'expiresAt'])
@@ -526,8 +531,11 @@ service cloud.firestore {
       allow update: if notDeleting() && request.auth != null && resource != null && resource.data.status == 'pending'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
         && request.resource.data.updatedAt == request.time
-        && ((resource.data.inviteeEmail == request.auth.token.email.lower() && request.resource.data.status in ['accepted', 'declined']
-              && (request.resource.data.status == 'declined' || resource.data.expiresAt > request.time))
+        && ((verifiedEmail() && resource.data.inviteeEmail == request.auth.token.email.lower() && request.resource.data.status in ['accepted', 'declined']
+              && (request.resource.data.status == 'declined'
+                || (resource.data.expiresAt > request.time
+                  && !deleting(resource.data.inviterUid) && !suspended(resource.data.inviterUid)
+                  && exists(/databases/$(database)/documents/groups/$(resource.data.groupId)))))
           || (resource.data.inviterUid == request.auth.uid && request.resource.data.status == 'cancelled'));
       allow delete: if false;
     }
@@ -552,7 +560,8 @@ service cloud.firestore {
       // invite document changes to 'accepted' in the same write), only adding themselves, never when blocked either way.
       function joiningByInvite() {
         let invite = /databases/$(database)/documents/groupInvites/$(groupId + '_' + request.auth.token.email.lower().replace('%', '%25').replace('/', '%2F'));
-        return request.auth != null && termsAccepted()
+        return request.auth != null && termsAccepted() && verifiedEmail()
+          && !deleting(resource.data.createdBy) && !suspended(resource.data.createdBy)
           && exists(invite) && get(invite).data.status == 'pending' && getAfter(invite).data.status == 'accepted'
           && get(invite).data.groupId == groupId && get(invite).data.inviterUid == resource.data.createdBy
           && get(invite).data.expiresAt > request.time

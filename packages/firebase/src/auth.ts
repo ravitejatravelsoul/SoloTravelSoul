@@ -6,6 +6,7 @@ import {
   createUserWithEmailAndPassword,
   signOut as _signOut,
   sendPasswordResetEmail,
+  sendEmailVerification,
   onAuthStateChanged,
   onIdTokenChanged,
   EmailAuthProvider,
@@ -88,4 +89,33 @@ export function subscribeToAuthState(
 
 export function getCurrentUser(): User | null {
   return auth.currentUser;
+}
+
+// ── E-mail verification ───────────────────────────────────────────────
+// Invitations are addressed to an e-mail address, and the server honours that address only when the ID token says it
+// was verified. Client state alone is never enough: after the person follows the link, the token is force-refreshed
+// and its claim is what counts.
+
+/** Whether the current ID token carries a verified e-mail (what the server rules will see). */
+export async function isEmailVerifiedInToken(): Promise<boolean> {
+  const user = auth.currentUser;
+  if (!user) return false;
+  const result = await user.getIdTokenResult();
+  return result.claims.email_verified === true;
+}
+
+/** Asks Firebase to e-mail a verification link to the signed-in address. Resolving means the request was accepted, not that the mail arrived. */
+export async function sendVerificationEmail(): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw Object.assign(new Error('No signed-in user'), { code: 'auth/no-current-user' });
+  await sendEmailVerification(user);
+}
+
+/** Reloads the account and force-refreshes the ID token; returns what the refreshed token claims. */
+export async function refreshEmailVerification(): Promise<boolean> {
+  const user = auth.currentUser;
+  if (!user) return false;
+  await user.reload();
+  const result = await user.getIdTokenResult(true);
+  return result.claims.email_verified === true;
 }

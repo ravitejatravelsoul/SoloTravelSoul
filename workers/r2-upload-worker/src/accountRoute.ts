@@ -55,7 +55,7 @@ export async function handleAccountDeletion(request: Request, deps: AccountRoute
   }
 
   try {
-    const result: DeletionResult = await deleteAccount({ uid: identity.uid, email: identity.email }, deletion, { job });
+    const result: DeletionResult = await deleteAccount({ uid: identity.uid, email: identity.email, verifiedEmail: identity.emailVerified ? identity.email : null }, deletion, { job });
     return result.status === 'deleted' ? deps.json({ status: 'deleted' }) : deps.json(result, 202);
   } catch (e) {
     if (e instanceof DeletionInProgress) {

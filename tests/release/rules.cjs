@@ -201,7 +201,7 @@ function client(file, db) {
         'publicProfiles/actor': { uid: 'actor', profileVisibility: 'public', followersCount: 0, followingCount: 0, bio: 'Hi' },
       })) await sdk.setDoc(sdk.doc(adb, p), data);
     });
-    const ctxDb = (uid) => env.authenticatedContext(uid, { email: `${uid}@example.test` }).firestore();
+    const ctxDb = (uid) => env.authenticatedContext(uid, { email: `${uid}@example.test`, email_verified: true }).firestore();
     const modDb = ctxDb('mod');
     const ownerDb = ctxDb('owner');
     const BAD = 'what the fuck';
@@ -334,7 +334,7 @@ function client(file, db) {
     });
     const bobDb = env.authenticatedContext('bob').firestore();
     const carolDb = env.authenticatedContext('carol').firestore();
-    const chatOf = (uid) => client('packages/firebase/src/chat.ts', env.authenticatedContext(uid, { email: `${uid}@example.test` }).firestore());
+    const chatOf = (uid) => client('packages/firebase/src/chat.ts', env.authenticatedContext(uid, { email: `${uid}@example.test`, email_verified: true }).firestore());
     const gdoc = (d, p) => sdk.doc(d, p);
     await check('group identity: a deleting UID cannot be added as member or pending member (create or update)', async () => {
       await assertFails(sdk.setDoc(gdoc(bobDb, 'groups/n1'), { name: 'n', createdBy: 'bob', members: ['bob', 'gone'], memberInfo: {}, unreadCounts: {} }));
@@ -1014,6 +1014,65 @@ function client(file, db) {
       await adminSet('nearbyTravelers/dee', { uid: 'dee', displayName: 'dee', photoURL: null, currentCity: '', travelStyles: [], interests: [], languages: [], travelPace: null, travelSchedule: null, groupSizePreference: null, destination: null, destinationKey: null, destinationStartDate: null, destinationEndDate: null, updatedAt: sdk.Timestamp.now() });
       assert.equal(await deeFs.reconcileDiscoveryConsent('dee', { showInNearbyTravelers: true }), false);
       assert.equal((await adminGet('users/dee')).showInNearbyTravelers, true);
+    });
+    // ── Verified e-mail ownership for invitations (2026-10-20) ──
+    const withClaims = (uid, claims) => env.authenticatedContext(uid, claims).firestore();
+    const chatWith = (uid, claims) => client('packages/firebase/src/chat.ts', withClaims(uid, claims));
+    for (const u of ['vic', 'mal', 'nora', 'sam2', 'ina']) await adminSet(`users/${u}`, { termsAcceptedVersion: TERMS, name: u });
+    await adminSet('users/ina', { termsAcceptedVersion: TERMS, name: 'ina' });
+    let V; // group used below
+    await check('invitation e-mail ownership: an unverified token carrying the invited address cannot read, list, accept or decline; a verified one can', async () => {
+      V = await chatOf('ivy').createGroup('ivy', 'Verified group', person('ivy'));
+      await chatOf('ivy').inviteToGroup({ id: V, name: 'Verified group' }, { uid: 'ivy', name: 'Ivy' }, 'vic@example.test');
+      const id = `${V}_vic@example.test`;
+      for (const [label, claims] of [['unverified', { email: 'vic@example.test', email_verified: false }], ['no claim', { email: 'vic@example.test' }]]) {
+        const d = withClaims('mal', claims);
+        await assertFails(sdk.getDoc(sdk.doc(d, `groupInvites/${id}`)));
+        await assertFails(sdk.getDocs(sdk.query(sdk.collection(d, 'groupInvites'), sdk.where('inviteeEmail', '==', 'vic@example.test'), sdk.where('status', '==', 'pending'))));
+        await assertFails(chatWith('mal', claims).declineGroupInvite(id));
+        await assertFails(chatWith('mal', claims).acceptGroupInvite({ id, groupId: V }, { uid: 'mal', info: person('mal') }));
+      }
+      assert.deepEqual((await adminGet(`groups/${V}`)).members, ['ivy'], 'the impostor did not join');
+      assert.equal((await adminGet(`groupInvites/${id}`)).status, 'pending', 'and did not decide the invitation');
+      const ok = { email: 'vic@example.test', email_verified: true };
+      assert.equal((await sdk.getDocs(sdk.query(sdk.collection(withClaims('vic', ok), 'groupInvites'), sdk.where('inviteeEmail', '==', 'vic@example.test'), sdk.where('status', '==', 'pending')))).size, 1);
+      await chatWith('vic', ok).acceptGroupInvite({ id, groupId: V }, { uid: 'vic', info: person('vic') });
+      assert.deepEqual((await adminGet(`groups/${V}`)).members, ['ivy', 'vic']);
+    });
+    await check('invitation e-mail ownership: the inviter keeps access and cancellation without any verification', async () => {
+      const unverifiedInviter = { email: 'ivy@example.test', email_verified: false };
+      await chatWith('ivy', unverifiedInviter).inviteToGroup({ id: V, name: 'Verified group' }, { uid: 'ivy', name: 'Ivy' }, 'nora@example.test');
+      const sent = await sdk.getDocs(sdk.query(sdk.collection(withClaims('ivy', unverifiedInviter), 'groupInvites'), sdk.where('inviterUid', '==', 'ivy'), sdk.where('groupId', '==', V)));
+      assert.ok(sent.size >= 2);
+      await chatWith('ivy', unverifiedInviter).cancelGroupInvite(`${V}_nora@example.test`);
+      assert.equal((await adminGet(`groupInvites/${V}_nora@example.test`)).status, 'cancelled');
+    });
+    await check('invitation e-mail ownership: a verified token for a different address cannot touch the invitation', async () => {
+      await chatOf('ivy').inviteToGroup({ id: V, name: 'Verified group' }, { uid: 'ivy', name: 'Ivy' }, 'sam2@example.test');
+      const id = `${V}_sam2@example.test`;
+      const other = { email: 'mal@example.test', email_verified: true };
+      await assertFails(sdk.getDoc(sdk.doc(withClaims('mal', other), `groupInvites/${id}`)));
+      await assertFails(chatWith('mal', other).acceptGroupInvite({ id, groupId: V }, { uid: 'mal', info: person('mal') }));
+      await assertFails(chatWith('mal', other).declineGroupInvite(id));
+    });
+    const verified = (uid) => ({ email: `${uid}@example.test`, email_verified: true });
+    await check('invitation acceptance is refused when the inviter is suspended or deleting, or the group was removed (declining stays possible)', async () => {
+      for (const [who, setup, label] of [['sus3', () => adminSet('accountSuspensions/sus3', { suspendedBy: 'mod', reason: 'x', createdAt: sdk.Timestamp.now() }), 'suspended'],
+        ['del3', () => adminSet('accountDeletions/del3', { uid: 'del3', status: 'in_progress' }), 'deleting']]) {
+        await adminSet(`users/${who}`, { termsAcceptedVersion: TERMS, name: who });
+        await adminSet(`groups/g-${who}`, { name: `G ${who}`, createdBy: who, members: [who], memberInfo: { [who]: person(who) }, unreadCounts: { [who]: 0 }, lastMessage: null });
+        const inviteId = `g-${who}_ina@example.test`;
+        await adminSet(`groupInvites/${inviteId}`, { groupId: `g-${who}`, groupName: `G ${who}`, inviterUid: who, inviterName: who, inviteeEmail: 'ina@example.test', status: 'pending', createdAt: sdk.Timestamp.now(), updatedAt: sdk.Timestamp.now(), expiresAt: sdk.Timestamp.fromMillis(Date.now() + 3600000) });
+        await setup();
+        await assertFails(chatWith('ina', verified('ina')).acceptGroupInvite({ id: inviteId, groupId: `g-${who}` }, { uid: 'ina', info: person('ina') }));
+        assert.ok(!(await adminGet(`groups/g-${who}`)).members.includes('ina'), `inviter ${label}`);
+        await chatWith('ina', verified('ina')).declineGroupInvite(inviteId);
+      }
+      await adminSet('groups/g-gone', { name: 'Removed', createdBy: 'ivy', members: ['ivy'], memberInfo: {}, unreadCounts: {}, lastMessage: null });
+      await adminSet('groupInvites/g-gone_ina@example.test', { groupId: 'g-gone', groupName: 'Removed', inviterUid: 'ivy', inviterName: 'Ivy', inviteeEmail: 'ina@example.test', status: 'pending', createdAt: sdk.Timestamp.now(), updatedAt: sdk.Timestamp.now(), expiresAt: sdk.Timestamp.fromMillis(Date.now() + 3600000) });
+      await env.withSecurityRulesDisabled((ctx) => sdk.deleteDoc(sdk.doc(ctx.firestore(), 'groups/g-gone')));
+      await assertFails(chatWith('ina', verified('ina')).acceptGroupInvite({ id: 'g-gone_ina@example.test', groupId: 'g-gone' }, { uid: 'ina', info: person('ina') }));
+      assert.equal((await adminGet('groupInvites/g-gone_ina@example.test')).status, 'pending', 'the invitation is not marked accepted for a removed group');
     });
     console.log(`${checks} release rule checks passed`);
   } finally { await env.cleanup(); }

@@ -401,17 +401,48 @@ test('direct chats: a retry after a crash between recording and deleting finishe
   assert.equal(await store.get('direct_chats/c_crash/messages/m2'), null);
 });
 
-test('group invitations: the ones the user sent and the ones addressed to their e-mail go; another person is untouched', async () => {
+const inviteDoc = (id, inviter, to) => ({ [`groupInvites/${id}`]: { groupId: id.split('_')[0], inviterUid: inviter, inviteeEmail: to, status: 'pending' } });
+const delWith = (store, uid, identity) => deletion.deleteAccount({ uid, ...identity }, harness(store).deps);
+
+test('group invitations: the ones the user sent go, and so do those addressed to their VERIFIED address; another person\'s stay', async () => {
   const store = await newStore();
-  await putDocs(store, { ...userDocs(ME, BOB),
-    'groupInvites/g1_friend%40example.test': { groupId: 'g1', inviterUid: ME, inviteeEmail: 'friend@example.test', status: 'pending' },
-    [`groupInvites/g2_${ME}%40example.test`]: { groupId: 'g2', inviterUid: BOB, inviteeEmail: `${ME}@example.test`, status: 'pending' },
-    'groupInvites/g2_other%40example.test': { groupId: 'g2', inviterUid: BOB, inviteeEmail: 'other@example.test', status: 'pending' } });
-  await del(store, ME);
+  await putDocs(store, { ...userDocs(ME, BOB), ...inviteDoc('g1_friend%40example.test', ME, 'friend@example.test'), ...inviteDoc(`g2_${ME}%40example.test`, BOB, `${ME}@example.test`), ...inviteDoc('g2_other%40example.test', BOB, 'other@example.test') });
+  await delWith(store, ME, { email: `${ME}@example.test`, verifiedEmail: `${ME}@example.test` });
   assert.equal(await store.get('groupInvites/g1_friend%40example.test'), null, 'sent by the deleted user');
-  assert.equal(await store.get(`groupInvites/g2_${ME}%40example.test`), null, 'addressed to the deleted user');
+  assert.equal(await store.get(`groupInvites/g2_${ME}%40example.test`), null, 'addressed to the deleted user\'s verified address');
   assert.ok(await store.get('groupInvites/g2_other%40example.test'), 'an unrelated invitation is untouched');
-  await assert.doesNotReject(() => del(store, ME)); // retry
+  await assert.doesNotReject(() => delWith(store, ME, { email: `${ME}@example.test`, verifiedEmail: `${ME}@example.test` })); // retry
+});
+
+test('group invitations: an UNVERIFIED token or a forged profile e-mail can never delete another person\'s invitations', async () => {
+  const victim = 'victim@example.test';
+  const store = await newStore();
+  // The profile (client-editable) and the directory entry both claim the victim's address; so does the unverified token.
+  await putDocs(store, { ['users/' + ME]: { name: ME, email: victim }, [`userLookup/${ME}`]: { uid: ME, email: victim }, ...userDocs(BOB),
+    ...inviteDoc(`g9_${victim.replace('@', '%40')}`, BOB, victim), ...inviteDoc('g8_own%40example.test', ME, 'own@example.test') });
+  await delWith(store, ME, { email: victim, verifiedEmail: null }); // token e-mail present but not verified
+  assert.ok(await store.get(`groupInvites/g9_${victim.replace('@', '%40')}`), 'the victim\'s invitation survives');
+  assert.equal(await store.get('groupInvites/g8_own%40example.test'), null, 'what the account itself sent still goes');
+  // A verified token for the account's own address, with the forged profile e-mail still in place.
+  const store2 = await newStore();
+  await putDocs(store2, { ['users/' + ME]: { name: ME, email: victim }, ...userDocs(BOB), ...inviteDoc(`g9_${victim.replace('@', '%40')}`, BOB, victim), ...inviteDoc(`g7_${ME}%40example.test`, BOB, `${ME}@example.test`) });
+  await delWith(store2, ME, { email: `${ME}@example.test`, verifiedEmail: `${ME}@example.test` });
+  assert.ok(await store2.get(`groupInvites/g9_${victim.replace('@', '%40')}`), 'a forged profile e-mail is not used');
+  assert.equal(await store2.get(`groupInvites/g7_${ME}%40example.test`), null, 'the verified address is');
+});
+
+test('group invitations: a verified address learned from the token is remembered, so a token-less retry still cleans up', async () => {
+  const store = await newStore(); const h = harness(store);
+  await putDocs(store, { ...userDocs(ME), ...inviteDoc(`g6_${ME}%40example.test`, BOB, `${ME}@example.test`) });
+  h.storage.failNext = 1; // the last step fails once, after the invitation step ran with the verified address
+  await assert.rejects(deletion.deleteAccount({ uid: ME, email: `${ME}@example.test`, verifiedEmail: `${ME}@example.test` }, h.deps), deletion.DeletionStepFailed);
+  assert.equal((await store.get(`accountDeletions/${ME}`)).data.verifiedEmail, `${ME}@example.test`, 'remembered on the job');
+  // Pretend the invitation step had not run yet when the first attempt stopped, and a new invitation arrived.
+  const job = await store.get(`accountDeletions/${ME}`);
+  await store.commit([{ kind: 'update', path: job.path, set: { completedSteps: job.data.completedSteps.filter((id) => id !== 'groupInvites') }, updateTime: job.updateTime }]);
+  await putDocs(store, inviteDoc(`g5_${ME}%40example.test`, BOB, `${ME}@example.test`));
+  await deletion.deleteAccount({ uid: ME, email: null }, h.deps); // cron / admin retry: no token
+  assert.equal(await store.get(`groupInvites/g5_${ME}%40example.test`), null);
 });
 
 test('media failure keeps Auth, records the failed step, and a retry finishes exactly once', async () => {

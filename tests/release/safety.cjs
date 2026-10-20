@@ -224,6 +224,27 @@ test('group chats: people are invited by e-mail address and join by accepting; t
   assert.match(read('apps/mobile/app/(app)/groups/[groupId]/index.tsx'), /function InvitePanel[\s\S]*Withdraw/);
 });
 
+test('invitations honour only a verified e-mail: rules, deletion cleanup and the verification screen', () => {
+  const rules = read('firestore.rules');
+  assert.match(rules, /function verifiedEmail\(\) \{\s*return request\.auth != null && request\.auth\.token\.email_verified == true;/);
+  const inv = rules.slice(rules.indexOf('match /groupInvites/{inviteId}'), rules.indexOf('match /groups/{groupId}'));
+  for (const m of inv.matchAll(/token\.email\.lower\(\)/g)) {
+    const before = inv.slice(Math.max(0, m.index - 140), m.index);
+    if (/inviteeEmail != request\.auth/.test(before) || /size\(\) <= 254/.test(before)) continue; // the self-invite check, not an ownership claim
+    assert.match(before, /verifiedEmail\(\)/, `an e-mail ownership check without verifiedEmail(): ...${before.slice(-80)}`);
+  }
+  assert.match(rules, /function joiningByInvite\(\) \{[\s\S]*verifiedEmail\(\)[\s\S]*!deleting\(resource\.data\.createdBy\) && !suspended\(resource\.data\.createdBy\)/);
+  const worker = read('workers/r2-upload-worker/src/accountDeletion.ts');
+  const step = worker.slice(worker.indexOf('const removeGroupInvites'), worker.indexOf('// Groups another user is still creating'));
+  assert.match(step, /verifiedEmail/); assert.doesNotMatch(step, /profile|userLookup|ctx\.email|users\//, 'no client-writable e-mail is used to find invitations');
+  assert.match(read('workers/r2-upload-worker/src/accountRoute.ts'), /verifiedEmail: identity\.emailVerified \? identity\.email : null/);
+  const chats = read('apps/mobile/app/(app)/chats/index.tsx'), hook = read('apps/mobile/hooks/useEmailVerification.ts');
+  assert.match(chats, /verification\.verified === false &&[\s\S]*<VerifyEmailBanner/);
+  assert.match(read('apps/mobile/hooks/useGroupInvites.ts'), /verified !== true\) return;/);
+  assert.match(hook, /refreshEmailVerification\(\)/); assert.match(read('packages/firebase/src/auth.ts'), /user\.reload\(\);\s*const result = await user\.getIdTokenResult\(true\);\s*return result\.claims\.email_verified === true/);
+  assert.doesNotMatch(read('apps/mobile/components/chat/VerifyEmailBanner.tsx') + hook, /was delivered|has been sent to your inbox/i, 'a successful request is never described as delivery');
+});
+
 test('moderators can hide, remove and restore public trips and community groups, and lift suspensions, from the moderation screen', () => {
   const screen = read('apps/mobile/app/(app)/moderation/index.tsx');
   for (const word of ['setItemModeration', 'Hide', 'Remove', 'Restore', 'subscribeModeratedItems', 'Lift suspension', 'unsuspendUser', 'subscribeSuspensions']) assert.ok(screen.includes(word), word);

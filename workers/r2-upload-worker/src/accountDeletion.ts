@@ -74,6 +74,11 @@ export interface DeletionDeps {
 export interface DeletionIdentity {
   uid: string;
   email: string | null;
+  /**
+   * The signed-in address, only when the verified ID token says its owner proved it. It is the one e-mail address used to
+   * find invitations addressed to this account: never a profile, directory or unverified value (clients can write those).
+   */
+  verifiedEmail?: string | null;
 }
 
 export class DeletionInProgress extends Error {
@@ -101,6 +106,8 @@ export class DeletionAttemptLost extends Error {
 interface Ctx {
   uid: string;
   email: string | null;
+  /** See DeletionIdentity.verifiedEmail; remembered on the job so token-less retries (cron, admin) can still use it. */
+  verifiedEmail: string | null;
   /** Lease-guarded and metered: stops (SliceExhausted) before the reserve is touched. */
   store: DocStore;
   /** Counted but not metered: for the partial commit that ends a slice. */
@@ -459,18 +466,14 @@ const leaveGroupChats: Step['run'] = (ctx) => {
 };
 
 // Group invitations are addressed to an e-mail address. The ones this user sent go with them, and so do the ones addressed to
-// their address: once the account is gone nothing should linger that a later holder of the same address could see.
+// their verified address: once the account is gone nothing should linger that a later holder of the same address could see.
 const removeGroupInvites: Step['run'] = async (ctx) => {
-  const { uid, email, store } = ctx;
+  const { uid, verifiedEmail } = ctx;
   await eachMatch(ctx, 'sent', 'groupInvites', [{ field: 'inviterUid', op: 'EQUAL', value: uid }], {}, (invite) => deleteTree(ctx, invite.path));
-  const [lookup, profile] = await Promise.all([store.get(`userLookup/${uid}`), store.get(`users/${uid}`)]);
-  const addresses = new Set<string>();
-  for (const e of [email, lookup?.data.email, profile?.data.email]) {
-    if (typeof e === 'string' && e.trim()) addresses.add(e.trim().toLowerCase());
-  }
-  let i = 0;
-  for (const address of [...addresses].sort()) {
-    await eachMatch(ctx, `to${i++}`, 'groupInvites', [{ field: 'inviteeEmail', op: 'EQUAL', value: address }], {}, (invite) => deleteTree(ctx, invite.path));
+  // Only the address the verified token proved. Profile and directory e-mails are client-writable, and an unverified
+  // token e-mail proves nothing: using either would let someone delete invitations addressed to another person.
+  if (verifiedEmail) {
+    await eachMatch(ctx, 'to', 'groupInvites', [{ field: 'inviteeEmail', op: 'EQUAL', value: verifiedEmail }], {}, (invite) => deleteTree(ctx, invite.path));
   }
 };
 
@@ -730,7 +733,10 @@ async function acquireLease(store: DocStore, uid: string, now: number, attempt: 
       return {
         state: 'acquired',
         completedSteps: completed,
-        flags: job?.data.legacyMediaUnresolved === true ? { legacyMediaUnresolved: true } : {},
+        flags: {
+          ...(job?.data.legacyMediaUnresolved === true ? { legacyMediaUnresolved: true } : {}),
+          ...(typeof job?.data.verifiedEmail === 'string' ? { verifiedEmail: job.data.verifiedEmail } : {}),
+        },
         cursors: saved && typeof saved === 'object' ? { ...(saved as Record<string, string>) } : {},
       };
     } catch (e) {
@@ -846,8 +852,10 @@ export async function deleteAccount(identity: DeletionIdentity, deps: DeletionDe
     if (attempt.leaseUntil - now() < RENEW_WHEN_REMAINING_MS) await updateOwnJob(store, uid, attempt, now, {});
   };
   const flags: Record<string, unknown> = { ...acquired.flags };
+  if (identity.verifiedEmail) flags.verifiedEmail = identity.verifiedEmail.trim().toLowerCase();
+  const verifiedEmail = typeof flags.verifiedEmail === 'string' ? flags.verifiedEmail : null;
   const cursors = acquired.cursors;
-  const ctx: Ctx = { uid, email: identity.email, store: guarded(store, heartbeat, work, () => budget?.markProgress()), rawStore: store, deps, heartbeat, work, flags, stepId: '', cursors };
+  const ctx: Ctx = { uid, email: identity.email, verifiedEmail, store: guarded(store, heartbeat, work, () => budget?.markProgress()), rawStore: store, deps, heartbeat, work, flags, stepId: '', cursors };
   const done = new Set(acquired.completedSteps.filter((id) => DELETION_STEPS.some((s) => s.id === id)));
   // An earlier version marked the legacy step done while its media was unresolved: redo it.
   if (flags.legacyMediaUnresolved === true) done.delete('firebaseMedia');

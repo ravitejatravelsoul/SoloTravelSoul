@@ -12,6 +12,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useDirectChats } from '@/hooks/useDirectChats';
 import { useMyGroupInvites } from '@/hooks/useGroupInvites';
 import { GroupInviteCard } from '@/components/chat/GroupInviteCard';
+import { VerifyEmailBanner } from '@/components/chat/VerifyEmailBanner';
+import { useEmailVerification } from '@/hooks/useEmailVerification';
 import { useAuthStore } from '@/stores/authStore';
 import { useHaptics } from '@/hooks/useHaptics';
 import { ChatListItem } from '@/components/chat/ChatListItem';
@@ -62,7 +64,8 @@ export default function ChatsIndexScreen() {
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const haptics = useHaptics();
   const { directChats: allDirectChats, groups, loadingChats } = useDirectChats();
-  const invites = useMyGroupInvites();
+  const verification = useEmailVerification();
+  const invites = useMyGroupInvites(verification.verified);
   // A chat nobody has written in yet (someone opened Message and left) is not a conversation: not shown to either side.
   const directChats = allDirectChats.filter((c) => c.lastMessage !== null);
   const [refreshing, setRefreshing] = useState(false);
@@ -166,6 +169,17 @@ export default function ChatsIndexScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {verification.verified === false && (
+        <VerifyEmailBanner
+          email={verification.email}
+          sending={verification.sending}
+          checking={verification.checking}
+          message={verification.message}
+          onSend={verification.send}
+          onRefresh={verification.refresh}
+        />
+      )}
 
       {loadingChats ? (
         <ChatListSkeleton />

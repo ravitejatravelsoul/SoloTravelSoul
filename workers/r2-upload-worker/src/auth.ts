@@ -25,6 +25,7 @@ interface TokenPayload {
   iat: number;
   auth_time?: number;
   email?: string;
+  email_verified?: boolean;
 }
 
 export interface VerifiedToken {
@@ -32,6 +33,8 @@ export interface VerifiedToken {
   /** Seconds since epoch of the user's last interactive sign-in / reauthentication. */
   authTime: number;
   email: string | null;
+  /** The token's e-mail is only proof of ownership when Firebase marked it verified. */
+  emailVerified: boolean;
 }
 
 /** Max age of the last sign-in for destructive operations (account deletion). */
@@ -99,7 +102,7 @@ export function verifyEmulatorToken(token: string, projectId: string): VerifiedT
   if (payload.iss !== `https://securetoken.google.com/${projectId}`) throw new Error('Invalid token issuer');
   if (payload.aud !== projectId) throw new Error('Invalid token audience');
   if (!payload.sub) throw new Error('Token missing subject (uid)');
-  return { uid: payload.sub, authTime: payload.auth_time ?? 0, email: payload.email ?? null };
+  return { uid: payload.sub, authTime: payload.auth_time ?? 0, email: payload.email ?? null, emailVerified: payload.email_verified === true };
 }
 
 /** Imported verification keys, tied to the JWKS object they came from (refreshed with it). */
@@ -159,5 +162,5 @@ export async function verifyFirebaseToken(
   if (payload.aud !== projectId) throw new Error('Invalid token audience');
   if (!payload.sub) throw new Error('Token missing subject (uid)');
 
-  return { uid: payload.sub, authTime: payload.auth_time ?? 0, email: payload.email ?? null };
+  return { uid: payload.sub, authTime: payload.auth_time ?? 0, email: payload.email ?? null, emailVerified: payload.email_verified === true };
 }

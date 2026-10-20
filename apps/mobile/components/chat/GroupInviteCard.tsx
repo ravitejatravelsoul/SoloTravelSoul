@@ -27,7 +27,7 @@ export function GroupInviteCard({ invite }: { invite: GroupInvite }) {
       // The invitation disappears from the list through the live subscription.
     } catch {
       setError(choice === 'accept'
-        ? 'Could not join. The invitation may have expired or been withdrawn, or you may be offline.'
+        ? 'Could not join. The invitation may have expired or been withdrawn, the group may no longer be available, or you may be offline.'
         : 'Could not decline. Check your connection and try again.');
       setBusy(null);
     }
