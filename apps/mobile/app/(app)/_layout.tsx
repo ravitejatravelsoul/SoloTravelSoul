@@ -14,7 +14,8 @@ import { Badge, OfflineBanner } from '@/components/ui';
 import { Colors } from '@/constants/theme';
 import { useDiscoveryReconcile } from '@/hooks/useDiscoveryReconcile';
 import { useBlockStore } from '@/stores/blockStore';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { getUserProfile } from '@solotravelsoul/firebase';
 import { TERMS_VERSION } from '@solotravelsoul/shared';
 
 const ICON_SIZE = 26;
@@ -50,6 +51,19 @@ export default function AppLayout() {
   const initialized = useAuthStore((s) => s.initialized);
   const profile = useAuthStore((s) => s.profile);
   const haptics = useHaptics();
+  // A profile read can predate the acceptance that was just saved (sign-up, or accepting on another screen). Before
+  // sending someone to the accept-terms screen, read it from the server once for this account.
+  const termsMismatch = !!profile && profile.termsAcceptedVersion !== TERMS_VERSION;
+  const [termsCheckedFor, setTermsCheckedFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (!uid || !termsMismatch || termsCheckedFor === uid) return;
+    let alive = true;
+    getUserProfile(uid)
+      .then((fresh) => { if (alive && fresh && useAuthStore.getState().user?.uid === uid) useAuthStore.getState().setProfile(fresh); })
+      .catch(() => {})
+      .finally(() => { if (alive) setTermsCheckedFor(uid); });
+    return () => { alive = false; };
+  }, [uid, termsMismatch, termsCheckedFor]);
   // Real bottom inset (system navigation bar / home indicator): the tab bar ends above it.
   const insets = useSafeAreaInsets();
   const { loadBlockList } = useBlockStore();
@@ -70,7 +84,7 @@ export default function AppLayout() {
   if (!initialized) return null;
   if (!uid) return <Redirect href="/(auth)/login" />;
   // Terms must be accepted before anything can be posted or sent (see app/accept-terms.tsx). Not applied while the profile is still loading.
-  if (profile && profile.termsAcceptedVersion !== TERMS_VERSION) return <Redirect href={"/accept-terms" as never} />;
+  if (termsMismatch) return termsCheckedFor === uid ? <Redirect href={"/accept-terms" as never} /> : null;
 
   return (
     <View style={styles.root}>

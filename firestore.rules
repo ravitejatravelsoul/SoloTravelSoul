@@ -712,6 +712,12 @@ service cloud.firestore {
           || (resource.data.requestorUid == request.auth.uid
             && resource.data.status == 'pending' && request.resource.data.status == 'cancelled'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
+          // A member who leaves (their member document is deleted in the same write) ends their approved request, so they
+          // can ask again later like anyone else.
+          || (resource.data.requestorUid == request.auth.uid
+            && resource.data.status == 'approved' && request.resource.data.status == 'cancelled'
+            && !existsAfter(/databases/$(database)/documents/trips/$(resource.data.tripId)/members/$(request.auth.uid))
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
           || (resource.data.requestorUid == request.auth.uid && resource.data.status == 'cancelled'
             && request.resource.data.status == 'pending'
             && !deleting(resource.data.ownerUid)
@@ -776,6 +782,7 @@ service cloud.firestore {
       allow create: if notDeleting() && termsAccepted() && !deleting(request.resource.data.ownerUid) && (request.auth != null
         && request.resource.data.requestorUid == request.auth.uid
         && request.resource.data.ownerUid != request.auth.uid
+        && unblocked(request.auth.uid, request.resource.data.ownerUid)
         && itemVisible(/databases/$(database)/documents/travelGroups/$(request.resource.data.groupId))
         && request.resource.data.status == 'pending');
       // resource == null guard matches tripJoinRequests pattern.
@@ -783,13 +790,30 @@ service cloud.firestore {
         && (resource == null
             || resource.data.ownerUid == request.auth.uid
             || resource.data.requestorUid == request.auth.uid);
+      // Same shape as trip requests: pending -> approved | rejected (organizer, final); pending -> cancelled (requester);
+      // approved -> cancelled when the member leaves (their member document is deleted in the same write);
+      // cancelled -> pending (the requester asks again; create-time checks apply again).
       allow update: if notDeleting() && (request.auth != null
         && resource != null
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['requestId', 'groupId', 'ownerUid', 'requestorUid'])
         && (
           (resource.data.ownerUid == request.auth.uid
-            && request.resource.data.status in ['approved', 'rejected'])
+            && (resource.data.status == 'pending'
+              || (resource.data.status == 'approved' && request.resource.data.status == 'approved'))
+            && request.resource.data.status in ['approved', 'rejected']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
           || (resource.data.requestorUid == request.auth.uid
-              && request.resource.data.status == 'cancelled')
+            && resource.data.status == 'pending' && request.resource.data.status == 'cancelled'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
+          || (resource.data.requestorUid == request.auth.uid
+            && resource.data.status == 'approved' && request.resource.data.status == 'cancelled'
+            && !existsAfter(/databases/$(database)/documents/travelGroups/$(resource.data.groupId)/members/$(request.auth.uid))
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
+          || (resource.data.requestorUid == request.auth.uid && resource.data.status == 'cancelled'
+            && request.resource.data.status == 'pending'
+            && !deleting(resource.data.ownerUid)
+            && unblocked(request.auth.uid, resource.data.ownerUid)
+            && itemVisible(/databases/$(database)/documents/travelGroups/$(resource.data.groupId)))
         ));
       allow delete: if false;
     }

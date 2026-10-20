@@ -3,11 +3,13 @@ import {
   View,
   StyleSheet,
   TouchableOpacity,
+  Share,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, Avatar } from '@/components/ui';
 import { LikeButton } from './LikeButton';
+import { SaveButton } from './SaveButton';
 import { PostImageCarousel } from './PostImageCarousel';
 import { useLikePost } from '@/hooks/usePosts';
 import { getUserInitials } from '@solotravelsoul/shared';
@@ -43,6 +45,10 @@ export const PostCard = memo(function PostCard({ post, onPress }: Props) {
     if (onPress) { onPress(); return; }
     router.push(`/(app)/post/${post.postId}` as never);
   }, [onPress, post.postId]);
+
+  const handleShare = useCallback(() => {
+    Share.share({ message: `${post.caption}\n\nShared via SoloTravelSoul` }).catch(() => {});
+  }, [post.caption]);
 
   const typeLabel = POST_TYPE_LABEL[post.postType] ?? '';
 
@@ -90,13 +96,8 @@ export const PostCard = memo(function PostCard({ post, onPress }: Props) {
             <Text style={styles.actionCount}>{post.commentCount}</Text>
           )}
         </TouchableOpacity>
-        <TouchableOpacity style={styles.actionBtn} onPress={handlePress} hitSlop={8}>
-          <Ionicons name="bookmark-outline" size={22} color={Colors.textSecondary} />
-          {post.saveCount > 0 && (
-            <Text style={styles.actionCount}>{post.saveCount}</Text>
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.actionBtn, styles.shareBtn]} hitSlop={8}>
+        <SaveButton postId={post.postId} />
+        <TouchableOpacity style={[styles.actionBtn, styles.shareBtn]} onPress={handleShare} hitSlop={8} accessibilityRole="button" accessibilityLabel="Share post">
           <Ionicons name="paper-plane-outline" size={22} color={Colors.textSecondary} />
         </TouchableOpacity>
       </View>

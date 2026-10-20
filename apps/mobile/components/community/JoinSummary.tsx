@@ -1,4 +1,4 @@
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui';
 import { COMPATIBILITY_NOTICE, JOIN_SAFETY_REMINDER } from '@solotravelsoul/shared';
@@ -6,12 +6,17 @@ import type { NearbyTraveler, PublicTrip, TravelPreferences } from '@solotravels
 import { tripFacts, organizerAnswers, compareAnswers, comparisonHeadline, type AnswerComparison, type SummaryRow } from '@/utils/tripSummary';
 import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 
+/** From this system text scale the label sits above its value, so a long label never breaks in the middle of a word. */
+const STACK_FROM_FONT_SCALE = 1.4;
+
 function Rows({ rows }: { rows: SummaryRow[] }) {
+  const { fontScale } = useWindowDimensions();
+  const stacked = fontScale >= STACK_FROM_FONT_SCALE;
   return (
     <View>
       {rows.map((r) => (
-        <View key={r.label} style={styles.row} accessible accessibilityLabel={`${r.label}: ${r.value}`}>
-          <Text style={styles.rowLabel}>{r.label}</Text>
+        <View key={r.label} style={[styles.row, stacked && styles.rowStacked]} accessible accessibilityLabel={`${r.label}: ${r.value}`}>
+          <Text style={stacked ? styles.rowLabelStacked : styles.rowLabel}>{r.label}</Text>
           <Text style={[styles.rowValue, !r.provided && styles.notProvided]}>{r.value}</Text>
         </View>
       ))}
@@ -77,6 +82,8 @@ export function JoinSummary({ trip, organizer, viewer, showAnswers = true }: Pro
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', gap: Spacing.md, paddingVertical: Spacing.xs },
+  rowStacked: { flexDirection: 'column', gap: 0, paddingVertical: Spacing.sm },
+  rowLabelStacked: { fontSize: FontSize.sm, color: Colors.textSecondary },
   rowLabel: { width: 118, fontSize: FontSize.sm, color: Colors.textSecondary },
   rowValue: { flex: 1, fontSize: FontSize.sm, color: Colors.textPrimary, fontWeight: FontWeight.medium },
   notProvided: { color: Colors.placeholder, fontWeight: FontWeight.regular, fontStyle: 'italic' },

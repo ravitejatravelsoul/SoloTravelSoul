@@ -2,7 +2,8 @@ import { memo } from 'react';
 import { useMediaSource } from '@/hooks/useMediaSource';
 import { View, StyleSheet, TouchableOpacity, Image, Dimensions } from 'react-native';
 import { router } from 'expo-router';
-import { Colors } from '@/constants/theme';
+import { Text } from '@/components/ui';
+import { Colors, FontSize, Spacing } from '@/constants/theme';
 import type { TravelPost } from '@solotravelsoul/shared';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -10,11 +11,13 @@ const CELL_SIZE = Math.floor((SCREEN_W - 2) / 3); // 2px total gap
 
 interface Props {
   posts: TravelPost[];
+  /** Show posts without a photo as a text tile (Saved Posts): otherwise a saved text post would never appear. */
+  includeTextOnly?: boolean;
 }
 
-export const PhotoGrid = memo(function PhotoGrid({ posts }: Props) {
+export const PhotoGrid = memo(function PhotoGrid({ posts, includeTextOnly = false }: Props) {
   const mediaSrc = useMediaSource();
-  const withImages = posts.filter((p) => p.images.length > 0);
+  const withImages = includeTextOnly ? posts : posts.filter((p) => p.images.length > 0);
 
   return (
     <View style={styles.grid}>
@@ -25,11 +28,17 @@ export const PhotoGrid = memo(function PhotoGrid({ posts }: Props) {
           onPress={() => router.push(`/(app)/post/${post.postId}` as never)}
           activeOpacity={0.85}
         >
-          <Image
-            source={mediaSrc(post.images[0])}
-            style={styles.image}
-            resizeMode="cover"
-          />
+          {post.images.length > 0 ? (
+            <Image
+              source={mediaSrc(post.images[0])}
+              style={styles.image}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.textTile}>
+              <Text style={styles.textTileText} numberOfLines={6}>{post.caption || post.body || 'Post'}</Text>
+            </View>
+          )}
           {post.images.length > 1 && (
             <View style={styles.multiIcon}>
               {/* Carousel indicator dot */}
@@ -59,6 +68,8 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  textTile: { flex: 1, padding: Spacing.sm, justifyContent: 'center', backgroundColor: Colors.surface },
+  textTileText: { fontSize: FontSize.xs, color: Colors.textPrimary },
   multiIcon: {
     position: 'absolute',
     top: 6,

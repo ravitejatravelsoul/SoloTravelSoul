@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Avatar, EmptyState } from '@/components/ui';
 import { PostImageCarousel } from '@/components/posts/PostImageCarousel';
 import { LikeButton } from '@/components/posts/LikeButton';
+import { SaveButton } from '@/components/posts/SaveButton';
 import { CommentsSheet } from '@/components/posts/CommentsSheet';
 import { useLikePost } from '@/hooks/usePosts';
 import { getPost } from '@solotravelsoul/firebase';
@@ -134,6 +135,7 @@ export default function PostDetailScreen() {
               <Text style={styles.actionCount}>{post.commentCount}</Text>
             )}
           </TouchableOpacity>
+          <SaveButton postId={post.postId} size={26} />
           <TouchableOpacity style={[styles.actionBtn, styles.shareBtn]} onPress={handleShare} hitSlop={8}>
             <Ionicons name="paper-plane-outline" size={26} color={Colors.textSecondary} />
           </TouchableOpacity>

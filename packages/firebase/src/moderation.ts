@@ -93,7 +93,17 @@ export async function getReportTarget(report: Pick<ModerationReport, 'targetType
   const coll = TARGET_COLLECTION[report.targetType];
   // Direct messages stay private: moderators act on the reported user, not the conversation.
   if (!coll) return { exists: false, authorUid: null, text: '', images: [], visibility: null, moderationStatus: null };
-  const snap = await getDoc(doc(db, coll, report.targetId));
+  let snap;
+  try {
+    snap = await getDoc(doc(db, coll, report.targetId));
+  } catch (err) {
+    // A private profile cannot be read, but the reported account is known from the report itself: moderators can still
+    // act on it (suspend, dismiss) without seeing anything the profile keeps private.
+    if (report.targetType === 'user' && (err as { code?: string }).code === 'permission-denied') {
+      return { exists: true, authorUid: report.targetId, text: 'This profile is private, so its details are not shown. You can still act on the account.', images: [], visibility: 'private', moderationStatus: null };
+    }
+    throw err;
+  }
   if (!snap.exists()) return { exists: false, authorUid: report.targetType === 'user' ? report.targetId : null, text: '', images: [], visibility: null, moderationStatus: null };
   const d = snap.data();
   const authorUid = (d.authorId ?? d.ownerUid ?? d.uid ?? (report.targetType === 'user' ? report.targetId : null)) as string | null;

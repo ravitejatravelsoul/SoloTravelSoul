@@ -586,7 +586,8 @@ function client(file, db) {
       await assertFails(sdk.updateDoc(sdk.doc(piaDb, 'tripJoinRequests/t-ok_quin'), { status: 'approved', message: 'edited' }));
       await sdk.updateDoc(sdk.doc(piaDb, 'tripJoinRequests/t-ok_quin'), { status: 'approved', updatedAt: sdk.serverTimestamp() });
       assert.equal(await quin.getTripJoinRequestStatus('t-ok', 'quin'), 'approved');
-      await assertFails(quin.cancelTripJoinRequest('t-ok_quin', 'quin')); // approved is not cancellable
+      await adminSet('trips/t-ok/members/quin', { uid: 'quin', role: 'member', displayName: 'Quin' });
+      await assertFails(quin.cancelTripJoinRequest('t-ok_quin', 'quin')); // approved is not cancellable while the person is a member
       await assertFails(sdk.updateDoc(sdk.doc(piaDb, 'tripJoinRequests/t-ok_quin'), { status: 'rejected' }));
     });
     // QA phase (2026-10-19): public trip editing, member leave, organizer context, terms, group leave
@@ -634,6 +635,18 @@ function client(file, db) {
       assert.equal((await sdk.getDoc(sdk.doc(rhoDb, `trips/${qaTrip}/members/sam`))).exists(), false);
       await sam.leavePublicTrip(qaTrip, 'sam'); // a retry after success is a no-op, not an error
       assert.equal((await sdk.getDoc(sdk.doc(rhoDb, `publicTrips/${qaTrip}`))).data().memberCount, 1);
+    });
+    await check('public trip: going private removes the public trip and its members, and the trip can be published again (it used to fail)', async () => {
+      await sam.submitTripJoinRequest(qaTrip, { ownerUid: 'rho', destination: 'Lisbon, Portugal', title: 'Lisbon' }, { id: 'sam', name: 'Sam', photoURL: null, bio: '' }, 'again');
+      await rho.approveTripJoinRequest(`${qaTrip}_sam`, qaTrip, 'rho', { requestorUid: 'sam', requestorName: 'Sam', requestorPhotoURL: null });
+      await rho.setTripVisibility('rho', qaTrip, 'private');
+      assert.equal((await sdk.getDoc(sdk.doc(rhoDb, `publicTrips/${qaTrip}`))).exists(), false);
+      assert.equal((await sdk.getDocs(sdk.collection(rhoDb, `trips/${qaTrip}/members`))).size, 0, 'members removed with the public trip');
+      await rho.setTripVisibility('rho', qaTrip, 'public', tripData({ description: 'Published again' }));
+      const again = (await sdk.getDoc(sdk.doc(rhoDb, `publicTrips/${qaTrip}`))).data();
+      assert.equal(again.memberCount, 1); assert.equal(again.description, 'Published again');
+      assert.equal((await sdk.getDoc(sdk.doc(rhoDb, `trips/${qaTrip}/members/rho`))).data().role, 'owner');
+      await rho.setTripVisibility('rho', qaTrip, 'public', tripData({ description: 'Edited once more' })); // and editing still works
     });
     await check('terms acceptance: only a version string and the server time', async () => {
       const tomDb = ctxDb('tom'); const tom = client(FS, tomDb);
@@ -886,6 +899,48 @@ function client(file, db) {
         assert.ok(await adminGet(`${req}/${id}_quentin`), 'requests are accepted again once visible');
       });
     }
+    await check('community group: a join request goes through the app function, and is refused when either side blocked the other', async () => {
+      const asQuentin = client(FS, dbOf('quentin'));
+      await adminSet('travelGroups/mg2', { ownerUid: 'oli', ownerName: 'Oli', name: 'Open group', description: 'd', destination: 'Rome', visibility: 'public', capacity: 8, memberCount: 1, isAcceptingMembers: true, createdAt: nowTs, updatedAt: nowTs });
+      await asQuentin.submitGroupJoinRequest('mg2', 'Open group', 'oli', { id: 'quentin', name: 'Quentin', photoURL: null, bio: '' }, 'hello');
+      assert.equal((await adminGet('groupJoinRequests/mg2_quentin')).status, 'pending');
+      await adminSet('blocks/oli/blocked/nia', { blockedUid: 'nia' });
+      await assertFails(client(FS, dbOf('nia')).submitGroupJoinRequest('mg2', 'Open group', 'oli', { id: 'nia', name: 'Nia', photoURL: null, bio: '' }, 'hi')); // the organizer blocked nia
+      await adminSet('blocks/pat/blocked/oli', { blockedUid: 'oli' });
+      await assertFails(client(FS, dbOf('pat')).submitGroupJoinRequest('mg2', 'Open group', 'oli', { id: 'pat', name: 'Pat', photoURL: null, bio: '' }, 'hi')); // pat blocked the organizer
+    });
+    await check('rejoining: leaving ends the approved request so the person can ask again; a current member cannot cancel an approved request; rejected stays final (trip and group)', async () => {
+      // Trip: pat joins (approved), is still a member: cannot cancel; leaves through the app: request cancelled; asks again; organizer approves again.
+      const zedClient = client(FS, dbOf('zed'));
+      await adminSet('publicTrips/rj1', { ownerUid: 'oli', ownerName: 'Oli', title: 'Rejoin trip', description: 'd', destination: 'Rome', destinationKey: 'rome', memberCount: 2, maxMembers: 6, isAcceptingMembers: true, createdAt: nowTs, updatedAt: nowTs });
+      await adminSet('trips/rj1/members/oli', { uid: 'oli', role: 'owner', displayName: 'Oli' });
+      await adminSet('trips/rj1/members/zed', { uid: 'zed', role: 'member', displayName: 'Zed' });
+      await adminSet('tripJoinRequests/rj1_zed', { requestId: 'rj1_zed', tripId: 'rj1', ownerUid: 'oli', requestorUid: 'zed', requestorName: 'Zed', status: 'approved', createdAt: nowTs });
+      await assertFails(sdk.updateDoc(sdk.doc(dbOf('zed'), 'tripJoinRequests/rj1_zed'), { status: 'cancelled', updatedAt: sdk.serverTimestamp() })); // still a member
+      await zedClient.leavePublicTrip('rj1', 'zed');
+      assert.equal((await adminGet('tripJoinRequests/rj1_zed')).status, 'cancelled');
+      assert.equal((await adminGet('publicTrips/rj1')).memberCount, 1);
+      await zedClient.submitTripJoinRequest('rj1', { ownerUid: 'oli', destination: 'Rome', title: 'Rejoin trip' }, { id: 'zed', name: 'Zed', photoURL: null, bio: '' }, 'back again');
+      assert.equal((await adminGet('tripJoinRequests/rj1_zed')).status, 'pending');
+      // Older data: left before leaving cancelled the request. The stale approved request is closed, then a new one is sent.
+      await adminSet('tripJoinRequests/rj1_zed', { requestId: 'rj1_zed', tripId: 'rj1', ownerUid: 'oli', requestorUid: 'zed', requestorName: 'Zed', status: 'approved', createdAt: nowTs });
+      await env.withSecurityRulesDisabled((ctx) => sdk.deleteDoc(sdk.doc(ctx.firestore(), 'trips/rj1/members/zed')));
+      await zedClient.submitTripJoinRequest('rj1', { ownerUid: 'oli', destination: 'Rome', title: 'Rejoin trip' }, { id: 'zed', name: 'Zed', photoURL: null, bio: '' }, 'again');
+      assert.equal((await adminGet('tripJoinRequests/rj1_zed')).status, 'pending');
+      // Group: same shape, and a rejection is final.
+      await adminSet('travelGroups/rj2', { ownerUid: 'oli', ownerName: 'Oli', name: 'Rejoin group', description: 'd', destination: 'Rome', visibility: 'public', capacity: 8, memberCount: 2, isAcceptingMembers: true, createdAt: nowTs, updatedAt: nowTs });
+      await adminSet('travelGroups/rj2/members/oli', { uid: 'oli', role: 'owner', displayName: 'Oli' });
+      await adminSet('travelGroups/rj2/members/zed', { uid: 'zed', role: 'member', displayName: 'Zed' });
+      await adminSet('groupJoinRequests/rj2_zed', { requestId: 'rj2_zed', groupId: 'rj2', groupName: 'Rejoin group', ownerUid: 'oli', requestorUid: 'zed', requestorName: 'Zed', status: 'approved', createdAt: nowTs });
+      await assertFails(sdk.updateDoc(sdk.doc(dbOf('zed'), 'groupJoinRequests/rj2_zed'), { status: 'cancelled', updatedAt: sdk.serverTimestamp() }));
+      await zedClient.leaveGroup('rj2', 'zed');
+      assert.equal((await adminGet('groupJoinRequests/rj2_zed')).status, 'cancelled');
+      await zedClient.submitGroupJoinRequest('rj2', 'Rejoin group', 'oli', { id: 'zed', name: 'Zed', photoURL: null, bio: '' }, 'back again');
+      assert.equal((await adminGet('groupJoinRequests/rj2_zed')).status, 'pending');
+      await adminSet('groupJoinRequests/rj3_zed', { requestId: 'rj3_zed', groupId: 'rj2', groupName: 'Rejoin group', ownerUid: 'oli', requestorUid: 'zed', requestorName: 'Zed', status: 'rejected', createdAt: nowTs });
+      await assertFails(sdk.updateDoc(sdk.doc(dbOf('zed'), 'groupJoinRequests/rj3_zed'), { status: 'cancelled', updatedAt: sdk.serverTimestamp() }));
+      await assertFails(sdk.updateDoc(sdk.doc(dbOf('zed'), 'groupJoinRequests/rj3_zed'), { status: 'pending', updatedAt: sdk.serverTimestamp() }));
+    });
     await check('leave trip: retries, a second tap racing the first, and the organizer; the count falls exactly once', async () => {
       const rae = client(FS, dbOf('rae'));
       const before = (await adminGet('publicTrips/mt1')).memberCount;

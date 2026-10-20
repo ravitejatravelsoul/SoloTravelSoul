@@ -25,7 +25,7 @@ export default function SavedPostsScreen() {
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>
       ) : posts.length > 0 ? (
-        <PhotoGrid posts={posts} />
+        <PhotoGrid posts={posts} includeTextOnly />
       ) : (
         <EmptyState
           emoji="🔖"

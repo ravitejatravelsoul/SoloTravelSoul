@@ -700,16 +700,23 @@ export async function setTripVisibility(
       updatedAt: serverTimestamp(),
     });
 
-    // Ensure owner is in members subcollection
-    batch.set(doc(db, 'trips', tripId, 'members', uid), {
-      uid,
-      displayName: publicData.ownerName,
-      photoURL: publicData.ownerPhotoURL,
-      role: 'owner',
-      joinedAt: serverTimestamp(),
-    });
+    // Ensure owner is in members subcollection (a member document is never rewritten, so only add it when it is missing).
+    const ownerMember = doc(db, 'trips', tripId, 'members', uid);
+    if (!(await getDoc(ownerMember)).exists()) {
+      batch.set(ownerMember, {
+        uid,
+        displayName: publicData.ownerName,
+        photoURL: publicData.ownerPhotoURL,
+        role: 'owner',
+        joinedAt: serverTimestamp(),
+      });
+    }
   } else {
     batch.delete(publicRef);
+    // Going private ends the public trip with its members: their documents go too, so publishing it again starts clean
+    // (the owner's own member document could otherwise not be written again and the trip could never be re-published).
+    const members = await getDocs(collection(db, 'trips', tripId, 'members'));
+    members.forEach((member) => batch.delete(member.ref));
   }
 
   await batch.commit();
@@ -758,7 +765,7 @@ export async function getNearbyTraveler(uid: string): Promise<NearbyTraveler | n
  * member count goes down by one in the same batch (the rules accept exactly that change from a member).
  */
 export async function leavePublicTrip(tripId: string, uid: string): Promise<void> {
-  await leaveOnce(doc(db, 'trips', tripId, 'members', uid), doc(db, 'publicTrips', tripId));
+  await leaveOnce(doc(db, 'trips', tripId, 'members', uid), doc(db, 'publicTrips', tripId), doc(db, 'tripJoinRequests', `${tripId}_${uid}`));
 }
 
 /**
@@ -766,7 +773,7 @@ export async function leavePublicTrip(tripId: string, uid: string): Promise<void
  * member document still exists, so the count can fall once per membership. A retry after a lost acknowledgement (or a
  * second tap racing the first) therefore finds the member already gone and succeeds without touching the count.
  */
-async function leaveOnce(memberRef: DocumentReference, parentRef: DocumentReference): Promise<void> {
+async function leaveOnce(memberRef: DocumentReference, parentRef: DocumentReference, requestRef?: DocumentReference): Promise<void> {
   const stillMember = async () => (await getDoc(memberRef)).exists();
   const first = await getDoc(memberRef);
   if (!first.exists()) return;
@@ -775,6 +782,10 @@ async function leaveOnce(memberRef: DocumentReference, parentRef: DocumentRefere
   const batch = writeBatch(db);
   batch.delete(memberRef);
   batch.update(parentRef, { memberCount: increment(-1), updatedAt: serverTimestamp() });
+  // Leaving also ends the approved request that let them in, so they can ask again later.
+  if (requestRef && (await getDoc(requestRef).catch(() => null))?.data()?.status === 'approved') {
+    batch.update(requestRef, { status: 'cancelled', updatedAt: serverTimestamp() });
+  }
   try {
     await batch.commit();
   } catch (err) {
@@ -874,6 +885,18 @@ function joinRequestFromDoc(d: DocumentData): TripJoinRequest {
   };
 }
 
+/**
+ * A request that was approved before the person left the trip or group (leaving now cancels it, but older data may
+ * still read "approved") is closed first, so asking again is an ordinary new request. The rules only allow this
+ * while the person is no longer a member.
+ */
+async function closeStaleApprovedRequest(requestRef: DocumentReference): Promise<void> {
+  const existing = await getDoc(requestRef).catch(() => null);
+  if (existing?.exists() && existing.data().status === 'approved') {
+    await updateDoc(requestRef, { status: 'cancelled', updatedAt: serverTimestamp() });
+  }
+}
+
 export async function submitTripJoinRequest(
   tripId: string,
   trip: Pick<PublicTrip, 'ownerUid' | 'destination'> & { title: string },
@@ -883,6 +906,7 @@ export async function submitTripJoinRequest(
   // Blocking (either direction) is enforced by the rules on create; the requester
   // cannot read the owner's block list, so no client-side pre-check here.
   const requestId = `${tripId}_${requestor.id}`;
+  await closeStaleApprovedRequest(doc(db, 'tripJoinRequests', requestId));
   await setDoc(doc(db, 'tripJoinRequests', requestId), {
     requestId,
     tripId,
@@ -1212,13 +1236,10 @@ export async function submitGroupJoinRequest(
   requestor: UserProfile,
   message: string
 ): Promise<void> {
-  // Block check: owner has blocked this requester
-  const blockedSnap = await getDoc(doc(db, 'blocks', ownerUid, 'blocked', requestor.id));
-  if (blockedSnap.exists()) {
-    throw Object.assign(new Error('You cannot request to join this group.'), { code: 'community/blocked' });
-  }
-
+  // Blocking (either direction) is enforced by the rules on create. The requester cannot read the organizer's block
+  // list, so a client-side pre-check here would be refused for everyone and no request could ever be sent.
   const requestId = `${groupId}_${requestor.id}`;
+  await closeStaleApprovedRequest(doc(db, 'groupJoinRequests', requestId));
   await setDoc(doc(db, 'groupJoinRequests', requestId), {
     requestId,
     groupId,
@@ -1306,7 +1327,7 @@ export async function removeGroupMember(
 
 /** A member (never the owner) leaves a community group; safe to retry (see leaveOnce). */
 export async function leaveGroup(groupId: string, uid: string): Promise<void> {
-  await leaveOnce(doc(db, 'travelGroups', groupId, 'members', uid), doc(db, 'travelGroups', groupId));
+  await leaveOnce(doc(db, 'travelGroups', groupId, 'members', uid), doc(db, 'travelGroups', groupId), doc(db, 'groupJoinRequests', `${groupId}_${uid}`));
 }
 
 export function subscribeGroupJoinRequestsForOwner(

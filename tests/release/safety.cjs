@@ -113,6 +113,13 @@ test('user-facing policy text makes no promise the app cannot keep and has no bl
   }
 });
 
+test('report screens promise no review or response time (that is an owner decision, not a claim to invent)', () => {
+  for (const rel of ['apps/mobile/components/community/ReportModal.tsx', 'apps/mobile/app/(app)/profile/safety.tsx', 'apps/mobile/app/terms.tsx', 'apps/mobile/app/privacy.tsx']) {
+    assert.doesNotMatch(read(rel), /we review all reports|reviewed within|respond within|we will respond/i, rel);
+  }
+  assert.match(read('apps/mobile/components/community/ReportModal.tsx'), /no guaranteed response time/);
+});
+
 test('Terms, Safety and the acceptance screen use the same shared wording', () => {
   const terms = read(FILES.terms), safety = read(FILES.safety), accept = read(FILES.accept), join = read(FILES.summary);
   for (const c of ['COMPATIBILITY_NOTICE', 'PLATFORM_ROLE', 'NOT_EMERGENCY_SERVICE', 'REPORT_BLOCK_LEAVE', 'SAFETY_TIPS', 'TERMS_VERSION']) assert.match(terms, new RegExp(c), `Terms use ${c}`);
@@ -142,7 +149,10 @@ test('terms acceptance: explicit at sign-up, recorded, and required before the a
   assert.match(signup, /accessibilityRole="checkbox"[\s\S]*I agree to the Terms of Service and the Privacy Policy/);
   assert.match(signup, /if \(!agreed\) e\.agree/);
   assert.match(auth, /acceptTerms\(firebaseUser\.uid, TERMS_VERSION\)/);
-  assert.match(layout, /profile\.termsAcceptedVersion !== TERMS_VERSION\) return <Redirect href=\{"\/accept-terms" as never\} \/>/);
+  assert.match(layout, /const termsMismatch = !!profile && profile\.termsAcceptedVersion !== TERMS_VERSION/);
+  assert.match(layout, /if \(termsMismatch\) return termsCheckedFor === uid \? <Redirect href=\{"\/accept-terms" as never\} \/> : null;/);
+  assert.match(layout, /getUserProfile\(uid\)[\s\S]*setProfile\(fresh\)/, 'the gate re-reads the profile from the server once before redirecting (a read taken before the acceptance was saved is stale)');
+  assert.match(auth, /acceptTerms\(firebaseUser\.uid, TERMS_VERSION\)[\s\S]*getUserProfile\(firebaseUser\.uid\)[\s\S]*setProfile\(saved\)/, 'sign-up reloads the profile after saving the acceptance');
   const accept = read(FILES.accept);
   assert.match(accept, /acceptTerms\(user\.uid, TERMS_VERSION\)/);
   assert.match(accept, /I do not agree: sign out/);
@@ -222,6 +232,14 @@ test('moderators can hide, remove and restore public trips and community groups,
   assert.match(fsrc, /travelGroupFromDoc\(d\.id, d\.data\(\)\)\)\.filter\(isListed\)/);
   assert.match(fsrc, /isListed\(moderationOf\(x\.data\(\)\)\)/, 'the photo cascade skips frozen items');
   assert.match(read('apps/mobile/app/(app)/community/groups/[groupId].tsx'), /leaveGroup\(group\.groupId, uid\)/);
+});
+
+test('saving a post works from the feed card and the post screen (the bookmark used to just open the post)', () => {
+  const card = read('apps/mobile/components/posts/PostCard.tsx'), detail = read('apps/mobile/app/(app)/post/[postId].tsx'), button = read('apps/mobile/components/posts/SaveButton.tsx');
+  assert.match(card, /<SaveButton postId=\{post\.postId\} \/>/);
+  assert.doesNotMatch(card, /bookmark-outline/, 'no dead bookmark that only opens the post');
+  assert.match(detail, /<SaveButton postId=\{post\.postId\}/);
+  assert.match(button, /useSavePost\(postId\)/); assert.match(button, /Remove from saved posts/); assert.match(button, /'Save post'/);
 });
 
 test('follow and unfollow update the feed at once (one shared store, no restart)', () => {

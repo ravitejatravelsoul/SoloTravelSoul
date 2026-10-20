@@ -119,7 +119,7 @@ export function ReportModal({ visible, targetType, targetId, onClose }: ReportMo
             <Ionicons name="checkmark-circle" size={64} color={Colors.success} />
             <Text style={styles.successTitle}>Report submitted</Text>
             <Text style={styles.successBody}>
-              We review all reports carefully. Thank you for keeping SoloTravelSoul safe.
+              Your report was sent to the moderators. There is no guaranteed response time, so in an emergency contact your local emergency number. Thank you for helping keep SoloTravelSoul safe.
             </Text>
             <TouchableOpacity style={styles.doneBtn} onPress={handleClose}>
               <Text style={styles.doneBtnLabel}>Done</Text>

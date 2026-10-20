@@ -1,158 +1,57 @@
-# Known Limitations — SoloTravelSoul 1.0.0
+# Known limitations — SoloTravelSoul 1.0.0 (refreshed 2026-10-20)
 
-This document lists the known gaps and intentional deferrals in the 1.0.0 release. None of these are blocking for store submission — all are acceptable tradeoffs for a v1.
+This replaces an older version that described a private-only, no-social app. It lists what is true of the code and staging today. It is not a claim of store readiness or legal compliance; the owner and legal decisions are in `docs/qa-report-2026-10-19.md` section 11.8.
 
----
+## What the app is now
+
+Trips are private by default and can be published as **public trips** that others discover and ask to join. There is a feed (posts, journals, follows), public profiles, community groups, direct messages and group chats, reporting, blocking, moderation and account deletion. The older "no social features" statements no longer apply.
 
 ## Notifications
 
-**Push notifications are not implemented.**
+- There is **no in-app notification screen and no bell**: clients cannot create notifications under the security rules, so the empty screen was removed. Nothing in the app promises likes, comments or follows alerts.
+- **No push notifications** are sent (no push token is collected). Only local reminders (trip reminders, join-request alerts while the app runs) are scheduled on the device.
 
-Chat messages and trip activity do not trigger push alerts. Users must open the app to see new messages. Firebase Cloud Messaging (FCM) is set up in the Firebase project but the client-side notification registration and display logic is not yet wired.
+## Messages and groups
 
-*Impact:* Chat is less real-time from the user's perspective. Group chat works, but is pull-only.
+- Group chats start with only their creator; other people join by accepting an invitation sent to their e-mail address. The inviter is not told whether an address has an account. Nothing proves the holder of an address owns it (e-mail verification is not required), which is an owner decision.
+- A refused send (suspended account, restricted chat) keeps its text in the message box. A message queued while offline that the server then refuses is never delivered; its text returns to the box if that chat is opened in the same app session (it is held in memory, so closing the app first loses it).
+- A chat nobody has written in is not listed for either person (the empty document exists until its participants are deleted).
+- Direct chats anonymized before 2026-10-20 are not removed when their last participant deletes their account (there was no record to detect it).
 
-*App Store risk:* None — notifications are not promised in the store listing.
+## Moderation
 
----
+- Hidden and removed public trips and community groups are left out of discovery by the app; they remain readable by direct id to signed-in users, because list queries cannot filter on a field older documents lack. New requests, approvals and edits are refused by the server.
+- Moderators have no web console; the queue, the hidden list and suspensions are in the app. The `moderators/{uid}` role is granted only by the project owner. Nobody has been appointed for production.
+- Content creation requires the current accepted Terms version on the server; profile text and edits to existing content are not gated. A client-side gate covers the rest.
 
-## Foursquare Live Venue Search
+## Media and storage
 
-**Live place search (Foursquare) is disabled by default.**
+- Media is uploaded through the Cloudflare Worker (bytes in KV, index in D1) on staging; there is no R2 bucket or Firebase Storage bucket for staging. Production is prepared but not rolled out.
+- Large photos upload as they are (a size limit is enforced by the Worker, not compression).
 
-The `EXPO_PUBLIC_FOURSQUARE_ENABLED` feature flag is `false`. The search bar in Discover shows only the curated local dataset. Live search requires the flag to be enabled and a valid `EXPO_PUBLIC_FOURSQUARE_API_KEY`.
+## Offline
 
-*Impact:* Discover shows ~100 curated US destinations, not live search results.
+- The Firestore client uses an in-memory cache, so reads are limited to the current session. Trip and chat writes made offline are queued and replayed when the connection returns.
 
-*App Store risk:* None — reviewers will see the curated list, which is fully functional.
+## Search, maps and sign-in
 
----
+- Live place search (Foursquare) is off by default; Discover uses the curated local dataset.
+- Maps use an OpenStreetMap web map; Mapbox needs a native build and is not enabled.
+- Only e-mail/password sign-in exists (no Apple or Google sign-in).
 
-## Mapbox Native Map (Expo Go)
+## Itinerary
 
-**Mapbox requires an EAS build; it will never load in Expo Go.**
+- Items reorder within a day only; moving an item to another day means delete and re-add.
 
-The guard `canUseMapbox = ENABLED && !!TOKEN && !IS_EXPO_GO` is always false during Expo Go development. The app falls back to an OpenStreetMap web map (via react-native-webview + Leaflet.js). The web map is fully functional for trip maps and discover maps.
+## Account deletion
 
-*Impact:* Dev/preview testing uses OSM tiles. Production EAS builds can use Mapbox once enabled (see `docs/MAP_STRATEGY.md`).
+- Deleting an account runs through the Worker (`POST /account/delete`), in resumable steps, and finishes by deleting the sign-in. It removes the person's data and media, anonymizes their messages in chats others still use, and deletes chats and groups nobody remains in. Safety reports are kept. There is no Cloud Function and no 30-day cleanup cycle.
 
-*App Store risk:* None — the store build will use the same OSM web map unless Mapbox is explicitly enabled.
+## Build files
 
----
+- `apps/mobile/google-services.json` and `GoogleService-Info.plist` are not in the repository and must be supplied for native production builds (see `docs/release-handoff.md`).
+- An installed preview build older than 2026-10-20 cannot create content against the new staging rules until an updated build is installed and the Terms accepted.
 
-## Authentication Methods
+## Device verification gaps (2026-10-20)
 
-**Only email/password authentication is supported.**
-
-Apple Sign-In and Google Sign-In are not implemented. These are recommended (Apple Sign-In is required by App Store guidelines if any other third-party login is offered — but since we only offer email/password, it is not required).
-
-*Impact:* Users must register with email and password.
-
-*App Store risk:* None as long as no third-party OAuth is offered. If Google Sign-In is added later, Apple Sign-In must be added at the same time.
-
----
-
-## Trip Privacy
-
-**All trips are private.**
-
-There is no public trip sharing, social feed, or "follow user" feature. The share button exports a text summary via the system share sheet — it does not create a public link.
-
-*Impact:* No social discovery. Users cannot share interactive trip views.
-
-*App Store risk:* None — the store listing does not claim social features.
-
----
-
-## Offline Support
-
-**Read-only offline support via Firestore cache.**
-
-Firestore's built-in offline persistence means previously loaded trips and itineraries are readable when offline. However, creating new trips, writing journal entries, or sending chat messages requires a network connection.
-
-*Impact:* Users on a plane can view their existing itinerary but not edit it.
-
-*App Store listing:* The listing says "Your trips and itineraries are available even without an internet connection" — this is accurate for the read case. The reviewer notes clarify this.
-
----
-
-## Chat — No Moderation or Profanity Filter
-
-**Group chat has no automated content moderation.**
-
-User-generated chat messages are stored directly in Firestore. There is no profanity filter or AI moderation. The Terms of Service (accessible from Profile) prohibit abusive content.
-
-*Impact:* This is a known v1 gap. Acceptable for a friends/family coordination feature with a small user base at launch.
-
-*App Store risk:* Low — reviewers are told this is a friend/family coordination feature in the reviewer notes. ToS covers acceptable use.
-
----
-
-## Itinerary — No Drag-to-Reorder Between Days
-
-**Within a day, items can be reordered. Moving items between days requires delete + re-add.**
-
-The itinerary drag-and-drop is implemented per-day only. Cross-day reordering is not supported.
-
-*Impact:* Minor UX gap; works around by removing and re-adding a place on a different day.
-
----
-
-## Photo Storage
-
-**Journal photos are uploaded to Firebase Storage.**
-
-There is no image compression or size limit enforced client-side. Large photos (from modern phone cameras) may upload slowly on slow connections.
-
-*Impact:* Users on slow connections may notice delays when adding journal photos.
-
----
-
-## Account Deletion — Firestore Data
-
-**Deleting an account immediately deletes the Firebase Auth user but Firestore documents are cleaned up asynchronously.**
-
-The `deleteCurrentUser` function deletes the Firebase Auth account. Orphaned Firestore documents (trips, journals, chat messages) are removed by a Cloud Functions background job (or left for a 30-day cleanup cycle, per the Privacy Policy).
-
-*Impact:* If the Cloud Function is not deployed, Firestore data persists after account deletion but is inaccessible (no auth token). The Privacy Policy states data is deleted within 30 days.
-
-*Action required:* Deploy the `onUserDeleted` Cloud Function before launch (see `packages/functions/`).
-
----
-
-## Android — Firebase google-services.json
-
-**`apps/mobile/google-services.json` must be present for Android builds.**
-
-This file is in `.gitignore` and is not committed to the repository. It must be added as an EAS secret or placed locally before running `eas build --platform android`.
-
-*Action required:* Add `google-services.json` as an EAS secret or download it from the Firebase Console before the Android build.
-
----
-
-## iOS — GoogleService-Info.plist
-
-**`apps/mobile/GoogleService-Info.plist` must be present for iOS builds.**
-
-This file is in `.gitignore` and is not committed. The old `GoogleService-Info.plist` at the monorepo root (from the original SwiftUI project) was already removed from git tracking.
-
-*Action required:* Download the correct `GoogleService-Info.plist` for the `com.solotravelsoul.app` bundle ID from Firebase Console, place at `apps/mobile/GoogleService-Info.plist`, and add as an EAS secret.
-
----
-
-## Summary Table
-
-| Limitation | Severity | Store Risk | Action Required Before Launch |
-|---|---|---|---|
-| No push notifications | Medium | None | No |
-| Foursquare search disabled | Low | None | No |
-| Mapbox requires EAS build | Info | None | No |
-| Email-only auth | Low | None | No |
-| Trips are private | Info | None | No |
-| Offline = read-only | Low | None | No |
-| No chat moderation | Medium | Low | No (ToS covers it) |
-| No cross-day drag | Low | None | No |
-| No photo compression | Low | None | No |
-| Firestore cleanup is async | Medium | None | Deploy Cloud Function |
-| `google-services.json` not in repo | High | Blocks Android build | Add EAS secret |
-| `GoogleService-Info.plist` not in repo | High | Blocks iOS build | Add EAS secret |
+Not verified on the physical phone after the final build because the USB connection was lost mid-run: the trip summary and join form at 2.0x text, the gesture-navigation layouts, the Saved Posts text-only tile, and account deletion in the UI (these were verified on the emulator, except the Saved Posts tile, which has a source test only).

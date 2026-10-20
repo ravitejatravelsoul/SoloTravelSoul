@@ -34,7 +34,7 @@ const GUIDELINES = [
   {
     icon: 'warning-outline' as const,
     title: 'Report concerns',
-    body: 'If something feels unsafe, report it immediately. We review all reports carefully.',
+    body: 'If something feels unsafe, report it. Reports go to the moderators and there is no guaranteed response time, so in an emergency contact your local emergency number.',
   },
 ];
 
