@@ -453,6 +453,10 @@ export default function ProfileScreen() {
                 returnKeyType="done"
                 onSubmitEditing={handleDeleteConfirm}
               />
+              {/* Above the button, so the keyboard (which covers what is below) never hides it. */}
+              {deleteError ? (
+                <Text style={styles.deleteErrorText} accessibilityLiveRegion="polite" accessibilityRole="alert">{deleteError}</Text>
+              ) : null}
               <TouchableOpacity
                 style={[styles.deleteConfirmBtn, (!deletePassword.trim() || deleteLoading) && styles.deleteConfirmBtnDisabled]}
                 onPress={handleDeleteConfirm}
@@ -465,9 +469,6 @@ export default function ProfileScreen() {
                   <Text style={styles.deleteConfirmLabel}>Permanently delete my account</Text>
                 )}
               </TouchableOpacity>
-              {deleteError ? (
-                <Text style={styles.deleteErrorText} accessibilityLiveRegion="polite" accessibilityRole="alert">{deleteError}</Text>
-              ) : null}
               {deleteLoading && deleteProgress ? (
                 <Text style={styles.cancelLabel} accessibilityLiveRegion="polite">{deleteProgress}</Text>
               ) : null}

@@ -193,6 +193,7 @@ test('account deletion errors are shown inside the delete screen (a modal hides 
   assert.match(auth, /onError\?: \(message: string\) => void/);
   assert.match(auth, /onError\?\.\(message\)/);
   assert.match(profile, /setDeleteError,\s*\);/);
+  assert.ok(profile.indexOf('{deleteError ? (') < profile.indexOf('style={[styles.deleteConfirmBtn,'), 'the error sits above the button, out of the keyboard\'s way');
   assert.match(profile, /\{deleteError \? \(\s*<Text style=\{styles\.deleteErrorText\} accessibilityLiveRegion="polite" accessibilityRole="alert">/);
 });
 
