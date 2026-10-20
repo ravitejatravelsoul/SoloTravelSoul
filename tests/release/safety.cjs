@@ -179,8 +179,18 @@ test('the blocked list shows names saved when blocking, not raw ids', () => {
   assert.match(read('apps/mobile/app/(app)/community/profile/[uid].tsx'), /blockUser\(uid, profile\?\.displayName\)/);
 });
 
+test('the notifications screen does not promise activity the rules never allow clients to create', () => {
+  const rules = read('firestore.rules');
+  const block = rules.slice(rules.indexOf('match /notifications/{notificationId}'), rules.indexOf('// ── User place reviews'));
+  assert.ok(block.length > 50 && !/allow create/.test(block), 'clients cannot create notifications');
+  const screen = read('apps/mobile/app/(app)/notifications/index.tsx');
+  assert.doesNotMatch(screen, /You'll see likes, comments, follows/);
+  assert.match(screen, /not delivered as notifications in this version/);
+});
+
 test('layout and accessibility fixes: comments sheet clears the system bar; every switch has a name; logo is not clipped', () => {
-  assert.match(read('apps/mobile/components/posts/CommentsSheet.tsx'), /useSafeAreaInsets\(\)[\s\S]*Math\.max\(Platform\.OS === 'ios' \? 34 : Spacing\.lg, insets\.bottom\)/);
+  // The modal window is edge to edge; a hook value from the activity is 0 there, so the native SafeAreaView must wrap the input row.
+  assert.match(read('apps/mobile/components/posts/CommentsSheet.tsx'), /<SafeAreaView edges=\{\['bottom'\]\}>\s*<View style=\{styles\.inputRow\}>/);
   for (const rel of ['apps/mobile/app/(app)/profile/privacy.tsx', 'apps/mobile/app/(app)/trips/[id]/edit.tsx', 'apps/mobile/app/(app)/discover/trips/index.tsx', 'apps/mobile/app/(app)/community/groups/index.tsx', 'apps/mobile/components/trips/TripRemindersCard.tsx', 'apps/mobile/components/trips/ExportPreviewModal.tsx']) {
     const src = read(rel);
     for (const m of src.matchAll(/<Switch\b[^>]*?(?:\/>|>)/gs)) assert.match(src.slice(m.index, m.index + 400), /accessibilityLabel=/, `${rel} switch at ${m.index}`);

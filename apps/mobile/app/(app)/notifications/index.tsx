@@ -117,8 +117,8 @@ export default function NotificationsScreen() {
         ListEmptyComponent={
           <EmptyState
             emoji="🔔"
-            title="No notifications yet"
-            subtitle="You'll see likes, comments, follows, and group activity here."
+            title="No notifications"
+            subtitle="Likes, comments and follows are not delivered as notifications in this version. Unread chats show on the Chats tab; join requests are under Community."
           />
         }
       />

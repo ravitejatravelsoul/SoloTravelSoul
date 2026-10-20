@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, EmptyState } from '@/components/ui';
 import { CommentItem } from './CommentItem';
 import { useComments } from '@/hooks/useComments';
@@ -30,8 +30,6 @@ export function CommentsSheet({ postId, authorId, onClose }: Props) {
   const [text, setText] = useState('');
   const [replyTo, setReplyTo] = useState<{ id: string; name: string } | null>(null);
   const inputRef = useRef<TextInput>(null);
-  // The modal is drawn edge to edge: without the bottom inset the input sits under the three-button navigation bar.
-  const insets = useSafeAreaInsets();
 
   const handleReply = useCallback((commentId: string, authorName: string) => {
     setReplyTo({ id: commentId, name: authorName });
@@ -55,7 +53,7 @@ export function CommentsSheet({ postId, authorId, onClose }: Props) {
         <TouchableOpacity style={styles.backdrop} onPress={onClose} />
         <KeyboardAvoidingView
           behavior="padding"
-          style={[styles.sheet, { paddingBottom: Math.max(Platform.OS === 'ios' ? 34 : Spacing.lg, insets.bottom) }]}
+          style={styles.sheet}
         >
           {/* ── Handle bar ── */}
           <View style={styles.handle} />
@@ -104,7 +102,9 @@ export function CommentsSheet({ postId, authorId, onClose }: Props) {
             </View>
           )}
 
-          {/* ── Input ── */}
+          {/* ── Input ── The modal window is drawn edge to edge, so the row sits in a SafeAreaView (it measures this
+              window's own insets); otherwise it is hidden under the three-button navigation bar. */}
+          <SafeAreaView edges={['bottom']}>
           <View style={styles.inputRow}>
             <TextInput
               ref={inputRef}
@@ -128,6 +128,7 @@ export function CommentsSheet({ postId, authorId, onClose }: Props) {
               )}
             </TouchableOpacity>
           </View>
+          </SafeAreaView>
         </KeyboardAvoidingView>
       </View>
     </Modal>
