@@ -1046,3 +1046,7 @@ Same local Gradle debug build method as the section above (staging package `com.
    - Show the reported item, then use Dismiss, Remove (also deletes its photos), Restore, or Suspend author. One decision resolves every open report on that item.
 4. **Lifting a suspension:** there is no in-app screen (an optional feature). The owner deletes `accountSuspensions/{uid}` in the Firebase console, or a moderator calls `unsuspendUser`.
 5. **Web deletion requests:** verify that the requester owns the account email first, then `POST /admin/account-deletion` with the admin token (section 10 procedures).
+
+### Real-user QA and safety phase (2026-10-19)
+
+Full report: `docs/qa-report-2026-10-19.md` (journey matrix, defects found and fixed, compatibility and stranger-safety changes, JoinMyTrip/TripBFF comparison with sources, release blockers, cleanup). Highlights: editing a public trip had always failed after publishing and is fixed; approved members, leaving groups and trips, follow, the before-you-join summary (budget, expectations, shared answers) and Terms acceptance were added; the policy text was rewritten to match what the app does and still **needs owner and legal review**. QA package `com.solotravelsoul.app.staging.qa` v6 (source `c07ddbc`), staging only, five disposable accounts, all removed. Not deployed: the rules change (Leave trip depends on it). Evidence: `docs/screenshots/2026-10-19-real-user-qa/`.

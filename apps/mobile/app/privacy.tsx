@@ -38,7 +38,7 @@ const SECTIONS = [
   },
   {
     title: 'Join requests, groups and chats',
-    body: 'When you ask to join a trip, the organizer sees your name, photo, bio and message, and (only if you share them) your travel answers. Trip organizers publish the trip, its dates, size and any expectations or budget note they write. People who know your email address can find your name and start a direct chat or add you to a group chat; you can leave a group chat at any time and block anyone. Members of a group chat can read its messages. We store a record of the Terms version you accepted and when. Safety reports you submit, and what they say, are visible to moderators.',
+    body: 'When you ask to join a trip, the organizer sees your name, photo, bio and message, and (only if you share them) your travel answers. Trip organizers publish the trip, its dates, size and any expectations or budget note they write. People who know your email address can find your name and start a direct chat or add you to a group chat; you can leave a group chat at any time and block anyone. Members of a group chat can read its messages. Join requests other travelers sent to trips you organized stay in their own request history (pending ones are cancelled when you delete your account). We store a record of the Terms version you accepted and when. Safety reports you submit, and what they say, are visible to moderators.',
   },
   {
     title: 'Location data',

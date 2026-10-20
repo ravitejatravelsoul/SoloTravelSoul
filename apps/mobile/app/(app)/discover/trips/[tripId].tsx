@@ -140,6 +140,7 @@ export default function PublicTripDetailScreen() {
         <NavBar />
         <View style={styles.center}>
           <Text style={styles.emptyTitle}>Trip not found</Text>
+          <Text style={[styles.bodyText, { textAlign: 'center', marginTop: Spacing.sm, paddingHorizontal: Spacing['2xl'] }]}>This trip is no longer available. The organizer may have deleted it or their account.</Text>
         </View>
       </SafeAreaView>
     );

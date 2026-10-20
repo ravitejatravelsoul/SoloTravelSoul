@@ -134,6 +134,7 @@ test('Terms and Privacy match actual behaviour: public content visible to others
   assert.match(privacy, /join requests, follows and comments/);
   assert.match(privacy, /People who know your email address can find your name and start a direct chat or add you to a group chat/);
   assert.match(privacy, /record of the Terms version you accepted/);
+  assert.match(privacy, /Join requests other travelers sent to trips you organized stay in their own request history/);
 });
 
 test('terms acceptance: explicit at sign-up, recorded, and required before the app (re)opens for an account without it', () => {
