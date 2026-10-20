@@ -142,7 +142,7 @@ export function useAuth() {
   //   3. on success, wipe on-device caches/queues/reminders and sign out locally.
   // Offline sync is paused meanwhile so queued edits cannot recreate data.
   const deleteAccount = useCallback(
-    async (password: string, onProgress?: (p: DeletionProgress) => void): Promise<boolean> => {
+    async (password: string, onProgress?: (p: DeletionProgress) => void, onError?: (message: string) => void): Promise<boolean> => {
       const uid = user?.uid;
       if (!uid) return false;
       setLoading(true);
@@ -157,7 +157,10 @@ export function useAuth() {
         if (code !== 'auth/user-not-found') {
           setSyncPaused(uid, false);
           setLoading(false);
-          addToast(deletionErrorMessage(code), 'error');
+          const message = deletionErrorMessage(code);
+          addToast(message, 'error');
+          // The delete screen is a modal (its own window), so the toast is hidden behind it: show the reason there too.
+          onError?.(message);
           return false;
         }
       }

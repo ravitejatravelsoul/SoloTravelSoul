@@ -76,6 +76,7 @@ export default function ProfileScreen() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteProgress, setDeleteProgress] = useState<string | null>(null);
 
   const uid = profile?.id ?? '';
@@ -112,7 +113,7 @@ export default function ProfileScreen() {
       'This permanently deletes your account, trips, journal entries, and saved places. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Continue', style: 'destructive', onPress: () => { setDeletePassword(''); setShowDeleteModal(true); } },
+        { text: 'Continue', style: 'destructive', onPress: () => { setDeletePassword(''); setDeleteError(null); setShowDeleteModal(true); } },
       ]
     );
   };
@@ -121,8 +122,11 @@ export default function ProfileScreen() {
     if (!deletePassword.trim()) return;
     setDeleteLoading(true);
     setDeleteProgress(null);
-    const success = await deleteAccount(deletePassword, (p) =>
-      setDeleteProgress(p.totalSteps ? `Deleting… ${p.completedSteps}/${p.totalSteps} steps` : 'Deleting…')
+    setDeleteError(null);
+    const success = await deleteAccount(
+      deletePassword,
+      (p) => setDeleteProgress(p.totalSteps ? `Deleting… ${p.completedSteps}/${p.totalSteps} steps` : 'Deleting…'),
+      setDeleteError,
     );
     setDeleteProgress(null);
     setDeleteLoading(false);
@@ -440,7 +444,7 @@ export default function ProfileScreen() {
               <Text style={styles.passwordLabel}>Enter your password to confirm</Text>
               <TextInput
                 value={deletePassword}
-                onChangeText={setDeletePassword}
+                onChangeText={(t) => { setDeletePassword(t); setDeleteError(null); }}
                 secureTextEntry
                 placeholder="Your password"
                 placeholderTextColor={Colors.placeholder}
@@ -461,6 +465,9 @@ export default function ProfileScreen() {
                   <Text style={styles.deleteConfirmLabel}>Permanently delete my account</Text>
                 )}
               </TouchableOpacity>
+              {deleteError ? (
+                <Text style={styles.deleteErrorText} accessibilityLiveRegion="polite" accessibilityRole="alert">{deleteError}</Text>
+              ) : null}
               {deleteLoading && deleteProgress ? (
                 <Text style={styles.cancelLabel} accessibilityLiveRegion="polite">{deleteProgress}</Text>
               ) : null}
@@ -654,4 +661,5 @@ const styles = StyleSheet.create({
   deleteConfirmLabel: { color: Colors.white, fontWeight: FontWeight.semibold, fontSize: FontSize.md },
   cancelBtn: { alignItems: 'center', padding: Spacing.md },
   cancelLabel: { color: Colors.textSecondary, fontSize: FontSize.md },
+  deleteErrorText: { color: Colors.error, fontSize: FontSize.sm, lineHeight: 20, textAlign: 'center' },
 });

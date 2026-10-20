@@ -188,6 +188,14 @@ test('the notifications screen does not promise activity the rules never allow c
   assert.match(screen, /not delivered as notifications in this version/);
 });
 
+test('account deletion errors are shown inside the delete screen (a modal hides the toast layer)', () => {
+  const auth = read('apps/mobile/hooks/useAuth.ts'), profile = read('apps/mobile/app/(app)/profile/index.tsx');
+  assert.match(auth, /onError\?: \(message: string\) => void/);
+  assert.match(auth, /onError\?\.\(message\)/);
+  assert.match(profile, /setDeleteError,\s*\);/);
+  assert.match(profile, /\{deleteError \? \(\s*<Text style=\{styles\.deleteErrorText\} accessibilityLiveRegion="polite" accessibilityRole="alert">/);
+});
+
 test('layout and accessibility fixes: comments sheet clears the system bar; every switch has a name; logo is not clipped', () => {
   // The modal window is edge to edge; a hook value from the activity is 0 there, so the native SafeAreaView must wrap the input row.
   assert.match(read('apps/mobile/components/posts/CommentsSheet.tsx'), /<SafeAreaView edges=\{\['bottom'\]\}>\s*<View style=\{styles\.inputRow\}>/);
