@@ -13,7 +13,7 @@ Trips are private by default and can be published as **public trips** that other
 
 ## Messages and groups
 
-- Group chats start with only their creator; other people join by accepting an invitation sent to their e-mail address. The inviter is not told whether an address has an account. Nothing proves the holder of an address owns it (e-mail verification is not required), which is an owner decision.
+- Group chats start with only their creator; other people join by accepting an invitation sent to their e-mail address. The inviter is not told whether an address has an account. The invited person must have a **verified** e-mail (Chats shows a banner with Send e-mail and I have verified); the server checks the ID token's `email_verified` claim, and the inviter needs no verification. Verification is not required for anything else in the app. Delivery of the verification e-mail depends on Firebase's sender and the recipient's spam filtering; the app never claims delivery.
 - A refused send (suspended account, restricted chat) keeps its text in the message box. A message queued while offline that the server then refuses is never delivered; its text returns to the box if that chat is opened in the same app session (it is held in memory, so closing the app first loses it).
 - A chat nobody has written in is not listed for either person (the empty document exists until its participants are deleted).
 - Direct chats anonymized before 2026-10-20 are not removed when their last participant deletes their account (there was no record to detect it).
@@ -54,4 +54,4 @@ Trips are private by default and can be published as **public trips** that other
 
 ## Device verification gaps (2026-10-20)
 
-Not verified on the physical phone after the final build because the USB connection was lost mid-run: the trip summary and join form at 2.0x text, the gesture-navigation layouts, the Saved Posts text-only tile, and account deletion in the UI (these were verified on the emulator, except the Saved Posts tile, which has a source test only).
+Not verified on the physical phone because its USB connection was lost after 2026-10-20: the trip summary and join form at 2.0x text, the gesture-navigation layouts, the Saved Posts text-only tile, and account deletion in the UI. All four were verified on the emulator (section 12 of the QA report) and remain BLOCKED on the phone.

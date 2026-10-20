@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   SectionList,
+  ScrollView,
   RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -184,7 +185,7 @@ export default function ChatsIndexScreen() {
       {loadingChats ? (
         <ChatListSkeleton />
       ) : isEmpty ? (
-        <View style={styles.emptyWrap}>
+        <ScrollView contentContainerStyle={styles.emptyWrap}>
           <Text style={styles.emptyEmoji}>✈️</Text>
           <Text variant="h3" center>Start a conversation</Text>
           <Text variant="caption" center style={styles.emptyBody}>
@@ -200,7 +201,7 @@ export default function ChatsIndexScreen() {
               <Text style={[styles.ctaBtnText, styles.ctaBtnTextSecondary]}>Create Group</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </ScrollView>
       ) : (
         <SectionList
           sections={sections}
@@ -286,7 +287,7 @@ const styles = StyleSheet.create({
 
   // ── Empty state ───────────────────────────────────────────────────
   emptyWrap: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing['3xl'],
