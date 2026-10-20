@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { sendDirectMessage, sendGroupMessage } from '@solotravelsoul/firebase';
 import { withQueueLock } from './queueLock';
+import { stashUndelivered } from './draftRestore';
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -115,6 +116,7 @@ async function drainQueue(uid: string): Promise<ChatSyncResult> {
       if (isPermanentRejection(err)) {
         await remove(entry);
         rejected.push({ type: entry.op.type, clientId: entry.op.clientId });
+        stashUndelivered(uid, entry.op.type === 'dm.send' ? entry.op.chatId : entry.op.groupId, entry.op.text);
         failed++;
         continue;
       }

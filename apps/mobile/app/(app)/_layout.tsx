@@ -4,7 +4,6 @@ import { View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tabBarInsets } from '@/utils/tabBar';
 import { TabLabel } from '@/components/ui/TabLabel';
-import { useNotifications } from '@/hooks/useNotifications';
 import { useNetworkState } from '@/hooks/useNetworkState';
 import { useSyncEngine } from '@/hooks/useSyncEngine';
 import { useDirectChats } from '@/hooks/useDirectChats';
@@ -13,6 +12,7 @@ import { useChatStore, totalChatUnread } from '@/stores/chatStore';
 import { useHaptics } from '@/hooks/useHaptics';
 import { Badge, OfflineBanner } from '@/components/ui';
 import { Colors } from '@/constants/theme';
+import { useDiscoveryReconcile } from '@/hooks/useDiscoveryReconcile';
 import { useBlockStore } from '@/stores/blockStore';
 import { useEffect } from 'react';
 import { TERMS_VERSION } from '@solotravelsoul/shared';
@@ -45,7 +45,6 @@ function TabIcon({
 }
 
 export default function AppLayout() {
-  const { unreadCount } = useNotifications();
   const { isConnected } = useNetworkState();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const initialized = useAuthStore((s) => s.initialized);
@@ -56,6 +55,7 @@ export default function AppLayout() {
   const { loadBlockList } = useBlockStore();
   // Subscribes and keeps chatStore current for badge counts
   useDirectChats();
+  useDiscoveryReconcile();
   // Mounted globally so queued offline changes flush on reconnect/foreground
   // regardless of which screen the user is on (not just trip detail).
   useSyncEngine(uid || undefined);
@@ -158,7 +158,6 @@ export default function AppLayout() {
               name={focused ? 'person-circle' : 'person-circle-outline'}
               color={color}
               focused={focused}
-              badge={unreadCount > 0 ? unreadCount : undefined}
             />
           ),
         }}
@@ -167,7 +166,6 @@ export default function AppLayout() {
       {/* ── Hidden — navigable via push, never shown as tabs ─────────── */}
       {/* Only flat files that live in (app)/ without their own _layout need href:null */}
       <Tabs.Screen name="groups" options={{ href: null }} />
-      <Tabs.Screen name="notifications/index" options={{ href: null }} />
       <Tabs.Screen name="profile/edit" options={{ href: null }} />
       <Tabs.Screen name="profile/privacy" options={{ href: null }} />
       <Tabs.Screen name="profile/preferences" options={{ href: null }} />

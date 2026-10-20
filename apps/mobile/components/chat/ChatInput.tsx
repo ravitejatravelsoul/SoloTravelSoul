@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   TextInput,
@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useHaptics } from '@/hooks/useHaptics';
 import { Colors, FontSize, Radius, Spacing, FontWeight } from '@/constants/theme';
+import { mergeDraft, type DraftRestore } from '@/utils/draftRestore';
 
 const MAX_CHARS = 1000;
 
@@ -18,10 +19,18 @@ interface ChatInputProps {
   onSend: (text: string) => void;
   disabled?: boolean;
   placeholder?: string;
+  /** A refused send's text, handed back so the person's words are not lost. */
+  restore?: DraftRestore | null;
 }
 
-export function ChatInput({ onSend, disabled, placeholder = 'Message…' }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, placeholder = 'Message…', restore }: ChatInputProps) {
   const [text, setText] = useState('');
+  const lastRestoreKey = useRef(0);
+  useEffect(() => {
+    if (!restore || restore.key === lastRestoreKey.current) return;
+    lastRestoreKey.current = restore.key;
+    setText((current) => mergeDraft(current, restore.text).slice(0, MAX_CHARS));
+  }, [restore]);
   const haptics = useHaptics();
   const sendScale = useRef(new Animated.Value(1)).current;
 

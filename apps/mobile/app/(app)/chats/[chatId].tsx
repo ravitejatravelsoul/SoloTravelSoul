@@ -21,6 +21,7 @@ import { DateSeparator } from '@/components/chat/DateSeparator';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { Colors, FontSize, FontWeight, Spacing } from '@/constants/theme';
 import { isSameDay } from 'date-fns';
+import { DELETED_ACCOUNT_NAME } from '@solotravelsoul/shared';
 import type { DirectMessage } from '@solotravelsoul/shared';
 
 type ListItem =
@@ -43,7 +44,9 @@ export default function DirectChatScreen() {
   // Stable reference — prevents sendMessage callback from being recreated every render
   const otherUids = useMemo(() => (otherUid ? [otherUid] : []), [otherUid]);
 
-  const { messages, sendMessage } = useMessages(chatId ?? '', otherUids);
+  const { messages, sendMessage, restored } = useMessages(chatId ?? '', otherUids);
+  // The other person's account is gone: the history stays readable, but nothing can be sent to them.
+  const otherDeleted = !!otherUid && (chat?.deletedParticipants.includes(otherUid) || otherInfo?.name === DELETED_ACCOUNT_NAME);
 
   // Build display list with date separators
   const listItems: ListItem[] = [];
@@ -135,7 +138,13 @@ export default function DirectChatScreen() {
         }
       />
 
-      <ChatInput onSend={sendMessage} />
+      {otherDeleted ? (
+        <View style={styles.deletedBanner}>
+          <Text style={styles.deletedText}>This account was deleted. You can read this conversation but cannot send messages to it.</Text>
+        </View>
+      ) : (
+        <ChatInput onSend={sendMessage} restore={restored} />
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -177,6 +186,13 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     flex: 1,
   },
+  deletedBanner: {
+    backgroundColor: Colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    padding: Spacing.md,
+  },
+  deletedText: { textAlign: 'center', fontSize: FontSize.sm, color: Colors.textSecondary },
   offlineBanner: {
     backgroundColor: '#F59E0B22',
     borderBottomWidth: 1,

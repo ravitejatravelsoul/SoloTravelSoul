@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,14 +7,96 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  TextInput,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { getGroup, leaveChatGroup } from '@solotravelsoul/firebase';
+import { getGroup, leaveChatGroup, inviteToGroup, cancelGroupInvite, subscribeToGroupInvitesSent } from '@solotravelsoul/firebase';
 import { useAuthStore } from '@/stores/authStore';
 import { Colors, FontSize, FontWeight, Radius, Spacing } from '@/constants/theme';
 import { format } from 'date-fns';
-import type { TravelGroup } from '@solotravelsoul/shared';
+import type { TravelGroup, GroupInvite } from '@solotravelsoul/shared';
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** The creator invites people by e-mail address and can withdraw invitations that are still pending. */
+function InvitePanel({ group, uid, myName }: { group: TravelGroup; uid: string; myName: string }) {
+  const [invites, setInvites] = useState<GroupInvite[]>([]);
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+
+  useEffect(() => subscribeToGroupInvitesSent(group.id, uid, setInvites), [group.id, uid]);
+
+  const send = useCallback(async () => {
+    const trimmed = email.trim().toLowerCase();
+    if (!EMAIL_PATTERN.test(trimmed)) { setMessage({ text: 'Enter a valid email.', error: true }); return; }
+    setBusy(true);
+    setMessage(null);
+    try {
+      await inviteToGroup({ id: group.id, name: group.name }, { uid, name: myName }, trimmed);
+      setEmail('');
+      setMessage({ text: 'Invitation sent. They join only if they accept.', error: false });
+    } catch {
+      setMessage({ text: 'Could not send that invitation. It may already be answered, or you may be offline.', error: true });
+    } finally {
+      setBusy(false);
+    }
+  }, [email, group.id, group.name, uid, myName]);
+
+  const cancel = useCallback(async (inviteId: string) => {
+    try {
+      await cancelGroupInvite(inviteId);
+    } catch {
+      setMessage({ text: 'Could not withdraw the invitation. Try again.', error: true });
+    }
+  }, []);
+
+  const now = Date.now();
+  const pending = invites.filter((i) => i.status === 'pending' && i.expiresAt.getTime() > now);
+
+  return (
+    <View style={{ gap: Spacing.sm }}>
+      <Text style={styles.sectionLabel}>Invite people</Text>
+      <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+        <TextInput
+          style={styles.inviteInput}
+          value={email}
+          onChangeText={(t) => { setEmail(t); setMessage(null); }}
+          placeholder="friend@explorer.com"
+          placeholderTextColor={Colors.placeholder}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          accessibilityLabel="Email to invite"
+        />
+        <TouchableOpacity style={[styles.inviteBtn, busy && { opacity: 0.6 }]} onPress={send} disabled={busy} accessibilityRole="button" accessibilityLabel="Send invitation">
+          {busy ? <ActivityIndicator color={Colors.white} size="small" /> : <Text style={styles.inviteBtnText}>Invite</Text>}
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.inviteHint}>You will not be told whether an address has an account. People are added only if they accept.</Text>
+      {message && <Text style={[styles.inviteHint, message.error && { color: Colors.error }]}>{message.text}</Text>}
+      {pending.length > 0 && (
+        <View style={styles.membersCard}>
+          {pending.map((invite, i) => (
+            <View key={invite.id}>
+              {i > 0 && <View style={styles.memberDivider} />}
+              <View style={styles.memberRow}>
+                <View style={styles.memberInfo}>
+                  <Text style={styles.memberName} numberOfLines={1}>{invite.inviteeEmail}</Text>
+                  <Text style={styles.memberRole}>Invitation pending</Text>
+                </View>
+                <TouchableOpacity onPress={() => cancel(invite.id)} accessibilityRole="button" accessibilityLabel={`Withdraw invitation to ${invite.inviteeEmail}`} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={styles.withdrawText}>Withdraw</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
 
 export default function GroupDetailScreen() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
@@ -52,7 +134,7 @@ export default function GroupDetailScreen() {
   const isCreator = group.createdBy === uid;
 
   const confirmLeave = () => {
-    Alert.alert('Leave this group?', 'You will stop receiving its messages and will no longer see the chat. Someone with your email address can add you again, and you can block them if that is unwanted.', [
+    Alert.alert('Leave this group?', 'You will stop receiving its messages and will no longer see the chat. Nobody can add you back without a new invitation that you choose to accept, and you can block someone if their invitations are unwanted.', [
       { text: 'Stay', style: 'cancel' },
       {
         text: 'Leave group',
@@ -131,6 +213,8 @@ export default function GroupDetailScreen() {
           })}
         </View>
 
+        {isCreator && <InvitePanel group={group} uid={uid} myName={myName} />}
+
         {/* Leave (the admin who created the group cannot leave yet) */}
         {!isCreator && group.members.includes(uid) && (
           <TouchableOpacity style={styles.leaveBtn} onPress={confirmLeave} disabled={leaving} accessibilityRole="button" accessibilityLabel="Leave group" activeOpacity={0.75}>
@@ -148,6 +232,11 @@ export default function GroupDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  inviteInput: { flex: 1, height: 48, backgroundColor: Colors.surface, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: Spacing.md, fontSize: FontSize.sm, color: Colors.textPrimary },
+  inviteBtn: { minWidth: 72, height: 48, borderRadius: Radius.md, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.md },
+  inviteBtnText: { color: Colors.white, fontWeight: FontWeight.semibold, fontSize: FontSize.sm },
+  inviteHint: { fontSize: FontSize.xs, color: Colors.textSecondary },
+  withdrawText: { fontSize: FontSize.sm, color: Colors.error, fontWeight: FontWeight.semibold },
   leaveBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, marginTop: Spacing['2xl'], minHeight: 48, borderRadius: Radius.xl, borderWidth: 1, borderColor: Colors.error + '60' },
   leaveText: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.error },
   root: { flex: 1, backgroundColor: Colors.background },

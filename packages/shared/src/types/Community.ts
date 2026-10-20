@@ -62,6 +62,14 @@ export interface PublicProfile {
   badges?: import('./Reputation').BadgeType[];
 }
 
+/** Moderator decision on a public trip or community group. */
+export type ModerationStatus = 'visible' | 'hidden' | 'removed';
+
+/** True while a trip or group is shown in discovery and may take new requests. */
+export function isListed(item: { moderationStatus?: ModerationStatus }): boolean {
+  return (item.moderationStatus ?? 'visible') === 'visible';
+}
+
 export interface PublicTrip {
   tripId: string;
   ownerUid: string;
@@ -83,6 +91,8 @@ export interface PublicTrip {
   expectations?: string;
   /** Optional, organizer-written budget context (for example "mid-range, costs split evenly"). */
   budgetNote?: string;
+  /** Set by a moderator; absent means visible. Hidden and removed trips stay out of discovery and take no new requests. */
+  moderationStatus?: ModerationStatus;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -128,6 +138,7 @@ export interface CommunityGroup {
   rules: string;
   chatGroupId: string | null;
   isAcceptingMembers: boolean;
+  moderationStatus?: ModerationStatus;
   createdAt: Date;
   updatedAt: Date;
 }

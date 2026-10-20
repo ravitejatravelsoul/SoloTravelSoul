@@ -9,6 +9,7 @@ import { getUserInitials } from '@solotravelsoul/shared';
 import { useTripStore } from '@/stores/tripStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useBlockStore } from '@/stores/blockStore';
+import { useFollowStore } from '@/stores/followStore';
 import { useAuthStore } from '@/stores/authStore';
 import { ToastContainer } from '@/components/ui';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -49,6 +50,7 @@ export default function RootLayout() {
         useTripStore.getState().reset();
         useChatStore.getState().reset();
         useBlockStore.getState().reset();
+        useFollowStore.getState().reset();
       }
       setUser(user);
       if (user) {

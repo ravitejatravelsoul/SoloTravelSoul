@@ -20,6 +20,7 @@ import {
   Spacing,
 } from '@/constants/theme';
 import type { JournalEntry, JournalMood, PlaceEntry } from '@solotravelsoul/shared';
+import { ToastContainer } from '@/components/ui/Toast';
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -246,6 +247,7 @@ export function JournalEntryModal({
 
         </ScrollView>
       </KeyboardAvoidingView>
+      <ToastContainer />
     </Modal>
   );
 }

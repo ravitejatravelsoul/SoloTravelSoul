@@ -13,18 +13,21 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  searchUserByEmail,
   createGroup,
+  inviteToGroup,
   sendGroupMessage,
 } from '@solotravelsoul/firebase';
 import { getUserInitials } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
+import { useUIStore } from '@/stores/uiStore';
 import { Colors, FontSize, FontWeight, Radius, Spacing } from '@/constants/theme';
-import type { UserLookup, ChatParticipantInfo } from '@solotravelsoul/shared';
 
 function generateClientId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
 }
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_INVITES = 20;
 
 export default function NewGroupScreen() {
   const router = useRouter();
@@ -34,43 +37,32 @@ export default function NewGroupScreen() {
 
   const [groupName, setGroupName] = useState('');
   const [memberEmail, setMemberEmail] = useState('');
-  const [members, setMembers] = useState<UserLookup[]>([]);
-  const [searching, setSearching] = useState(false);
+  const [emails, setEmails] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const handleAddMember = useCallback(async () => {
+  // Invitations are addressed to an e-mail address and nothing is looked up: this screen cannot tell whether an
+  // address has an account, and nobody is added to the group until they accept.
+  const handleAddEmail = useCallback(() => {
     const trimmed = memberEmail.trim().toLowerCase();
     if (!trimmed) return;
-    if (!trimmed.includes('@')) { setSearchError('Enter a valid email.'); return; }
-    if (trimmed === user?.email?.toLowerCase()) { setSearchError("That's your own email."); return; }
-    if (members.some((m) => m.email === trimmed)) { setSearchError('Already added.'); return; }
+    if (!EMAIL_PATTERN.test(trimmed)) { setEmailError('Enter a valid email.'); return; }
+    if (trimmed === user?.email?.toLowerCase()) { setEmailError("That's your own email."); return; }
+    if (emails.includes(trimmed)) { setEmailError('Already on the list.'); return; }
+    if (emails.length >= MAX_INVITES) { setEmailError(`You can invite up to ${MAX_INVITES} people at a time.`); return; }
+    setEmails((prev) => [...prev, trimmed]);
+    setMemberEmail('');
+    setEmailError(null);
+  }, [memberEmail, user?.email, emails]);
 
-    setSearching(true);
-    setSearchError(null);
-    try {
-      const found = await searchUserByEmail(trimmed);
-      if (found) {
-        setMembers((prev) => [...prev, found]);
-        setMemberEmail('');
-      } else {
-        setSearchError('No account found with that email.');
-      }
-    } catch {
-      setSearchError('Search failed. Try again.');
-    } finally {
-      setSearching(false);
-    }
-  }, [memberEmail, user?.email, members]);
-
-  const removeMember = useCallback((uid: string) => {
-    setMembers((prev) => prev.filter((m) => m.uid !== uid));
+  const removeEmail = useCallback((email: string) => {
+    setEmails((prev) => prev.filter((e) => e !== email));
   }, []);
 
   const handleCreate = useCallback(async () => {
     if (!user || !groupName.trim()) return;
-    if (members.length === 0) { setCreateError('Add at least one member.'); return; }
+    if (emails.length === 0) { setCreateError('Add at least one email to invite.'); return; }
 
     setCreating(true);
     setCreateError(null);
@@ -78,34 +70,27 @@ export default function NewGroupScreen() {
     try {
       const myName = profile?.name ?? user.email ?? 'Traveler';
       const myInitials = getUserInitials(myName) || myName[0]?.toUpperCase() || 'T';
-      const allMembers = [user.uid, ...members.map((m) => m.uid)];
-      const memberInfo: Record<string, ChatParticipantInfo> = {
-        [user.uid]: { name: myName, initials: myInitials },
-      };
-      members.forEach((m) => {
-        memberInfo[m.uid] = { name: m.displayName, initials: m.initials };
-      });
+      const name = groupName.trim();
+      const groupId = await createGroup(user.uid, name, { name: myName, initials: myInitials });
 
-      const groupId = await createGroup(user.uid, groupName.trim(), allMembers, memberInfo);
+      await sendGroupMessage(groupId, user.uid, myName, `${myName} created the group`, generateClientId(), 'system').catch(() => {});
 
-      // Post system message
-      await sendGroupMessage(
-        groupId,
-        user.uid,
-        myName,
-        `${myName} created the group`,
-        generateClientId(),
-        'system',
+      const results = await Promise.allSettled(emails.map((email) => inviteToGroup({ id: groupId, name }, { uid: user.uid, name: myName }, email)));
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      useUIStore.getState().addToast(
+        failed === 0
+          ? `Invitations sent. Anyone with an account at those addresses will see an invitation in their Chats and joins only if they accept.`
+          : `${emails.length - failed} of ${emails.length} invitations sent. You can invite the others from Group Info.`,
+        failed === 0 ? 'success' : 'error',
       );
-
       router.replace(`/groups/${groupId}/chat`);
     } catch {
       setCreateError('Could not create group. Please try again.');
       setCreating(false);
     }
-  }, [user, profile, groupName, members, router]);
+  }, [user, profile, groupName, emails, router]);
 
-  const canCreate = groupName.trim().length > 0 && members.length > 0 && !creating;
+  const canCreate = groupName.trim().length > 0 && emails.length > 0 && !creating;
 
   return (
     <KeyboardAvoidingView
@@ -142,47 +127,40 @@ export default function NewGroupScreen() {
           returnKeyType="next"
         />
 
-        {/* Add members */}
-        <Text style={[styles.label, { marginTop: Spacing.lg }]}>Add members by email</Text>
+        {/* Invite people */}
+        <Text style={[styles.label, { marginTop: Spacing.lg }]}>Invite people by email</Text>
+        <Text style={styles.hint}>They are added only if they accept. You will not be told whether an address has an account.</Text>
         <View style={styles.searchRow}>
           <TextInput
             style={styles.input}
             value={memberEmail}
-            onChangeText={(t) => { setMemberEmail(t); setSearchError(null); }}
+            onChangeText={(t) => { setMemberEmail(t); setEmailError(null); }}
             placeholder="friend@explorer.com"
             placeholderTextColor={Colors.placeholder}
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="done"
-            onSubmitEditing={handleAddMember}
+            onSubmitEditing={handleAddEmail}
           />
-          <TouchableOpacity
-            style={[styles.addBtn, searching && { opacity: 0.7 }]}
-            onPress={handleAddMember}
-            disabled={searching}
-          >
-            {searching
-              ? <ActivityIndicator color={Colors.white} size="small" />
-              : <Ionicons name="add" size={22} color={Colors.white} />
-            }
+          <TouchableOpacity style={styles.addBtn} onPress={handleAddEmail} accessibilityRole="button" accessibilityLabel="Add email">
+            <Ionicons name="add" size={22} color={Colors.white} />
           </TouchableOpacity>
         </View>
-        {searchError && <Text style={styles.errorText}>{searchError}</Text>}
+        {emailError && <Text style={styles.errorText}>{emailError}</Text>}
 
-        {/* Member list */}
-        {members.length > 0 && (
+        {emails.length > 0 && (
           <View style={styles.membersList}>
-            {members.map((m) => (
-              <View key={m.uid} style={styles.memberRow}>
+            {emails.map((email) => (
+              <View key={email} style={styles.memberRow}>
                 <View style={styles.memberAvatar}>
-                  <Text style={styles.memberInitials}>{m.initials}</Text>
+                  <Ionicons name="mail-outline" size={18} color={Colors.white} />
                 </View>
                 <View style={styles.memberInfo}>
-                  <Text style={styles.memberName}>{m.displayName}</Text>
-                  <Text style={styles.memberEmail}>{m.email}</Text>
+                  <Text style={styles.memberName}>{email}</Text>
+                  <Text style={styles.memberEmail}>Invitation</Text>
                 </View>
-                <TouchableOpacity onPress={() => removeMember(m.uid)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <TouchableOpacity onPress={() => removeEmail(email)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={`Remove ${email}`}>
                   <Ionicons name="close-circle" size={22} color={Colors.textSecondary} />
                 </TouchableOpacity>
               </View>
@@ -233,6 +211,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  hint: { fontSize: FontSize.xs, color: Colors.textSecondary },
   errorText: { fontSize: FontSize.xs, color: Colors.error },
   membersList: { gap: Spacing.sm, marginTop: Spacing.sm },
   memberRow: {

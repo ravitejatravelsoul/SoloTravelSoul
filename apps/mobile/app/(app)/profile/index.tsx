@@ -30,6 +30,7 @@ import { useAuthorJournals } from '@/hooks/useJournals';
 import { useFollowCounts } from '@/hooks/useFollows';
 import { getUserInitials } from '@solotravelsoul/shared';
 import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { ToastContainer } from '@/components/ui/Toast';
 
 type ProfileTab = 'posts' | 'journals' | 'trips';
 
@@ -139,10 +140,7 @@ export default function ProfileScreen() {
       <View style={styles.topBar}>
         <Text style={styles.topBarTitle}>{profile.name}</Text>
         <View style={styles.topBarActions}>
-          <TouchableOpacity onPress={() => router.push('/(app)/notifications' as never)} hitSlop={10}>
-            <Ionicons name="notifications-outline" size={24} color={Colors.textPrimary} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/(app)/post/create' as never)} hitSlop={10} style={{ marginLeft: Spacing.md }}>
+          <TouchableOpacity onPress={() => router.push('/(app)/post/create' as never)} hitSlop={10}>
             <Ionicons name="add-circle-outline" size={24} color={Colors.primary} />
           </TouchableOpacity>
         </View>
@@ -478,6 +476,7 @@ export default function ProfileScreen() {
             </View>
           </KeyboardAvoidingView>
         </SafeAreaView>
+        <ToastContainer />
       </Modal>
     </SafeAreaView>
   );

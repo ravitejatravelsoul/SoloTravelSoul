@@ -15,6 +15,7 @@ import { Text } from '@/components/ui';
 import { submitGroupJoinRequest } from '@solotravelsoul/firebase';
 import type { CommunityGroup, UserProfile } from '@solotravelsoul/shared';
 import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { ToastContainer } from '@/components/ui/Toast';
 
 const MESSAGE_MAX = 300;
 
@@ -99,6 +100,7 @@ export function JoinRequestModal({ group, requestor, onClose, onSubmitted }: Pro
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
+      <ToastContainer />
     </Modal>
   );
 }

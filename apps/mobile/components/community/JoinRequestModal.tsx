@@ -20,6 +20,7 @@ import { submitTripJoinRequest, getTripJoinRequestStatus } from '@solotravelsoul
 import type { PublicTrip, UserProfile } from '@solotravelsoul/shared';
 import { preferencesOf } from '@solotravelsoul/shared';
 import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { ToastContainer } from '@/components/ui/Toast';
 
 const MESSAGE_MAX = 300;
 const DAILY_LIMIT_KEY = 'community_join_requests_daily';
@@ -159,6 +160,7 @@ export function JoinRequestModal({ trip, requestor, onClose, onSubmitted }: Join
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
+      <ToastContainer />
     </Modal>
   );
 }

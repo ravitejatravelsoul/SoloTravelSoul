@@ -27,6 +27,7 @@ import {
   Shadow,
 } from '@/constants/theme';
 import type { PlaceEntry, PlannedTrip } from '@solotravelsoul/shared';
+import { ToastContainer } from '@/components/ui/Toast';
 
 // Pre-defined pill colors — avoids runtime hex concat which varies across RN versions
 const STATUS_CONFIG: Record<string, {
@@ -225,6 +226,7 @@ export function AddToTripSheet({ visible, place, onClose }: Props) {
 
         </KeyboardAvoidingView>
       </SafeAreaView>
+      <ToastContainer />
     </Modal>
   );
 }

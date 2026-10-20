@@ -335,6 +335,85 @@ test('two-user ownership: only the caller\'s data is deleted, others preserved, 
   assert.deepEqual(h.authCalls[0], { uid: ME, privateDataGone: true, mediaGone: true });
 });
 
+// D20: direct chats left behind after every participant deleted their account.
+const putDocs = async (store, docs) => { for (const [p, data] of Object.entries(docs)) await store.commit([{ kind: 'update', path: p, set: data, mustExist: false }]); };
+const chatDocs = (id, a, b, over = {}) => ({
+  [`direct_chats/${id}`]: { participants: [a, b], participantInfo: { [a]: { name: `Name ${a}`, initials: 'N' }, [b]: { name: `Name ${b}`, initials: 'N' } }, unreadCounts: { [a]: 0, [b]: 1 }, ...over },
+  [`direct_chats/${id}/messages/m1`]: { senderId: a, text: `hello from ${a}` },
+  [`direct_chats/${id}/messages/m2`]: { senderId: b, text: `reply from ${b}` },
+});
+const userDocs = (...uids) => Object.fromEntries(uids.map((u) => [`users/${u}`, { name: u, email: `${u}@example.test` }]));
+const del = (store, uid) => deletion.deleteAccount({ uid, email: `${uid}@example.test` }, harness(store).deps);
+
+test('direct chats: kept for the remaining participant, deleted with its messages when the last participant is deleted; reports stay', async () => {
+  const store = await newStore();
+  await putDocs(store, { ...userDocs(ME, BOB, CAROL), ...chatDocs('c_me_bob', ME, BOB), ...chatDocs('c_bob_carol', BOB, CAROL), 'reports/rep1': { reporterUid: ME, targetType: 'user', targetId: BOB, reason: 'spam' } });
+  const get = async (p) => (await store.get(p))?.data;
+  await del(store, ME);
+  const kept = await get('direct_chats/c_me_bob');
+  assert.deepEqual(kept.deletedParticipants, [ME]);
+  assert.equal(kept.participantInfo[ME].name, DELETED); assert.equal(kept.participantInfo[BOB].name, `Name ${BOB}`);
+  assert.equal((await get('direct_chats/c_me_bob/messages/m1')).text, `hello from ${ME}`, 'history stays for Bob');
+  assert.ok(await get('direct_chats/c_bob_carol'), 'an unrelated chat is untouched');
+  await del(store, BOB);
+  assert.equal(await get('direct_chats/c_me_bob'), undefined, 'both participants deleted: chat gone');
+  assert.equal(await get('direct_chats/c_me_bob/messages/m1'), undefined); assert.equal(await get('direct_chats/c_me_bob/messages/m2'), undefined);
+  assert.ok(await get('direct_chats/c_bob_carol'), 'Carol is still here');
+  assert.equal((await get('direct_chats/c_bob_carol')).deletedParticipants.join(), BOB);
+  await del(store, CAROL);
+  assert.equal(await get('direct_chats/c_bob_carol'), undefined); assert.equal(await get('direct_chats/c_bob_carol/messages/m2'), undefined);
+  assert.ok(await get('reports/rep1'), 'the safety report is retained');
+});
+
+test('direct chats: a display name is never evidence of deletion (a creator can choose "Deleted User")', async () => {
+  const store = await newStore();
+  await putDocs(store, { ...userDocs(ME, BOB), ...chatDocs('c_spoof', ME, BOB, { participantInfo: { [ME]: { name: 'Alice', initials: 'A' }, [BOB]: { name: DELETED, initials: '?' } } }) });
+  await del(store, ME);
+  assert.ok((await store.get('direct_chats/c_spoof')), 'Bob (who is not deleted) keeps the conversation');
+  assert.ok((await store.get('direct_chats/c_spoof/messages/m1')));
+});
+
+test('direct chats: two deletions racing each other end with exactly one delete, never a leftover chat', async () => {
+  const store = await newStore();
+  await putDocs(store, { ...userDocs(ME, BOB), ...chatDocs('c_race', ME, BOB) });
+  // ME reads the chat, then BOB's deletion commits its record before ME's conditional commit lands.
+  const realGet = store.get.bind(store); let raced = false;
+  store.get = async (p) => {
+    const doc = await realGet(p);
+    if (p === 'direct_chats/c_race' && !raced) {
+      raced = true;
+      await store.commit([{ kind: 'update', path: p, set: { 'participantInfo.bob': { name: DELETED, initials: '?' }, deletedParticipants: [BOB] }, remove: ['unreadCounts.bob'], updateTime: doc.updateTime }]);
+    }
+    return doc; // the stale copy
+  };
+  await del(store, ME);
+  assert.ok(raced);
+  assert.equal(await realGet('direct_chats/c_race'), null, 'the retry saw both recorded and deleted the chat');
+  assert.equal(await realGet('direct_chats/c_race/messages/m1'), null);
+});
+
+test('direct chats: a retry after a crash between recording and deleting finishes the job; repeats are no-ops', async () => {
+  const store = await newStore();
+  await putDocs(store, { ...userDocs(ME, BOB), ...chatDocs('c_crash', ME, BOB, { deletedParticipants: [ME, BOB], participantInfo: { [ME]: { name: DELETED, initials: '?' }, [BOB]: { name: DELETED, initials: '?' } }, unreadCounts: {} }) });
+  await del(store, BOB);
+  assert.equal(await store.get('direct_chats/c_crash'), null);
+  await assert.doesNotReject(() => del(store, BOB)); // completed job: success again, nothing to do
+  assert.equal(await store.get('direct_chats/c_crash/messages/m2'), null);
+});
+
+test('group invitations: the ones the user sent and the ones addressed to their e-mail go; another person is untouched', async () => {
+  const store = await newStore();
+  await putDocs(store, { ...userDocs(ME, BOB),
+    'groupInvites/g1_friend%40example.test': { groupId: 'g1', inviterUid: ME, inviteeEmail: 'friend@example.test', status: 'pending' },
+    [`groupInvites/g2_${ME}%40example.test`]: { groupId: 'g2', inviterUid: BOB, inviteeEmail: `${ME}@example.test`, status: 'pending' },
+    'groupInvites/g2_other%40example.test': { groupId: 'g2', inviterUid: BOB, inviteeEmail: 'other@example.test', status: 'pending' } });
+  await del(store, ME);
+  assert.equal(await store.get('groupInvites/g1_friend%40example.test'), null, 'sent by the deleted user');
+  assert.equal(await store.get(`groupInvites/g2_${ME}%40example.test`), null, 'addressed to the deleted user');
+  assert.ok(await store.get('groupInvites/g2_other%40example.test'), 'an unrelated invitation is untouched');
+  await assert.doesNotReject(() => del(store, ME)); // retry
+});
+
 test('media failure keeps Auth, records the failed step, and a retry finishes exactly once', async () => {
   const store = await newStore(); await seed(store); const h = harness(store);
   h.storage.failNext = 1;

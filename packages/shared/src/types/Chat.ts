@@ -21,6 +21,8 @@ export interface DirectChat {
   updatedAt: Date;
   /** Per-user unread message count. Reset to 0 when user opens the chat. */
   unreadCounts: Record<string, number>;
+  /** Participants whose accounts were deleted (written only by the deletion service); nobody can message them. */
+  deletedParticipants: string[];
 }
 
 export interface DirectMessage {
@@ -48,6 +50,21 @@ export interface TravelGroup {
   updatedAt: Date;
   unreadCounts: Record<string, number>;
   createdAt: Date;
+}
+
+export type GroupInviteStatus = 'pending' | 'accepted' | 'declined' | 'cancelled';
+
+/** An invitation to a group chat, addressed to an e-mail address. */
+export interface GroupInvite {
+  id: string;
+  groupId: string;
+  groupName: string;
+  inviterUid: string;
+  inviterName: string;
+  inviteeEmail: string;
+  status: GroupInviteStatus;
+  createdAt: Date;
+  expiresAt: Date;
 }
 
 export type GroupMessageType = 'user' | 'system';

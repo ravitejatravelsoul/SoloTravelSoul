@@ -17,6 +17,7 @@ import { reportContent } from '@solotravelsoul/firebase';
 import type { ReportTargetType } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { ToastContainer } from '@/components/ui/Toast';
 
 type TargetType = ReportTargetType;
 type ReportReason = 'spam' | 'inappropriate' | 'harassment' | 'fake' | 'safety' | 'other';
@@ -190,6 +191,7 @@ export function ReportModal({ visible, targetType, targetId, onClose }: ReportMo
           </ScrollView>
         )}
       </SafeAreaView>
+      <ToastContainer />
     </Modal>
   );
 }

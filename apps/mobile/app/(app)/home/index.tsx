@@ -17,7 +17,6 @@ import { useFeed } from '@/hooks/useFeed';
 import { useTrips } from '@/hooks/useTrips';
 import { useAuthStore } from '@/stores/authStore';
 import { useNetworkState } from '@/hooks/useNetworkState';
-import { useNotifications } from '@/hooks/useNotifications';
 import { getUserInitials } from '@solotravelsoul/shared';
 import { tripStatus } from '@/utils/dateUtils';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
@@ -25,7 +24,6 @@ import type { FeedItem } from '@/hooks/useFeed';
 
 function FeedHeader() {
   const profile = useAuthStore((s) => s.profile);
-  const { unreadCount } = useNotifications();
   const initials = getUserInitials(profile?.name ?? '?');
 
   return (
@@ -41,18 +39,6 @@ function FeedHeader() {
           style={styles.headerBtn}
         >
           <Ionicons name="add-circle-outline" size={26} color={Colors.primary} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => router.push('/(app)/notifications' as never)}
-          hitSlop={10}
-          style={styles.headerBtn}
-        >
-          <Ionicons name="notifications-outline" size={24} color={Colors.textPrimary} />
-          {unreadCount > 0 && (
-            <View style={styles.notifBadge}>
-              <Text style={styles.notifBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
-            </View>
-          )}
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => router.push('/(app)/profile')}

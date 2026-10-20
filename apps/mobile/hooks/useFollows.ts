@@ -7,9 +7,9 @@ import {
   subscribeFollowers,
   subscribeFollowing,
   getFollowingIds,
-  createSocialNotification,
 } from '@solotravelsoul/firebase';
 import { useAuthStore } from '@/stores/authStore';
+import { useFollowStore } from '@/stores/followStore';
 import type { Follow, FollowCounts } from '@solotravelsoul/shared';
 
 // ── useIsFollowing ────────────────────────────────────────────────────────────
@@ -37,20 +37,10 @@ export function useIsFollowing(targetUid: string) {
     try {
       if (wasFollowing) {
         await unfollowUser(myUid, targetUid);
+        useFollowStore.getState().remove(myUid, targetUid);
       } else {
         await followUser(myUid, targetUid);
-        // Send notification to the person being followed
-        const myProfile = useAuthStore.getState().profile;
-        if (myProfile) {
-          await createSocialNotification({
-            userId: targetUid,
-            type: 'followed_you',
-            actorId: myUid,
-            actorName: myProfile.name,
-            actorPhoto: myProfile.photoURL,
-            targetId: myUid,
-          }).catch(() => {});
-        }
+        useFollowStore.getState().add(myUid, targetUid);
       }
     } catch {
       setFollowing(wasFollowing); // revert on error
@@ -126,16 +116,21 @@ export function useFollowing(uid: string, limit = 50) {
 
 export function useFollowingIds() {
   const myUid = useAuthStore((s) => s.user?.uid ?? '');
-  const [ids, setIds] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
+  const storeUid = useFollowStore((s) => s.uid);
+  const ids = useFollowStore((s) => s.ids);
+  const loaded = useFollowStore((s) => s.loaded);
+  const ready = loaded && storeUid === myUid;
+  const [loading, setLoading] = useState(!ready);
 
+  // Loaded once per account; later follows and unfollows update the shared store directly.
   useEffect(() => {
     if (!myUid) { setLoading(false); return; }
+    if (useFollowStore.getState().loaded && useFollowStore.getState().uid === myUid) { setLoading(false); return; }
     setLoading(true);
     getFollowingIds(myUid)
-      .then(setIds)
+      .then((list) => { if (useAuthStore.getState().user?.uid === myUid) useFollowStore.getState().set(myUid, list); })
       .finally(() => setLoading(false));
   }, [myUid]);
 
-  return { ids, loading };
+  return { ids: ready ? ids : [], loading: loading && !ready };
 }

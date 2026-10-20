@@ -74,6 +74,32 @@ service cloud.firestore {
     function notDeleting() {
       return request.auth == null || (!deleting(request.auth.uid) && !suspended(request.auth.uid));
     }
+    // Terms barrier: user-generated content and messages can only be created by an account that accepted the CURRENT Terms
+    // and Privacy Policy version (users/{uid}.termsAcceptedVersion, written by the app's acceptance screen). The version
+    // below is TERMS_VERSION in packages/shared/src/policy.ts; a release test fails if they differ. Acceptance itself,
+    // sign-out, account deletion, reports and leaving groups or trips do not need it, so nobody is locked out of them.
+    function termsAccepted() {
+      return request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('termsAcceptedVersion', '') == '2026-10-19';
+    }
+    // Moderation of public trips and community groups (moderationStatus: visible | hidden | removed, set only by a moderator).
+    // While hidden or removed the organizer can neither edit, restore nor delete the item (deleting would let it be recreated
+    // at the same ID with a clean record); members can still leave and report. Account deletion runs with Admin credentials.
+    function itemVisible(path) {
+      return !exists(path) || get(path).data.get('moderationStatus', 'visible') == 'visible';
+    }
+    function itemModerated() {
+      return resource.data.get('moderationStatus', 'visible') != 'visible';
+    }
+    function touchesModeration() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(['moderationStatus', 'moderatedBy', 'moderatedAt']);
+    }
+    function moderatorSetsStatus() {
+      return isModerator()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['moderationStatus', 'moderatedBy', 'moderatedAt'])
+        && request.resource.data.moderationStatus in ['visible', 'hidden', 'removed']
+        && request.resource.data.moderatedBy == request.auth.uid && request.resource.data.moderatedAt == request.time;
+    }
     // No new inbound relationships (likes, saves, follows, comments, replies,
     // memberships, join requests) may target an account being deleted.
     // Group membership lists cannot be iterated in rules, so each write may add
@@ -365,7 +391,7 @@ service cloud.firestore {
     // ── User place reviews ────────────────────────────────────────────
     match /user_place_reviews/{reviewId} {
       allow read: if request.auth != null;
-      allow create: if notDeleting() && (request.auth != null
+      allow create: if notDeleting() && termsAccepted() && (request.auth != null
         && request.auth.uid == request.resource.data.userId);
       allow update, delete: if notDeleting() && (request.auth != null
         && request.auth.uid == resource.data.userId);
@@ -405,7 +431,11 @@ service cloud.firestore {
       // the SDK returns exists()=false with no data, so nothing is exposed.
       allow read: if request.auth != null
         && (resource == null || request.auth.uid in resource.data.participants);
-      allow create: if notDeleting() && (request.auth != null
+      // deletedParticipants is written only by the deletion Worker; createdBy (optional) lets the app hide a chat the
+      // recipient has no message in yet.
+      allow create: if notDeleting() && termsAccepted() && (request.auth != null
+        && !request.resource.data.keys().hasAny(['deletedParticipants'])
+        && (!request.resource.data.keys().hasAny(['createdBy']) || request.resource.data.createdBy == request.auth.uid)
         && request.auth.uid in request.resource.data.participants
         && request.resource.data.participants.size() == 2
         && request.resource.data.participants[0] != request.resource.data.participants[1]
@@ -417,7 +447,8 @@ service cloud.firestore {
         let message = /databases/$(database)/documents/direct_chats/$(chatId)/messages/$(id);
         let other = resource.data.participants[0] == request.auth.uid
           ? resource.data.participants[1] : resource.data.participants[0];
-        return unblocked(request.auth.uid, other) && !deleting(other) && !exists(message) && existsAfter(message)
+        return unblocked(request.auth.uid, other) && !deleting(other) && resource.data.get('deletedParticipants', []).size() == 0
+          && !exists(message) && existsAfter(message)
           && getAfter(message).data.senderId == request.auth.uid
           && request.resource.data.lastMessage.senderId == request.auth.uid
           && request.resource.data.lastMessage.text == getAfter(message).data.text
@@ -433,13 +464,14 @@ service cloud.firestore {
           && request.resource.data.unreadCounts.get(request.auth.uid, -1) == 0;
       }
       allow update: if notDeleting() && (request.auth != null && request.auth.uid in resource.data.participants
-        && (markRead() || sentMessage()));
+        && (markRead() || (termsAccepted() && sentMessage())));
 
       match /messages/{messageId} {
         allow read: if request.auth != null
           && request.auth.uid in
              get(/databases/$(database)/documents/direct_chats/$(chatId)).data.participants;
-        allow create: if notDeleting() && (request.auth != null
+        allow create: if notDeleting() && termsAccepted() && (request.auth != null
+          && get(/databases/$(database)/documents/direct_chats/$(chatId)).data.get('deletedParticipants', []).size() == 0
           && request.auth.uid in
              get(/databases/$(database)/documents/direct_chats/$(chatId)).data.participants
           && unblocked(get(/databases/$(database)/documents/direct_chats/$(chatId)).data.participants[0],
@@ -458,18 +490,79 @@ service cloud.firestore {
     }
 
     // ── Groups ────────────────────────────────────────────────────────
+    // ── Group chat invitations ─────────────────────────────────────────
+    // An invitation is addressed to an e-mail address, so the sender learns nothing about whether an account exists. The
+    // invited person (whose token e-mail matches) sees it, can accept or decline, and joining is a separate, rule-checked
+    // write on the group. Only the group's creator can invite; the creator can withdraw a pending invitation.
+    match /groupInvites/{inviteId} {
+      allow get: if request.auth != null && (resource == null || resource.data.inviterUid == request.auth.uid
+        || resource.data.inviteeEmail == request.auth.token.email.lower());
+      allow list: if request.auth != null && (resource.data.inviterUid == request.auth.uid
+        || resource.data.inviteeEmail == request.auth.token.email.lower());
+      function validInvite(inviteId) {
+        return request.auth != null
+          && request.resource.data.keys().hasOnly(['groupId', 'groupName', 'inviterUid', 'inviterName', 'inviteeEmail', 'status', 'createdAt', 'updatedAt', 'expiresAt'])
+          && request.resource.data.inviterUid == request.auth.uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.inviteeEmail is string && request.resource.data.inviteeEmail == request.resource.data.inviteeEmail.lower()
+          && request.resource.data.inviteeEmail.size() <= 254 && request.resource.data.inviteeEmail != request.auth.token.email.lower()
+          && inviteId == request.resource.data.groupId + '_' + request.resource.data.inviteeEmail.replace('%', '%25').replace('/', '%2F')
+          && exists(/databases/$(database)/documents/groups/$(request.resource.data.groupId))
+          && get(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.createdBy == request.auth.uid
+          && request.auth.uid in get(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.members
+          && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time
+          && request.resource.data.expiresAt > request.time && request.resource.data.expiresAt <= request.time + duration.value(14, 'd')
+          && request.resource.data.groupName is string && request.resource.data.groupName.size() <= 100
+          && request.resource.data.inviterName is string && request.resource.data.inviterName.size() <= 100
+          && clean(request.resource.data.groupName) && clean(request.resource.data.inviterName);
+      }
+      allow create: if notDeleting() && termsAccepted() && validInvite(inviteId);
+      // The group's creator can send a fresh invitation over one they withdrew or one that expired unanswered; a declined or
+      // accepted invitation is final (a person who said no is not asked again through the same address).
+      allow update: if notDeleting() && termsAccepted() && resource != null && resource.data.inviterUid == request.auth.uid
+        && (resource.data.status == 'cancelled' || (resource.data.status == 'pending' && resource.data.expiresAt <= request.time))
+        && request.resource.data.groupId == resource.data.groupId && validInvite(inviteId);
+      // Invited person: pending -> accepted | declined; creator: pending -> cancelled.
+      allow update: if notDeleting() && request.auth != null && resource != null && resource.data.status == 'pending'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && request.resource.data.updatedAt == request.time
+        && ((resource.data.inviteeEmail == request.auth.token.email.lower() && request.resource.data.status in ['accepted', 'declined']
+              && (request.resource.data.status == 'declined' || resource.data.expiresAt > request.time))
+          || (resource.data.inviterUid == request.auth.uid && request.resource.data.status == 'cancelled'));
+      allow delete: if false;
+    }
+
     match /groups/{groupId} {
       allow read: if request.auth != null
         && request.auth.uid in resource.data.members;
       // Creator must be a member, and must set themselves as createdBy.
-      allow create: if notDeleting() && (request.auth != null
-        && request.auth.uid in request.resource.data.members
+      // The creator starts alone: people are never added by someone else, they accept an invitation (groupInvites below).
+      allow create: if notDeleting() && termsAccepted() && (request.auth != null
+        && request.resource.data.members == [request.auth.uid]
+        && request.resource.data.get('pendingMembers', []).size() == 0
         && request.auth.uid == request.resource.data.createdBy
         && noDeletingIn(request.resource.data.members) && groupIdentityGuard());
-      // Creator can update any field (rename group, add/remove members, etc.)
+      // Creator can update any field (rename group, remove members, etc.) but cannot add people: no new members, no new pending members.
       allow update: if notDeleting() && (request.auth != null
         && request.auth.uid == resource.data.createdBy
-        && noDeletingIn(request.resource.data.members.removeAll(resource.data.members)) && groupIdentityGuard());
+        && request.resource.data.members.removeAll(resource.data.members).size() == 0
+        && request.resource.data.get('pendingMembers', []).removeAll(resource.data.get('pendingMembers', [])).size() == 0
+        && groupIdentityGuard());
+      // Joining: only the invited person, only by accepting a pending, unexpired invitation from this group's creator (the
+      // invite document changes to 'accepted' in the same write), only adding themselves, never when blocked either way.
+      function joiningByInvite() {
+        let invite = /databases/$(database)/documents/groupInvites/$(groupId + '_' + request.auth.token.email.lower().replace('%', '%25').replace('/', '%2F'));
+        return request.auth != null && termsAccepted()
+          && exists(invite) && get(invite).data.status == 'pending' && getAfter(invite).data.status == 'accepted'
+          && get(invite).data.groupId == groupId && get(invite).data.inviterUid == resource.data.createdBy
+          && get(invite).data.expiresAt > request.time
+          && unblocked(resource.data.createdBy, request.auth.uid)
+          && !(request.auth.uid in resource.data.members) && resource.data.members.size() < 50
+          && request.resource.data.members == resource.data.members.concat([request.auth.uid])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberInfo', 'unreadCounts', 'updatedAt'])
+          && groupIdentityGuard();
+      }
+      allow update: if notDeleting() && joiningByInvite();
       // Members (non-creator) can only write chat metadata, or remove themselves from the group.
       allow update: if notDeleting() && (request.auth != null
         && request.auth.uid in resource.data.members
@@ -488,7 +581,7 @@ service cloud.firestore {
         allow read: if request.auth != null
           && request.auth.uid in
              get(/databases/$(database)/documents/groups/$(groupId)).data.members;
-        allow create: if notDeleting() && (request.auth != null
+        allow create: if notDeleting() && termsAccepted() && (request.auth != null
           && request.auth.uid in
              get(/databases/$(database)/documents/groups/$(groupId)).data.members
           && request.resource.data.senderId == request.auth.uid
@@ -541,21 +634,22 @@ service cloud.firestore {
     }
     match /publicTrips/{tripId} {
       allow read: if request.auth != null;
-      allow create: if notDeleting() && (request.auth != null
+      allow create: if notDeleting() && termsAccepted() && (request.auth != null
         && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.get('moderationStatus', 'visible') == 'visible' && !request.resource.data.keys().hasAny(['moderatedBy', 'moderatedAt'])
         && request.resource.data.get('destinationKey', '') is string && request.resource.data.get('destinationKey', '').size() <= 80
         && validTripContext(request.resource.data)
         && cleanFields(request.resource.data, ['title', 'description', 'destination', 'expectations', 'budgetNote']));
       allow update: if notDeleting() && (request.auth != null
         && resource != null
-        && ((resource.data.ownerUid == request.auth.uid
+        && ((resource.data.ownerUid == request.auth.uid && !itemModerated() && !touchesModeration()
             && validTripContext(request.resource.data)
             && cleanFields(request.resource.data, ['title', 'description', 'destination', 'expectations', 'budgetNote']))
-          || memberLeavingTrip(tripId)));
+          || memberLeavingTrip(tripId) || moderatorSetsStatus()));
       // Allow delete even when doc doesn't exist (batch delete when trip goes private).
       allow delete: if notDeleting() && (request.auth != null
         && (resource == null
-            || resource.data.ownerUid == request.auth.uid));
+            || (resource.data.ownerUid == request.auth.uid && !itemModerated())));
     }
 
     // ── Community: Trip Members subcollection ────────────────────────
@@ -573,7 +667,8 @@ service cloud.firestore {
         ||
         // Phase 2 — join-request approval: publicTrip already exists.
         (exists(/databases/$(database)/documents/publicTrips/$(tripId))
-          && get(/databases/$(database)/documents/publicTrips/$(tripId)).data.ownerUid == request.auth.uid)
+          && get(/databases/$(database)/documents/publicTrips/$(tripId)).data.ownerUid == request.auth.uid
+          && get(/databases/$(database)/documents/publicTrips/$(tripId)).data.get('moderationStatus', 'visible') == 'visible')
       ));
       allow delete: if notDeleting() && (request.auth != null && (
         memberId == request.auth.uid   // member removing themselves
@@ -584,11 +679,17 @@ service cloud.firestore {
     }
 
     // ── Community: Trip Join Requests ─────────────────────────────────
+    // New and renewed requests need a trip that is visible and accepting requests (a missing trip document is not judged here).
+    function openTrip(tripId) {
+      let trip = /databases/$(database)/documents/publicTrips/$(tripId);
+      return !exists(trip) || (get(trip).data.get('moderationStatus', 'visible') == 'visible' && get(trip).data.get('isAcceptingMembers', true) == true);
+    }
     match /tripJoinRequests/{requestId} {
-      allow create: if notDeleting() && !deleting(request.resource.data.ownerUid) && (request.auth != null
+      allow create: if notDeleting() && termsAccepted() && !deleting(request.resource.data.ownerUid) && (request.auth != null
         && request.resource.data.requestorUid == request.auth.uid
         && request.resource.data.ownerUid != request.auth.uid
         && unblocked(request.auth.uid, request.resource.data.ownerUid)
+        && openTrip(request.resource.data.tripId)
         && request.resource.data.status == 'pending');
       // Allow read when resource == null so getTripJoinRequestStatus returns null
       // instead of throwing permission-denied for trips with no previous request.
@@ -614,6 +715,7 @@ service cloud.firestore {
           || (resource.data.requestorUid == request.auth.uid && resource.data.status == 'cancelled'
             && request.resource.data.status == 'pending'
             && !deleting(resource.data.ownerUid)
+            && openTrip(resource.data.tripId)
             && unblocked(request.auth.uid, resource.data.ownerUid))
         ));
       allow delete: if false;
@@ -626,16 +728,25 @@ service cloud.firestore {
         && (resource == null
             || resource.data.visibility == 'public'
             || resource.data.ownerUid == request.auth.uid);
-      allow create: if notDeleting() && (request.auth != null
+      allow create: if notDeleting() && termsAccepted() && (request.auth != null
         && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.get('moderationStatus', 'visible') == 'visible' && !request.resource.data.keys().hasAny(['moderatedBy', 'moderatedAt'])
         && cleanFields(request.resource.data, ['name', 'description', 'rules', 'destination']));
+      // A member (never the owner) leaving: their member document goes in the same write and the count drops by exactly one.
+      function memberLeavingGroup() {
+        let mine = /databases/$(database)/documents/travelGroups/$(groupId)/members/$(request.auth.uid);
+        return request.auth != null && exists(mine) && !existsAfter(mine) && get(mine).data.role != 'owner'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount', 'updatedAt'])
+          && request.resource.data.memberCount == resource.data.memberCount - 1 && request.resource.data.memberCount >= 1;
+      }
       allow update: if notDeleting() && (request.auth != null
         && resource != null
-        && resource.data.ownerUid == request.auth.uid
-        && cleanFields(request.resource.data, ['name', 'description', 'rules', 'destination']));
+        && ((resource.data.ownerUid == request.auth.uid && !itemModerated() && !touchesModeration()
+            && cleanFields(request.resource.data, ['name', 'description', 'rules', 'destination']))
+          || memberLeavingGroup() || moderatorSetsStatus()));
       allow delete: if notDeleting() && (request.auth != null
         && resource != null
-        && resource.data.ownerUid == request.auth.uid);
+        && resource.data.ownerUid == request.auth.uid && !itemModerated());
 
       // Group members: restricted to group owner; two-phase check mirrors trip members.
       match /members/{memberId} {
@@ -648,7 +759,8 @@ service cloud.firestore {
           ||
           // Phase 2 — join-request approval: group already exists.
           (exists(/databases/$(database)/documents/travelGroups/$(groupId))
-            && get(/databases/$(database)/documents/travelGroups/$(groupId)).data.ownerUid == request.auth.uid)
+            && get(/databases/$(database)/documents/travelGroups/$(groupId)).data.ownerUid == request.auth.uid
+            && get(/databases/$(database)/documents/travelGroups/$(groupId)).data.get('moderationStatus', 'visible') == 'visible')
         ));
         allow delete: if notDeleting() && (request.auth != null && (
           memberId == request.auth.uid   // member leaving themselves
@@ -661,9 +773,10 @@ service cloud.firestore {
 
     // ── Community: Group Join Requests ────────────────────────────────
     match /groupJoinRequests/{requestId} {
-      allow create: if notDeleting() && !deleting(request.resource.data.ownerUid) && (request.auth != null
+      allow create: if notDeleting() && termsAccepted() && !deleting(request.resource.data.ownerUid) && (request.auth != null
         && request.resource.data.requestorUid == request.auth.uid
         && request.resource.data.ownerUid != request.auth.uid
+        && itemVisible(/databases/$(database)/documents/travelGroups/$(request.resource.data.groupId))
         && request.resource.data.status == 'pending');
       // resource == null guard matches tripJoinRequests pattern.
       allow read: if request.auth != null
@@ -695,7 +808,7 @@ service cloud.firestore {
     // ── Community: Activity Feed ──────────────────────────────────────
     match /activityFeed/{feedItemId} {
       allow read: if request.auth != null;
-      allow create: if notDeleting() && (request.auth != null
+      allow create: if notDeleting() && termsAccepted() && (request.auth != null
         && request.resource.data.actorUid == request.auth.uid);
       allow delete: if notDeleting() && (request.auth != null
         && resource.data.actorUid == request.auth.uid);
@@ -742,14 +855,14 @@ service cloud.firestore {
       allow create: if notDeleting() && isModerator() && uid != request.auth.uid
         && request.resource.data.suspendedBy == request.auth.uid && request.resource.data.createdAt == request.time
         && request.resource.data.reason is string && request.resource.data.reason.size() <= 500;
-      allow delete: if notDeleting() && isModerator();
+      allow delete: if notDeleting() && isModerator() && !deleting(uid);
       allow update: if false;
     }
 
     // ── Phase 2: Travel Posts and Journals ────────────────────────────
     match /travelPosts/{postId} {
       allow read: if visible(resource.data);
-      allow create: if notDeleting() && (request.auth != null && request.resource.data.authorId == request.auth.uid
+      allow create: if notDeleting() && termsAccepted() && (request.auth != null && request.resource.data.authorId == request.auth.uid
         && request.resource.data.likeCount == 0 && request.resource.data.commentCount == 0 && request.resource.data.saveCount == 0
         && request.resource.data.get('reportCount', 0) == 0
         && !(request.resource.data.get('visibility', 'public') in ['under_review', 'removed'])
@@ -764,7 +877,7 @@ service cloud.firestore {
     }
     match /travelJournals/{journalId} {
       allow read: if visible(resource.data);
-      allow create: if notDeleting() && (request.auth != null && request.resource.data.authorId == request.auth.uid
+      allow create: if notDeleting() && termsAccepted() && (request.auth != null && request.resource.data.authorId == request.auth.uid
         && request.resource.data.likeCount == 0 && request.resource.data.commentCount == 0 && request.resource.data.saveCount == 0
         && request.resource.data.get('reportCount', 0) == 0
         && !(request.resource.data.get('visibility', 'public') in ['under_review', 'removed'])
@@ -820,7 +933,7 @@ service cloud.firestore {
     }
     match /postComments/{commentId} {
       allow read: if request.auth != null && (resource.data.authorId == request.auth.uid || readablePost(resource.data.postId));
-      allow create: if notDeleting() && (request.auth != null && request.resource.data.authorId == request.auth.uid
+      allow create: if notDeleting() && termsAccepted() && (request.auth != null && request.resource.data.authorId == request.auth.uid
         && readablePost(request.resource.data.postId)
         && unblocked(request.auth.uid, get(/databases/$(database)/documents/travelPosts/$(request.resource.data.postId)).data.authorId)
         && !deleting(authorOf('travelPosts', request.resource.data.postId))

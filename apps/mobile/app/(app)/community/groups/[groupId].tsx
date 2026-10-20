@@ -16,10 +16,11 @@ import {
   getTravelGroup,
   subscribeGroupMembers,
   getGroupJoinRequestStatus,
+  leaveGroup,
 } from '@solotravelsoul/firebase';
 import type { CommunityGroup, CommunityGroupMember, RequestStatus } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
-import { getUserInitials } from '@solotravelsoul/shared';
+import { getUserInitials, isListed } from '@solotravelsoul/shared';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 
 export default function GroupDetailScreen() {
@@ -32,6 +33,7 @@ export default function GroupDetailScreen() {
   const [requestStatus, setRequestStatus] = useState<RequestStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
     if (!groupId) return;
@@ -72,6 +74,30 @@ export default function GroupDetailScreen() {
   const isMember = members.some((m) => m.uid === uid);
   const isPending = requestStatus === 'pending';
   const isFull = group.memberCount >= group.capacity;
+  const unavailable = !isListed(group);
+
+  const confirmLeave = () => {
+    Alert.alert('Leave this group?', 'You will no longer be a member. You can ask to join again later if the group is accepting requests.', [
+      { text: 'Stay', style: 'cancel' },
+      {
+        text: 'Leave group',
+        style: 'destructive',
+        onPress: async () => {
+          setLeaving(true);
+          try {
+            await leaveGroup(group.groupId, uid);
+            setMembers((prev) => prev.filter((m) => m.uid !== uid));
+            setRequestStatus(null);
+            setGroup({ ...group, memberCount: Math.max(1, group.memberCount - 1) });
+          } catch {
+            Alert.alert('Could not leave', 'Please check your connection and try again.');
+          } finally {
+            setLeaving(false);
+          }
+        },
+      },
+    ]);
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -98,6 +124,16 @@ export default function GroupDetailScreen() {
           <Text style={styles.heroName}>{group.name}</Text>
           <Text style={styles.heroMeta}>{group.memberCount}/{group.capacity} members</Text>
         </View>
+
+        {unavailable && (
+          <View style={styles.noticeBox} accessibilityRole="alert">
+            <Text style={styles.noticeText}>
+              {isOwner
+                ? 'A moderator has hidden this group. It is not shown to other people, takes no new requests and cannot be edited or restored by you. Members can still leave.'
+                : 'This group is currently not available. It takes no new requests.'}
+            </Text>
+          </View>
+        )}
 
         {/* Owner card */}
         <TouchableOpacity
@@ -160,22 +196,29 @@ export default function GroupDetailScreen() {
 
         {/* Join / Action button */}
         <View style={styles.actionsCard}>
-          {isOwner ? (
+          {isOwner && unavailable ? (
+            <Text style={styles.noticeText}>Requests are paused while this group is hidden.</Text>
+          ) : isOwner ? (
             <Button
               label="Manage Requests"
               onPress={() => router.push(`/(app)/community/groups/${groupId}/requests` as never)}
               fullWidth
             />
           ) : isMember ? (
-            group.chatGroupId ? (
-              <Button
-                label="Open Chat"
-                onPress={() => router.push(`/(app)/groups/${group.chatGroupId}/chat` as never)}
-                fullWidth
-              />
-            ) : (
-              <Button label="You're a member" variant="secondary" disabled fullWidth onPress={() => {}} />
-            )
+            <View style={{ gap: Spacing.sm }}>
+              {group.chatGroupId ? (
+                <Button
+                  label="Open Chat"
+                  onPress={() => router.push(`/(app)/groups/${group.chatGroupId}/chat` as never)}
+                  fullWidth
+                />
+              ) : (
+                <Text style={styles.noticeText}>You are a member of this group.</Text>
+              )}
+              <Button label="Leave group" variant="secondary" onPress={confirmLeave} loading={leaving} fullWidth />
+            </View>
+          ) : unavailable ? (
+            <Button label="Not available" variant="secondary" disabled fullWidth onPress={() => {}} />
           ) : isPending ? (
             <Button label="Request Pending" variant="secondary" disabled fullWidth onPress={() => {}} />
           ) : isFull ? (
@@ -220,6 +263,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 const styles = StyleSheet.create({
+  noticeBox: { marginHorizontal: Spacing.lg, marginTop: Spacing.md, padding: Spacing.md, borderRadius: Radius.md, backgroundColor: Colors.warning + '22', borderWidth: 1, borderColor: Colors.warning + '66' },
+  noticeText: { fontSize: FontSize.sm, color: Colors.textPrimary },
   safe: { flex: 1, backgroundColor: Colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   navBar: {

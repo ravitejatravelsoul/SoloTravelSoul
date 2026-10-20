@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui';
 import { SentRequestCard, ReceivedRequestCard } from '@/components/community/JoinRequestCard';
 import { useMyJoinRequests, useOwnerJoinRequests } from '@/hooks/useTripJoinRequest';
+import { useTripAvailability } from '@/hooks/useTripAvailability';
 import { useAuthStore } from '@/stores/authStore';
 import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 
@@ -24,6 +25,8 @@ export default function JoinRequestsScreen() {
 
   const { sent, loading: sentLoading, cancel } = useMyJoinRequests(uid);
   const { received, loading: receivedLoading, approve, reject } = useOwnerJoinRequests(uid);
+
+  const availability = useTripAvailability([...sent, ...received].map((r) => r.tripId));
 
   const handleApprove = (req: (typeof received)[0]) => {
     Alert.alert(
@@ -118,12 +121,14 @@ export default function JoinRequestsScreen() {
             activeTab === 'sent' ? (
               <SentRequestCard
                 request={item}
+                availability={availability[item.tripId]}
                 onCancel={item.status === 'pending' ? () => handleCancel(item) : undefined}
                 onViewTrip={item.status === 'approved' ? () => router.push(`/(app)/discover/trips/${item.tripId}` as never) : undefined}
               />
             ) : (
               <ReceivedRequestCard
                 request={item}
+                availability={availability[item.tripId]}
                 onApprove={() => handleApprove(item)}
                 onReject={() => handleReject(item)}
               />

@@ -41,7 +41,7 @@ export default function GroupChatScreen() {
   const groupName = group?.name ?? 'Group Chat';
 
   const myName = profile?.name ?? 'Traveler';
-  const { messages, sendMessage } = useGroupChat(groupId ?? '', myName);
+  const { messages, sendMessage, restored } = useGroupChat(groupId ?? '', myName);
 
   // Build display list with date separators
   const listItems: ListItem[] = [];
@@ -133,7 +133,7 @@ export default function GroupChatScreen() {
         }
       />
 
-      <ChatInput onSend={sendMessage} />
+      <ChatInput onSend={sendMessage} restore={restored} />
     </KeyboardAvoidingView>
   );
 }

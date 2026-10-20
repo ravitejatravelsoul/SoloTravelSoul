@@ -21,6 +21,7 @@ import { useSavedPlaces } from '@/hooks/useSavedPlaces';
 import { formatDayLabel } from '@/utils/dateUtils';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import type { PlaceCategory, BundledAttraction, JournalEntry } from '@solotravelsoul/shared';
+import { ToastContainer } from '@/components/ui/Toast';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const allAttractions: BundledAttraction[] = require('@/assets/attractions.json');
@@ -521,6 +522,7 @@ export default function DayDetailScreen() {
             )}
           </KeyboardAvoidingView>
         </SafeAreaView>
+        <ToastContainer />
       </Modal>
 
       {/* ── Add Journal Modal ── */}

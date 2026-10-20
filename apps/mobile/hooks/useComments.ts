@@ -5,7 +5,6 @@ import {
   deleteComment,
   subscribeComments,
   subscribeReplies,
-  createSocialNotification,
 } from '@solotravelsoul/firebase';
 import { useWithoutBlocked } from './useWithoutBlocked';
 import { useAuthStore } from '@/stores/authStore';
@@ -45,23 +44,10 @@ export function useComments(postId: string, postAuthorId: string) {
         text: text.trim(),
         parentCommentId,
       });
-
-      // Notify post author (skip if commenting on own post)
-      if (myUid !== postAuthorId) {
-        await createSocialNotification({
-          userId: postAuthorId,
-          type: 'commented_post',
-          actorId: myUid,
-          actorName: profile.name,
-          actorPhoto: profile.photoURL,
-          targetId: postId,
-          targetTitle: text.slice(0, 80),
-        }).catch(() => {});
-      }
     } finally {
       setSubmitting(false);
     }
-  }, [profile, myUid, postId, postAuthorId]);
+  }, [profile, myUid, postId]);
 
   const remove = useCallback(async (commentId: string, parentCommentId: string | null) => {
     await deleteComment(commentId, postId, parentCommentId);

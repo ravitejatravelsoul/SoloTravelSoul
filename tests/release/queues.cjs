@@ -25,7 +25,7 @@ out.push({name:'Enqueue during queue drain',expected:1,actual:await q.getQueueSi
 
 // Chat queue uses the same concurrency contract, including in-flight enqueues.
 data.clear(); let send = async()=>{};
-const cq = load('apps/mobile/utils/chatQueue.ts', {'./queueLock':lock,
+const cq = load('apps/mobile/utils/chatQueue.ts', {'./queueLock':lock,'./draftRestore':load('apps/mobile/utils/draftRestore.ts',{}),
  '@react-native-async-storage/async-storage':{default:storage},
  '@solotravelsoul/firebase':{sendDirectMessage:(...args)=>send(...args),sendGroupMessage:async()=>{}}});
 const dm=id=>({type:'dm.send',chatId:'chat',senderId:'u',text:'hello',clientId:id,otherUids:['v']});

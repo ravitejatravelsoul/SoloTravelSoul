@@ -22,6 +22,8 @@ import {
 import type { ReportTargetType } from '@solotravelsoul/shared';
 import { db } from './firestore';
 
+export type ItemModerationStatus = 'visible' | 'hidden' | 'removed';
+
 export type ReportStatus = 'pending' | 'reviewing' | 'actioned' | 'dismissed';
 
 export interface ModerationReport {
@@ -41,6 +43,8 @@ export interface ReportTargetPreview {
   text: string;
   images: string[];
   visibility: string | null;
+  /** Trips and community groups: visible, hidden or removed by a moderator. */
+  moderationStatus: ItemModerationStatus | null;
 }
 
 export async function isModerator(uid: string): Promise<boolean> {
@@ -88,16 +92,17 @@ const TARGET_COLLECTION: Partial<Record<ReportTargetType, string>> = {
 export async function getReportTarget(report: Pick<ModerationReport, 'targetType' | 'targetId'>): Promise<ReportTargetPreview> {
   const coll = TARGET_COLLECTION[report.targetType];
   // Direct messages stay private: moderators act on the reported user, not the conversation.
-  if (!coll) return { exists: false, authorUid: null, text: '', images: [], visibility: null };
+  if (!coll) return { exists: false, authorUid: null, text: '', images: [], visibility: null, moderationStatus: null };
   const snap = await getDoc(doc(db, coll, report.targetId));
-  if (!snap.exists()) return { exists: false, authorUid: report.targetType === 'user' ? report.targetId : null, text: '', images: [], visibility: null };
+  if (!snap.exists()) return { exists: false, authorUid: report.targetType === 'user' ? report.targetId : null, text: '', images: [], visibility: null, moderationStatus: null };
   const d = snap.data();
   const authorUid = (d.authorId ?? d.ownerUid ?? d.uid ?? (report.targetType === 'user' ? report.targetId : null)) as string | null;
   const text = [d.caption, d.title, d.subtitle, d.body, d.text, d.displayName, d.bio, d.name, d.description]
     .filter((v) => typeof v === 'string' && v)
     .join('\n');
   const images = [...((d.images as string[] | undefined) ?? []), ...(d.coverImageURL ? [d.coverImageURL as string] : [])];
-  return { exists: true, authorUid, text, images, visibility: (d.visibility as string | undefined) ?? null };
+  return { exists: true, authorUid, text, images, visibility: (d.visibility as string | undefined) ?? null,
+    moderationStatus: report.targetType === 'trip' || report.targetType === 'group' ? ((d.moderationStatus as ItemModerationStatus | undefined) ?? 'visible') : null };
 }
 
 export async function reviewReport(reportId: string, moderatorUid: string, status: Exclude<ReportStatus, 'pending'>, resolution: string): Promise<void> {
@@ -151,4 +156,71 @@ export async function suspendUser(uid: string, moderatorUid: string, reason: str
 
 export async function unsuspendUser(uid: string): Promise<void> {
   await deleteDoc(doc(db, 'accountSuspensions', uid));
+}
+
+/**
+ * Hide ('hidden'), remove ('removed') or restore ('visible') a public trip or a community group. While it is not visible
+ * the app leaves it out of discovery and matching, the rules refuse new requests and approvals, and its owner can neither
+ * edit, delete nor restore it; members can still leave and anyone can still report it.
+ */
+export async function setItemModeration(
+  targetType: 'trip' | 'group',
+  targetId: string,
+  moderatorUid: string,
+  status: ItemModerationStatus,
+): Promise<void> {
+  await updateDoc(doc(db, targetType === 'trip' ? 'publicTrips' : 'travelGroups', targetId), {
+    moderationStatus: status,
+    moderatedBy: moderatorUid,
+    moderatedAt: serverTimestamp(),
+  });
+}
+
+export interface AccountSuspension {
+  uid: string;
+  reason: string;
+  suspendedBy: string;
+  createdAt: Date;
+}
+
+/** Every account currently suspended (moderators only). */
+export function subscribeSuspensions(callback: (suspensions: AccountSuspension[]) => void): () => void {
+  return onSnapshot(
+    collection(db, 'accountSuspensions'),
+    (snap) => callback(snap.docs.map((d) => ({
+      uid: d.id,
+      reason: (d.data().reason as string | undefined) ?? '',
+      suspendedBy: (d.data().suspendedBy as string | undefined) ?? '',
+      createdAt: d.data().createdAt instanceof Timestamp ? d.data().createdAt.toDate() : new Date(),
+    })).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())),
+    () => callback([]),
+  );
+}
+
+export interface ModeratedItem {
+  type: 'trip' | 'group';
+  id: string;
+  title: string;
+  ownerUid: string;
+  status: Exclude<ItemModerationStatus, 'visible'>;
+  moderatedAt: Date | null;
+}
+
+/** Public trips and community groups a moderator has hidden or removed, so they can be reviewed and restored later. */
+export function subscribeModeratedItems(callback: (items: ModeratedItem[]) => void): () => void {
+  let trips: ModeratedItem[] = [];
+  let groups: ModeratedItem[] = [];
+  const publish = () => callback([...trips, ...groups].sort((a, b) => (b.moderatedAt?.getTime() ?? 0) - (a.moderatedAt?.getTime() ?? 0)));
+  const map = (type: 'trip' | 'group') => (snap: import('firebase/firestore').QuerySnapshot): ModeratedItem[] => snap.docs.map((d) => ({
+    type,
+    id: d.id,
+    title: ((d.data().title ?? d.data().name) as string | undefined) ?? '(untitled)',
+    ownerUid: (d.data().ownerUid as string | undefined) ?? '',
+    status: d.data().moderationStatus as ModeratedItem['status'],
+    moderatedAt: d.data().moderatedAt instanceof Timestamp ? d.data().moderatedAt.toDate() : null,
+  }));
+  const filter = where('moderationStatus', 'in', ['hidden', 'removed']);
+  const unsubTrips = onSnapshot(query(collection(db, 'publicTrips'), filter), (snap) => { trips = map('trip')(snap); publish(); }, () => { trips = []; publish(); });
+  const unsubGroups = onSnapshot(query(collection(db, 'travelGroups'), filter), (snap) => { groups = map('group')(snap); publish(); }, () => { groups = []; publish(); });
+  return () => { unsubTrips(); unsubGroups(); };
 }

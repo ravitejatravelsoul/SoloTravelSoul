@@ -150,7 +150,8 @@ function app(net) {
   };
   const firebase = { subscribeToDirectMessages: (_c, cb) => { be.snapshot = cb; return () => {}; }, sendDirectMessage: write, markDirectChatRead: async () => {} };
   const lock = load('apps/mobile/utils/queueLock.ts', {});
-  const cq = load('apps/mobile/utils/chatQueue.ts', { './queueLock': lock, '@react-native-async-storage/async-storage': { default: storage }, '@solotravelsoul/firebase': { sendDirectMessage: write, sendGroupMessage: async () => {} } });
+  const draft = load('apps/mobile/utils/draftRestore.ts', {});
+  const cq = load('apps/mobile/utils/chatQueue.ts', { './queueLock': lock, './draftRestore': draft, '@react-native-async-storage/async-storage': { default: storage }, '@solotravelsoul/firebase': { sendDirectMessage: write, sendGroupMessage: async () => {} } });
   const netMod = load('apps/mobile/hooks/useNetworkState.ts', { react: rt.react, 'react-native': { AppState: net.AppState }, 'expo-network': net.expoNetwork }, net.clock);
   const user = { uid: 'u' };
   const auth = (sel) => sel({ user }); auth.getState = () => ({ user });
@@ -165,7 +166,7 @@ function app(net) {
     '@/utils/offlineCache': { getLatestSyncTime: async () => null, setLastSync: async () => {} },
   });
   const chat = load('apps/mobile/hooks/useMessages.ts', {
-    react: rt.react, '@solotravelsoul/firebase': firebase, '@/utils/chatQueue': cq, '@/stores/authStore': { useAuthStore: auth },
+    react: rt.react, '@solotravelsoul/firebase': firebase, '@/utils/chatQueue': cq, '@/utils/draftRestore': draft, '@/stores/authStore': { useAuthStore: auth },
     '@/hooks/useNetworkState': netMod, '@/stores/uiStore': ui, '@/hooks/useSyncEngine': sync,
   });
   const banner = rt.mount(() => netMod.useNetworkState().isConnected); // what the layout's banner reads

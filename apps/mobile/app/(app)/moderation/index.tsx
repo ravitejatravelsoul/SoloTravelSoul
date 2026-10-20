@@ -12,6 +12,12 @@ import {
   setContentVisibility,
   removeComment,
   suspendUser,
+  unsuspendUser,
+  setItemModeration,
+  subscribeSuspensions,
+  subscribeModeratedItems,
+  type AccountSuspension,
+  type ModeratedItem,
   type ModerationReport,
   type ReportTargetPreview,
 } from '@solotravelsoul/firebase';
@@ -70,6 +76,9 @@ export default function ModerationScreen() {
   const [previews, setPreviews] = useState<Record<string, ReportTargetPreview>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [enlarged, setEnlarged] = useState<string | null>(null);
+  const [tab, setTab] = useState<'reports' | 'hidden' | 'suspended'>('reports');
+  const [moderatedItems, setModeratedItems] = useState<ModeratedItem[]>([]);
+  const [suspensions, setSuspensions] = useState<AccountSuspension[]>([]);
 
   useEffect(() => {
     if (!uid) return;
@@ -80,6 +89,40 @@ export default function ModerationScreen() {
     if (!allowed) return;
     return subscribeOpenReports(setReports);
   }, [allowed]);
+
+  useEffect(() => {
+    if (!allowed) return;
+    return subscribeSuspensions(setSuspensions);
+  }, [allowed]);
+
+  useEffect(() => {
+    if (!allowed) return;
+    return subscribeModeratedItems(setModeratedItems);
+  }, [allowed]);
+
+  const restoreItem = useCallback(async (m: ModeratedItem) => {
+    setBusy(m.id);
+    try {
+      await setItemModeration(m.type, m.id, uid, 'visible');
+      addToast(`Restored. The ${m.type} is visible again.`, 'success');
+    } catch {
+      addToast('Could not restore it. Nothing was changed.', 'error');
+    } finally {
+      setBusy(null);
+    }
+  }, [uid, addToast]);
+
+  const lift = useCallback(async (s: AccountSuspension) => {
+    setBusy(s.uid);
+    try {
+      await unsuspendUser(s.uid);
+      addToast('Suspension lifted. The account can post and message again; it is not added back to traveler discovery.', 'success');
+    } catch {
+      addToast('Could not lift the suspension. Nothing was changed.', 'error');
+    } finally {
+      setBusy(null);
+    }
+  }, [addToast]);
 
   const preview = useCallback(async (r: ModerationReport) => {
     try {
@@ -114,6 +157,7 @@ export default function ModerationScreen() {
   const renderReport = ({ item: r }: { item: ModerationReport }) => {
     const p = previews[r.id];
     const content = r.targetType === 'post' || r.targetType === 'journal' ? r.targetType : null;
+    const item = r.targetType === 'trip' || r.targetType === 'group' ? r.targetType : null;
     return (
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{r.targetType} · {r.reason}</Text>
@@ -130,6 +174,7 @@ export default function ModerationScreen() {
                 <Text style={styles.meta}>{p.images.length} photo(s) · visibility {p.visibility ?? '—'}</Text>
               </>
             ) : null}
+            {p.moderationStatus ? <Text style={styles.meta}>Moderation status: {p.moderationStatus}</Text> : null}
           </View>
         ) : (
           <TouchableOpacity onPress={() => preview(r)}><Text style={styles.link}>Show reported item</Text></TouchableOpacity>
@@ -152,6 +197,27 @@ export default function ModerationScreen() {
               <TouchableOpacity style={styles.btn} onPress={() => act(r, 'Restore', () => setContentVisibility(content, r.targetId, uid, 'public'), 'Restored after review')}>
                 <Text style={styles.btnText}>Restore</Text>
               </TouchableOpacity>
+            )}
+            {item && (
+              <>
+                {p?.moderationStatus !== 'hidden' && p?.moderationStatus !== 'removed' && (
+                  <TouchableOpacity style={styles.btn} onPress={() => confirm(`Hide this ${r.targetType}? It leaves discovery and matching, takes no new requests, and its owner cannot restore it. Members can still leave and report.`, () =>
+                    act(r, 'Hide', () => setItemModeration(item, r.targetId, uid, 'hidden'), `${r.targetType} hidden pending review`))}>
+                    <Text style={styles.btnText}>Hide</Text>
+                  </TouchableOpacity>
+                )}
+                {p?.moderationStatus !== 'removed' && (
+                  <TouchableOpacity style={[styles.btn, styles.danger]} onPress={() => confirm(`Remove this ${r.targetType}? It stays removed until a moderator restores it.`, () =>
+                    act(r, 'Remove', () => setItemModeration(item, r.targetId, uid, 'removed'), `${r.targetType} removed`))}>
+                    <Text style={styles.btnText}>Remove</Text>
+                  </TouchableOpacity>
+                )}
+                {(p?.moderationStatus === 'hidden' || p?.moderationStatus === 'removed') && (
+                  <TouchableOpacity style={styles.btn} onPress={() => act(r, 'Restore', () => setItemModeration(item, r.targetId, uid, 'visible'), 'Restored after review')}>
+                    <Text style={styles.btnText}>Restore</Text>
+                  </TouchableOpacity>
+                )}
+              </>
             )}
             {r.targetType === 'comment' && (
               <TouchableOpacity style={[styles.btn, styles.danger]} onPress={() => confirm('Remove this comment?', () =>
@@ -183,13 +249,66 @@ export default function ModerationScreen() {
       {allowed === null ? <ActivityIndicator style={{ marginTop: 40 }} /> : !allowed ? (
         <Text style={styles.empty}>This area is only available to moderators.</Text>
       ) : (
-        <FlatList
-          data={reports}
-          keyExtractor={(r) => r.id}
-          renderItem={renderReport}
-          contentContainerStyle={{ padding: Spacing.md, gap: Spacing.md }}
-          ListEmptyComponent={<Text style={styles.empty}>No open reports.</Text>}
-        />
+        <>
+          <View style={styles.tabs}>
+            {(['reports', 'hidden', 'suspended'] as const).map((t) => (
+              <TouchableOpacity key={t} style={[styles.tab, tab === t && styles.tabActive]} onPress={() => setTab(t)} accessibilityRole="tab" accessibilityState={{ selected: tab === t }}>
+                <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>{t === 'reports' ? `Reports (${reports.length})` : t === 'hidden' ? `Hidden (${moderatedItems.length})` : `Suspended (${suspensions.length})`}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {tab === 'reports' ? (
+            <FlatList
+              data={reports}
+              keyExtractor={(r) => r.id}
+              renderItem={renderReport}
+              contentContainerStyle={{ padding: Spacing.md, gap: Spacing.md }}
+              ListEmptyComponent={<Text style={styles.empty}>No open reports.</Text>}
+            />
+          ) : tab === 'hidden' ? (
+            <FlatList
+              data={moderatedItems}
+              keyExtractor={(m) => `${m.type}:${m.id}`}
+              renderItem={({ item: m }) => (
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>{m.type} · {m.status}</Text>
+                  <Text style={styles.previewText}>{m.title}</Text>
+                  <Text style={styles.meta}>{m.id}</Text>
+                  {busy === m.id ? <ActivityIndicator /> : (
+                    <View style={styles.actions}>
+                      <TouchableOpacity style={styles.btn} onPress={() => restoreItem(m)}>
+                        <Text style={styles.btnText}>Restore</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              )}
+              contentContainerStyle={{ padding: Spacing.md, gap: Spacing.md }}
+              ListEmptyComponent={<Text style={styles.empty}>Nothing hidden or removed.</Text>}
+            />
+          ) : (
+            <FlatList
+              data={suspensions}
+              keyExtractor={(x) => x.uid}
+              renderItem={({ item: sus }) => (
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Suspended account</Text>
+                  <Text style={styles.meta}>{sus.uid} · since {age(sus.createdAt)} ago</Text>
+                  {sus.reason ? <Text style={styles.details}>“{sus.reason}”</Text> : null}
+                  {busy === sus.uid ? <ActivityIndicator /> : (
+                    <View style={styles.actions}>
+                      <TouchableOpacity style={styles.btn} onPress={() => confirm('Lift this suspension? The account can post, message and upload again.', () => lift(sus))}>
+                        <Text style={styles.btnText}>Lift suspension</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              )}
+              contentContainerStyle={{ padding: Spacing.md, gap: Spacing.md }}
+              ListEmptyComponent={<Text style={styles.empty}>No suspended accounts.</Text>}
+            />
+          )}
+        </>
       )}
       <Modal visible={!!enlarged} transparent animationType="fade" onRequestClose={() => setEnlarged(null)}>
         <TouchableOpacity style={styles.viewer} onPress={() => setEnlarged(null)} accessibilityLabel="Close photo" activeOpacity={1}>
@@ -215,6 +334,11 @@ const styles = StyleSheet.create({
   btn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: Radius.sm, backgroundColor: Colors.primary },
   danger: { backgroundColor: Colors.error },
   btnText: { color: '#fff', fontSize: FontSize.sm, fontWeight: FontWeight.semibold },
+  tabs: { flexDirection: 'row', paddingHorizontal: Spacing.md, gap: Spacing.sm },
+  tab: { flex: 1, paddingVertical: 10, borderRadius: Radius.sm, backgroundColor: Colors.surface, alignItems: 'center' },
+  tabActive: { backgroundColor: Colors.primary },
+  tabText: { fontSize: FontSize.sm, color: Colors.textSecondary, fontWeight: FontWeight.semibold },
+  tabTextActive: { color: '#fff' },
   empty: { textAlign: 'center', marginTop: 40, color: Colors.textSecondary },
   thumbRow: { gap: Spacing.sm, paddingVertical: 4 },
   thumb: { width: 120, height: 120, borderRadius: Radius.sm, overflow: 'hidden', backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' },

@@ -10,6 +10,8 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useDirectChats } from '@/hooks/useDirectChats';
+import { useMyGroupInvites } from '@/hooks/useGroupInvites';
+import { GroupInviteCard } from '@/components/chat/GroupInviteCard';
 import { useAuthStore } from '@/stores/authStore';
 import { useHaptics } from '@/hooks/useHaptics';
 import { ChatListItem } from '@/components/chat/ChatListItem';
@@ -59,7 +61,10 @@ export default function ChatsIndexScreen() {
   const router = useRouter();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const haptics = useHaptics();
-  const { directChats, groups, loadingChats } = useDirectChats();
+  const { directChats: allDirectChats, groups, loadingChats } = useDirectChats();
+  const invites = useMyGroupInvites();
+  // A chat nobody has written in yet (someone opened Message and left) is not a conversation: not shown to either side.
+  const directChats = allDirectChats.filter((c) => c.lastMessage !== null);
   const [refreshing, setRefreshing] = useState(false);
 
   const handleRefresh = useCallback(async () => {
@@ -96,7 +101,7 @@ export default function ChatsIndexScreen() {
     : [];
 
   const sections = [...dmSection, ...groupSection];
-  const isEmpty = directChats.length === 0 && groups.length === 0 && !loadingChats;
+  const isEmpty = directChats.length === 0 && groups.length === 0 && invites.length === 0 && !loadingChats;
 
   const renderDM = useCallback((chat: DirectChat) => {
     const other = chat.participants.find((p) => p !== uid);
@@ -185,6 +190,14 @@ export default function ChatsIndexScreen() {
       ) : (
         <SectionList
           sections={sections}
+          ListHeaderComponent={invites.length > 0 ? (
+            <View>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Group invitations</Text>
+              </View>
+              {invites.map((invite) => <GroupInviteCard key={invite.id} invite={invite} />)}
+            </View>
+          ) : null}
           keyExtractor={(item) => item.id}
           renderSectionHeader={({ section }) => (
             <View style={styles.sectionHeader}>

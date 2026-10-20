@@ -8,7 +8,6 @@ import {
   updateDoc,
   arrayUnion,
   arrayRemove,
-  deleteField,
   FieldPath,
   onSnapshot,
   query,
@@ -29,6 +28,7 @@ import type {
   TravelGroupMessage,
   UserLookup,
   ChatParticipantInfo,
+  GroupInvite,
 } from '@solotravelsoul/shared';
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -53,6 +53,7 @@ function docToDirectChat(id: string, d: DocumentData): DirectChat {
       : null,
     updatedAt: tsToDate(d.updatedAt),
     unreadCounts: d.unreadCounts ?? {},
+    deletedParticipants: Array.isArray(d.deletedParticipants) ? d.deletedParticipants : [],
   };
 }
 
@@ -189,6 +190,7 @@ export async function getOrCreateDirectChat(
     try {
       await setDoc(ref, {
         participants: sorted,
+        createdBy: uid1,
         participantInfo: { [uid1]: info1, [uid2]: info2 },
         lastMessage: null,
         updatedAt: serverTimestamp(),
@@ -265,133 +267,149 @@ export function subscribeToGroups(
     ),
     (snap) => {
       if (process.env.NODE_ENV !== 'production') console.log('[Chats] group chats:', snap.docs.length);
-      const ready = snap.docs.filter((d) => !((d.data().pendingMembers as string[] | undefined)?.length));
-      // Creation interrupted between chunks (app killed, offline): the creator's
-      // client finishes it — or rolls it back — whenever it sees the group again.
-      snap.docs
-        .filter((d) => d.data().createdBy === uid && (d.data().pendingMembers as string[] | undefined)?.length)
-        .forEach((d) => resumeGroupCreation(d.id));
-      callback(ready.map((d) => docToTravelGroup(d.id, d.data())));
+      callback(snap.docs.map((d) => docToTravelGroup(d.id, d.data())));
     },
     (err) => { if (err.code !== 'cancelled') callback([]); },
   );
 }
 
-// Rules check each newly added member or pending member against the
-// account-deletion barrier (one document read each; Firestore allows 10 per
-// write), so a write adds at most this many identities.
-const GROUP_MEMBERS_PER_WRITE = 8;
-/** Pending members listed by the create write itself (creator + these ≤ 8 checks). */
-const GROUP_PENDING_AT_CREATE = 7;
-
 /**
- * Creates a group in resumable chunks. The create write holds the creator as
- * the only member and the first invitees as `pendingMembers`; further invitees
- * are appended to `pendingMembers` in chunks, then moved into `members`. A
- * group with pending members is hidden from every member's list until creation
- * completes, so an interruption never exposes a half-built group (an
- * interruption while appending completes with the invitees listed so far).
- * Names and unread entries are written only together with the invitee they
- * describe. An invitee the rules refuse (e.g. their account is being deleted)
- * is dropped; everyone else is kept. A refused invitee in the first chunk
- * refuses the whole creation.
+ * Creates a group chat with only its creator in it. Nobody is added by someone else: other people join by
+ * accepting an invitation (inviteToGroup / respondToGroupInvite).
  */
 export async function createGroup(
   createdBy: string,
   name: string,
-  members: string[],
-  memberInfo: Record<string, ChatParticipantInfo>,
+  creatorInfo: ChatParticipantInfo,
   tripId?: string,
 ): Promise<string> {
   const groupRef = doc(collection(db, 'groups'));
-  const invitees = [...new Set(members.filter((m) => m !== createdBy))];
-  const first = invitees.slice(0, GROUP_PENDING_AT_CREATE);
-  const pick = (uids: string[]) => Object.fromEntries(uids.filter((u) => memberInfo[u]).map((u) => [u, memberInfo[u]]));
-  resumingGroups.add(groupRef.id); // this client finishes it; its own listener must not race the appends
-  try {
-    await setDoc(groupRef, {
-      name: name.trim(),
-      createdBy,
-      members: [createdBy],
-      pendingMembers: first,
-      memberInfo: pick([createdBy, ...first]),
-      tripId: tripId ?? null,
-      lastMessage: null,
-      updatedAt: serverTimestamp(),
-      unreadCounts: Object.fromEntries([createdBy, ...first].map((m) => [m, 0])),
-      createdAt: serverTimestamp(),
-    });
-    for (let i = GROUP_PENDING_AT_CREATE; i < invitees.length; i += GROUP_MEMBERS_PER_WRITE) {
-      await appendPending(groupRef.id, invitees.slice(i, i + GROUP_MEMBERS_PER_WRITE), memberInfo);
-    }
-    await completeGroupCreation(groupRef.id);
-  } finally {
-    resumingGroups.delete(groupRef.id);
-  }
+  await setDoc(groupRef, {
+    name: name.trim(),
+    createdBy,
+    members: [createdBy],
+    memberInfo: { [createdBy]: creatorInfo },
+    tripId: tripId ?? null,
+    lastMessage: null,
+    updatedAt: serverTimestamp(),
+    unreadCounts: { [createdBy]: 0 },
+    createdAt: serverTimestamp(),
+  });
   return groupRef.id;
 }
 
-/** Lists invitees as pending, with their name and unread entry; refused invitees are skipped. */
-async function appendPending(groupId: string, uids: string[], memberInfo: Record<string, ChatParticipantInfo>): Promise<void> {
-  const ref = doc(db, 'groups', groupId);
-  const write = (chunk: string[]) => {
-    const fields: unknown[] = [];
-    for (const u of chunk) {
-      if (memberInfo[u]) fields.push(new FieldPath('memberInfo', u), memberInfo[u]);
-      fields.push(new FieldPath('unreadCounts', u), 0);
-    }
-    return updateDoc(ref, new FieldPath('pendingMembers'), arrayUnion(...chunk), ...fields);
+// ── Group invitations ─────────────────────────────────────────────────
+// An invitation is addressed to an e-mail address, so the inviter learns nothing about whether an account exists
+// and nobody's profile is looked up. The person it names sees it in their Chats, can accept or decline, and
+// joins only by accepting.
+
+/** Invitations expire after a week (the rules allow up to two, which leaves room for device clock error). */
+export const GROUP_INVITE_DAYS = 7;
+
+function docToGroupInvite(id: string, d: DocumentData): GroupInvite {
+  return {
+    id,
+    groupId: d.groupId ?? '',
+    groupName: d.groupName ?? '',
+    inviterUid: d.inviterUid ?? '',
+    inviterName: d.inviterName ?? '',
+    inviteeEmail: d.inviteeEmail ?? '',
+    status: d.status ?? 'pending',
+    createdAt: tsToDate(d.createdAt),
+    expiresAt: tsToDate(d.expiresAt),
   };
-  try {
-    await write(uids);
-  } catch (err) {
-    if (!isDenied(err)) throw err;
-    for (const u of uids) {
-      try {
-        await write([u]);
-      } catch (memberErr) {
-        if (!isDenied(memberErr)) throw memberErr;
-      }
-    }
-  }
 }
 
-const isDenied = (err: unknown) => (err as { code?: string }).code === 'permission-denied';
-
-/** Moves pending members into the group chunk by chunk; idempotent and safe to repeat. */
-export async function completeGroupCreation(groupId: string): Promise<void> {
-  const ref = doc(db, 'groups', groupId);
-  for (;;) {
-    const snap = await getDoc(ref);
-    const pending = (snap.exists() ? (snap.data().pendingMembers as string[] | undefined) : undefined) ?? [];
-    if (pending.length === 0) return;
-    const chunk = pending.slice(0, GROUP_MEMBERS_PER_WRITE);
-    try {
-      await updateDoc(ref, { members: arrayUnion(...chunk), pendingMembers: arrayRemove(...chunk) });
-    } catch (err) {
-      if (!isDenied(err)) throw err;
-      // Find the refused member(s) one at a time and drop only them.
-      for (const member of chunk) {
-        try {
-          await updateDoc(ref, { members: arrayUnion(member), pendingMembers: arrayRemove(member) });
-        } catch (memberErr) {
-          if (!isDenied(memberErr)) throw memberErr;
-          await updateDoc(ref, new FieldPath('pendingMembers'), arrayRemove(member),
-            new FieldPath('memberInfo', member), deleteField(),
-            new FieldPath('unreadCounts', member), deleteField());
-        }
-      }
-    }
-  }
+export function groupInviteId(groupId: string, email: string): string {
+  return `${groupId}_${emailLookupId(email)}`;
 }
 
-const resumingGroups = new Set<string>();
-function resumeGroupCreation(groupId: string): void {
-  if (resumingGroups.has(groupId)) return;
-  resumingGroups.add(groupId);
-  completeGroupCreation(groupId)
-    .catch(() => {})
-    .finally(() => resumingGroups.delete(groupId));
+/** Sends (or re-sends after a decline, cancellation or expiry) an invitation. Never reveals whether the address has an account. */
+export async function inviteToGroup(
+  group: { id: string; name: string },
+  inviter: { uid: string; name: string },
+  email: string,
+): Promise<void> {
+  const inviteeEmail = email.trim().toLowerCase();
+  const ref = doc(db, 'groupInvites', groupInviteId(group.id, inviteeEmail));
+  const expiresAt = Timestamp.fromMillis(Date.now() + GROUP_INVITE_DAYS * 24 * 60 * 60 * 1000);
+  const data = {
+    groupId: group.id,
+    groupName: group.name,
+    inviterUid: inviter.uid,
+    inviterName: inviter.name,
+    inviteeEmail,
+    status: 'pending',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    expiresAt,
+  };
+  // A declined or accepted invitation is final (the rules refuse to overwrite it); a cancelled or expired one can be re-sent.
+  await setDoc(ref, data);
+}
+
+/** The invitations addressed to the signed-in person's e-mail that they can still act on. */
+export function subscribeToMyGroupInvites(
+  email: string,
+  callback: (invites: GroupInvite[]) => void,
+): Unsubscribe {
+  return onSnapshot(
+    query(
+      collection(db, 'groupInvites'),
+      where('inviteeEmail', '==', email.trim().toLowerCase()),
+      where('status', '==', 'pending'),
+    ),
+    (snap) => {
+      const now = Date.now();
+      callback(snap.docs.map((d) => docToGroupInvite(d.id, d.data())).filter((i) => i.expiresAt.getTime() > now));
+    },
+    (err) => { if (err.code !== 'cancelled') callback([]); },
+  );
+}
+
+/** The invitations this person sent for one group (creator view): pending ones can be withdrawn. */
+export function subscribeToGroupInvitesSent(
+  groupId: string,
+  inviterUid: string,
+  callback: (invites: GroupInvite[]) => void,
+): Unsubscribe {
+  return onSnapshot(
+    query(
+      collection(db, 'groupInvites'),
+      where('inviterUid', '==', inviterUid),
+      where('groupId', '==', groupId),
+    ),
+    (snap) => callback(snap.docs.map((d) => docToGroupInvite(d.id, d.data()))),
+    (err) => { if (err.code !== 'cancelled') callback([]); },
+  );
+}
+
+export async function cancelGroupInvite(inviteId: string): Promise<void> {
+  await updateDoc(doc(db, 'groupInvites', inviteId), { status: 'cancelled', updatedAt: serverTimestamp() });
+}
+
+export async function declineGroupInvite(inviteId: string): Promise<void> {
+  await updateDoc(doc(db, 'groupInvites', inviteId), { status: 'declined', updatedAt: serverTimestamp() });
+}
+
+/**
+ * Accepting joins the group and marks the invitation accepted in one atomic batch. The rules check that the
+ * invitation is addressed to the signed-in e-mail, still pending and not expired, and that nothing else about the
+ * group changes.
+ */
+export async function acceptGroupInvite(invite: GroupInvite, me: { uid: string; info: ChatParticipantInfo }): Promise<void> {
+  const batch = writeBatch(db);
+  const inviteRef = doc(db, 'groupInvites', invite.id);
+  const groupRef = doc(db, 'groups', invite.groupId);
+  batch.update(inviteRef, { status: 'accepted', updatedAt: serverTimestamp() });
+  batch.update(
+    groupRef,
+    new FieldPath('members'), arrayUnion(me.uid),
+    new FieldPath('memberInfo', me.uid), me.info,
+    new FieldPath('unreadCounts', me.uid), 0,
+    new FieldPath('updatedAt'), serverTimestamp(),
+  );
+  await batch.commit();
 }
 
 export function subscribeToGroupMessages(

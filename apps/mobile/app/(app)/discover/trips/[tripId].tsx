@@ -18,7 +18,7 @@ import { getPublicTrip, getPublicProfile, subscribePublicTripMembers, getTripJoi
 import type { PublicTrip, TripMember, RequestStatus, NearbyTraveler } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
-import { getUserInitials, preferencesOf } from '@solotravelsoul/shared';
+import { getUserInitials, preferencesOf, isListed } from '@solotravelsoul/shared';
 
 function formatDateRange(start: Date, end: Date): string {
   const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };
@@ -150,6 +150,7 @@ export default function PublicTripDetailScreen() {
   const isMember = members.some((m) => m.uid === uid);
   const isPending = requestStatus === 'pending';
   const isFull = trip.maxMembers != null && trip.memberCount >= trip.maxMembers;
+  const unavailable = !isListed(trip);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -172,6 +173,16 @@ export default function PublicTripDetailScreen() {
           <Text style={styles.heroDestination}>{trip.destination}</Text>
           <Text style={styles.heroTitle}>{trip.title || trip.destination}</Text>
         </View>
+
+        {unavailable && (
+          <View style={styles.noticeBox} accessibilityRole="alert">
+            <Text style={styles.noticeText}>
+              {isOwner
+                ? 'A moderator has hidden this trip. It is not shown to other people, takes no new requests and cannot be edited or restored by you. Members can still leave.'
+                : 'This trip is currently not available. It takes no new requests.'}
+            </Text>
+          </View>
+        )}
 
         {/* Owner card */}
         <TouchableOpacity
@@ -241,7 +252,9 @@ export default function PublicTripDetailScreen() {
 
         {/* Actions */}
         <View style={styles.actionsCard}>
-          {isOwner ? (
+          {isOwner && unavailable ? (
+            <Text style={styles.memberNote}>Requests are paused while this trip is hidden.</Text>
+          ) : isOwner ? (
             <Button
               label="Manage Requests"
               onPress={() => router.push(`/(app)/trips/${tripId}/requests` as never)}
@@ -263,6 +276,8 @@ export default function PublicTripDetailScreen() {
               ])}
               fullWidth
             />
+          ) : unavailable ? (
+            <Button label="Not available" variant="secondary" onPress={() => {}} disabled fullWidth />
           ) : isFull ? (
             <Button label="Trip is Full" variant="secondary" onPress={() => {}} disabled fullWidth />
           ) : !trip.isAcceptingMembers ? (
@@ -334,6 +349,8 @@ function DetailRow({ icon, label, sublabel }: { icon: string; label: string; sub
 }
 
 const styles = StyleSheet.create({
+  noticeBox: { marginHorizontal: Spacing.lg, marginTop: Spacing.md, padding: Spacing.md, borderRadius: Radius.md, backgroundColor: Colors.warning + '22', borderWidth: 1, borderColor: Colors.warning + '66' },
+  noticeText: { fontSize: FontSize.sm, color: Colors.textPrimary },
   safe: { flex: 1, backgroundColor: Colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   navBar: {

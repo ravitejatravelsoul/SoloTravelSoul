@@ -17,6 +17,7 @@ import { Text } from '@/components/ui';
 import { formatTripSummary } from '@/utils/formatTripSummary';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import type { PlannedTrip, ItineraryDay, ChecklistItem } from '@solotravelsoul/shared';
+import { ToastContainer } from '@/components/ui/Toast';
 
 interface Props {
   visible: boolean;
@@ -159,6 +160,7 @@ export function ExportPreviewModal({ visible, onClose, trip, itinerary, checklis
           </TouchableOpacity>
         </View>
       </SafeAreaView>
+      <ToastContainer />
     </Modal>
   );
 }

@@ -5,6 +5,7 @@
   collection,
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
   setDoc,
   updateDoc,
@@ -22,6 +23,7 @@
   runTransaction,
   connectFirestoreEmulator,
   type DocumentData,
+  type DocumentReference,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import { app, emulatorHost } from './config';
@@ -32,6 +34,7 @@ function isOfflineError(err: unknown): boolean {
   return code === 'unavailable' || code === 'failed-precondition';
 }
 import type {
+  ModerationStatus,
   UserProfile,
   PlannedTrip,
   ItineraryDay,
@@ -58,7 +61,7 @@ import type {
   RequestStatus,
   ReportTargetType,
 } from '@solotravelsoul/shared';
-import { DEFAULT_USER_PROFILE, REPORT_HIDE_THRESHOLD, destinationKey as toDestinationKey, discoveryRecordFields, isDiscoverable } from '@solotravelsoul/shared';
+import { DEFAULT_USER_PROFILE, REPORT_HIDE_THRESHOLD, destinationKey as toDestinationKey, discoveryRecordFields, isDiscoverable, isListed } from '@solotravelsoul/shared';
 import type { SharedTrip } from '@solotravelsoul/shared';
 
 // Use memoryLocalCache so documents fetched this session are reused if
@@ -581,6 +584,10 @@ export async function updateProfileVisibility(
 
 // â”€â”€ Community: Public Trips â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+function moderationOf(d: DocumentData): { moderationStatus?: ModerationStatus } {
+  return d.moderationStatus === 'hidden' || d.moderationStatus === 'removed' ? { moderationStatus: d.moderationStatus } : {};
+}
+
 function publicTripFromDoc(id: string, d: DocumentData): PublicTrip {
   return {
     tripId: id,
@@ -600,6 +607,7 @@ function publicTripFromDoc(id: string, d: DocumentData): PublicTrip {
     ...(typeof d.destinationKey === 'string' ? { destinationKey: d.destinationKey } : {}),
     ...(typeof d.expectations === 'string' && d.expectations ? { expectations: d.expectations } : {}),
     ...(typeof d.budgetNote === 'string' && d.budgetNote ? { budgetNote: d.budgetNote } : {}),
+    ...moderationOf(d),
     createdAt: tsToDate(d.createdAt),
     updatedAt: tsToDate(d.updatedAt),
   };
@@ -718,6 +726,22 @@ export async function getPublicTrip(tripId: string): Promise<PublicTrip | null> 
   }
 }
 
+export type TripAvailability = 'available' | 'unavailable' | 'gone' | 'unknown';
+
+/**
+ * Whether a public trip can still be acted on: 'gone' (deleted, or its organizer's account was), 'unavailable'
+ * (hidden or removed by a moderator, or no longer taking requests) or 'unknown' when it could not be checked (offline).
+ */
+export async function getTripAvailability(tripId: string): Promise<TripAvailability> {
+  try {
+    const snap = await getDoc(doc(db, 'publicTrips', tripId));
+    if (!snap.exists()) return 'gone';
+    return isListed(moderationOf(snap.data())) ? 'available' : 'unavailable';
+  } catch {
+    return 'unknown';
+  }
+}
+
 /** One traveler's discovery record (only exists while they are public and discoverable). */
 export async function getNearbyTraveler(uid: string): Promise<NearbyTraveler | null> {
   try {
@@ -734,10 +758,29 @@ export async function getNearbyTraveler(uid: string): Promise<NearbyTraveler | n
  * member count goes down by one in the same batch (the rules accept exactly that change from a member).
  */
 export async function leavePublicTrip(tripId: string, uid: string): Promise<void> {
+  await leaveOnce(doc(db, 'trips', tripId, 'members', uid), doc(db, 'publicTrips', tripId));
+}
+
+/**
+ * Leaving removes the member document and lowers the public count in one batch, and the rules accept it only while the
+ * member document still exists, so the count can fall once per membership. A retry after a lost acknowledgement (or a
+ * second tap racing the first) therefore finds the member already gone and succeeds without touching the count.
+ */
+async function leaveOnce(memberRef: DocumentReference, parentRef: DocumentReference): Promise<void> {
+  const stillMember = async () => (await getDoc(memberRef)).exists();
+  const first = await getDoc(memberRef);
+  if (!first.exists()) return;
+  // The organizer owns the trip or group; they delete it, they do not leave it.
+  if (first.data().role === 'owner') throw Object.assign(new Error('The organizer cannot leave their own trip or group.'), { code: 'community/organizer-cannot-leave' });
   const batch = writeBatch(db);
-  batch.delete(doc(db, 'trips', tripId, 'members', uid));
-  batch.update(doc(db, 'publicTrips', tripId), { memberCount: increment(-1), updatedAt: serverTimestamp() });
-  await batch.commit();
+  batch.delete(memberRef);
+  batch.update(parentRef, { memberCount: increment(-1), updatedAt: serverTimestamp() });
+  try {
+    await batch.commit();
+  } catch (err) {
+    if ((err as { code?: string }).code === 'permission-denied' && !(await stillMember().catch(() => true))) return;
+    throw err;
+  }
 }
 
 /** Records that the signed-in user accepted the Terms and Privacy Policy version (checked before posting or messaging). */
@@ -772,7 +815,7 @@ export function subscribePublicTrips(
   }
 
   return onSnapshot(q, (snap) => {
-    const trips = snap.docs.map((d) => publicTripFromDoc(d.id, d.data()));
+    const trips = snap.docs.map((d) => publicTripFromDoc(d.id, d.data())).filter(isListed);
     const last = snap.docs[snap.docs.length - 1] ?? null;
     let filtered = trips;
     if (filters.destination) {
@@ -1019,6 +1062,7 @@ function travelGroupFromDoc(id: string, d: DocumentData): CommunityGroup {
     rules: (d.rules as string) ?? '',
     chatGroupId: (d.chatGroupId as string | null) ?? null,
     isAcceptingMembers: (d.isAcceptingMembers as boolean) ?? true,
+    ...moderationOf(d),
     createdAt: tsToDate(d.createdAt),
     updatedAt: tsToDate(d.updatedAt),
   };
@@ -1104,7 +1148,7 @@ export function subscribePublicTravelGroups(
     limit(pageLimit)
   );
   return onSnapshot(q, (snap) => {
-    let groups = snap.docs.map((d) => travelGroupFromDoc(d.id, d.data()));
+    let groups = snap.docs.map((d) => travelGroupFromDoc(d.id, d.data())).filter(isListed);
     if (filters.destination) {
       const dest = filters.destination.toLowerCase();
       groups = groups.filter((g) => g.destination.toLowerCase().includes(dest));
@@ -1260,14 +1304,9 @@ export async function removeGroupMember(
   await batch.commit();
 }
 
+/** A member (never the owner) leaves a community group; safe to retry (see leaveOnce). */
 export async function leaveGroup(groupId: string, uid: string): Promise<void> {
-  const batch = writeBatch(db);
-  batch.delete(doc(db, 'travelGroups', groupId, 'members', uid));
-  batch.update(doc(db, 'travelGroups', groupId), {
-    memberCount: increment(-1),
-    updatedAt: serverTimestamp(),
-  });
-  await batch.commit();
+  await leaveOnce(doc(db, 'travelGroups', groupId, 'members', uid), doc(db, 'travelGroups', groupId));
 }
 
 export function subscribeGroupJoinRequestsForOwner(
@@ -1397,6 +1436,35 @@ export async function setDiscoverySettings(
   await batch.commit();
 }
 
+/**
+ * Keeps the person's consent and the discovery record telling the same story. A moderator's suspension removes the record
+ * but cannot change the person's own settings, so once the suspension is lifted the profile can still say "show me" while
+ * nothing is shown, and a later edit would quietly publish the record again. When the record is definitely missing (read
+ * from the server) and the account is not suspended, the opt-in is switched off instead: the person decides whether to
+ * turn it back on. Returns true when it did so. Any doubt (offline, error, still suspended) changes nothing.
+ */
+export async function reconcileDiscoveryConsent(uid: string, profile: Pick<UserProfile, 'showInNearbyTravelers'>): Promise<boolean> {
+  if (profile.showInNearbyTravelers !== true) return false;
+  try {
+    const [record, suspension] = await Promise.all([
+      getDocFromServer(doc(db, 'nearbyTravelers', uid)),
+      getDocFromServer(doc(db, 'accountSuspensions', uid)),
+    ]);
+    if (record.exists() || suspension.exists()) return false;
+    await updateDoc(doc(db, 'users', uid), { showInNearbyTravelers: false, updatedAt: serverTimestamp() });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The signed-in account's own suspension state, from the server only (a cached "not suspended" is not evidence). */
+export function subscribeOwnSuspension(uid: string, callback: (suspended: boolean) => void): () => void {
+  return onSnapshot(doc(db, 'accountSuspensions', uid), (snap) => {
+    if (!snap.metadata.fromCache) callback(snap.exists());
+  }, () => {});
+}
+
 export async function deleteNearbyTraveler(uid: string): Promise<void> {
   await deleteDoc(doc(db, 'nearbyTravelers', uid)).catch(() => {});
 }
@@ -1456,7 +1524,7 @@ export async function getCompanionTrips(destination: string): Promise<PublicTrip
   const key = toDestinationKey(destination);
   if (!key) return [];
   const snap = await getDocs(query(collection(db, 'publicTrips'), where('destinationKey', '==', key), limit(COMPANION_TRIP_LIMIT)));
-  return snap.docs.map((d) => publicTripFromDoc(d.id, d.data()));
+  return snap.docs.map((d) => publicTripFromDoc(d.id, d.data())).filter(isListed);
 }
 
 /** Discovery records of trip owners, batched: one query for up to 30 owners (never per card). */
@@ -1553,10 +1621,11 @@ export async function updateOwnerPhotoInCommunityDocs(
   if (groupsSnap.empty && tripsSnap.empty) return;
 
   const batch = writeBatch(db);
-  for (const d of groupsSnap.docs) {
+  // A hidden or removed item is frozen: the rules refuse the owner's writes to it, and one refusal would fail the batch.
+  for (const d of groupsSnap.docs.filter((x) => isListed(moderationOf(x.data())))) {
     batch.update(d.ref, { ownerPhotoURL: photoURL ?? null, updatedAt: serverTimestamp() });
   }
-  for (const d of tripsSnap.docs) {
+  for (const d of tripsSnap.docs.filter((x) => isListed(moderationOf(x.data())))) {
     batch.update(d.ref, { ownerPhotoURL: photoURL ?? null, updatedAt: serverTimestamp() });
   }
   await batch.commit();

@@ -180,13 +180,93 @@ test('the blocked list shows names saved when blocking, not raw ids', () => {
   assert.match(read('apps/mobile/app/(app)/community/profile/[uid].tsx'), /blockUser\(uid, profile\?\.displayName\)/);
 });
 
-test('the notifications screen does not promise activity the rules never allow clients to create', () => {
+test('there is no notifications screen or bell: clients cannot create notifications, so nothing may promise them', () => {
   const rules = read('firestore.rules');
   const block = rules.slice(rules.indexOf('match /notifications/{notificationId}'), rules.indexOf('// ── User place reviews'));
   assert.ok(block.length > 50 && !/allow create/.test(block), 'clients cannot create notifications');
-  const screen = read('apps/mobile/app/(app)/notifications/index.tsx');
-  assert.doesNotMatch(screen, /You'll see likes, comments, follows/);
-  assert.match(screen, /not delivered as notifications in this version/);
+  assert.ok(!fs.existsSync(path.join(root, 'apps/mobile/app/(app)/notifications')), 'the empty screen is gone');
+  assert.ok(!fs.existsSync(path.join(root, 'apps/mobile/hooks/useNotifications.ts')));
+  for (const rel of ['apps/mobile/app/(app)/home/index.tsx', 'apps/mobile/app/(app)/profile/index.tsx', 'apps/mobile/app/(app)/_layout.tsx']) {
+    const src = read(rel);
+    assert.doesNotMatch(src, /\/\(app\)\/notifications/, `${rel} no longer links to the screen`);
+    assert.doesNotMatch(src, /useNotifications/);
+    assert.doesNotMatch(src, /notifications-outline/);
+  }
+  assert.doesNotMatch(read('apps/mobile/hooks/useFollows.ts') + read('apps/mobile/hooks/useComments.ts'), /createSocialNotification/, 'no writes the rules always refuse');
+});
+
+test('group chats: people are invited by e-mail address and join by accepting; the app never looks accounts up for this', () => {
+  const create = read('apps/mobile/app/(app)/groups/new.tsx');
+  assert.doesNotMatch(create, /searchUserByEmail/, 'no account lookup');
+  assert.match(create, /inviteToGroup\(/);
+  assert.match(create, /will not be told whether an address has an account/);
+  const chat = read('packages/firebase/src/chat.ts');
+  assert.match(chat, /members: \[createdBy\]/, 'a new group holds only its creator');
+  assert.doesNotMatch(chat, /pendingMembers/, 'no direct adds of other people');
+  assert.match(chat, /export async function acceptGroupInvite[\s\S]*batch\.update\(inviteRef, \{ status: 'accepted'/);
+  const list = read('apps/mobile/app/(app)/chats/index.tsx');
+  assert.match(list, /Group invitations/); assert.match(list, /<GroupInviteCard/);
+  const card = read('apps/mobile/components/chat/GroupInviteCard.tsx');
+  assert.match(card, /Accept/); assert.match(card, /Decline/); assert.match(card, /You are not in it unless you accept/);
+  const rules = read('firestore.rules');
+  assert.match(rules, /match \/groupInvites\/\{inviteId\}/);
+  assert.match(rules, /request\.resource\.data\.members == \[request\.auth\.uid\]/);
+  assert.match(read('apps/mobile/app/(app)/groups/[groupId]/index.tsx'), /function InvitePanel[\s\S]*Withdraw/);
+});
+
+test('moderators can hide, remove and restore public trips and community groups, and lift suspensions, from the moderation screen', () => {
+  const screen = read('apps/mobile/app/(app)/moderation/index.tsx');
+  for (const word of ['setItemModeration', 'Hide', 'Remove', 'Restore', 'subscribeModeratedItems', 'Lift suspension', 'unsuspendUser', 'subscribeSuspensions']) assert.ok(screen.includes(word), word);
+  const fsrc = read('packages/firebase/src/firestore.ts');
+  assert.match(fsrc, /publicTripFromDoc\(d\.id, d\.data\(\)\)\)\.filter\(isListed\)/);
+  assert.match(fsrc, /travelGroupFromDoc\(d\.id, d\.data\(\)\)\)\.filter\(isListed\)/);
+  assert.match(fsrc, /isListed\(moderationOf\(x\.data\(\)\)\)/, 'the photo cascade skips frozen items');
+  assert.match(read('apps/mobile/app/(app)/community/groups/[groupId].tsx'), /leaveGroup\(group\.groupId, uid\)/);
+});
+
+test('follow and unfollow update the feed at once (one shared store, no restart)', () => {
+  const store = read('apps/mobile/stores/followStore.ts'), follows = read('apps/mobile/hooks/useFollows.ts'), feed = read('apps/mobile/hooks/useFeed.ts');
+  assert.match(follows, /useFollowStore\.getState\(\)\.remove\(myUid, targetUid\)/);
+  assert.match(follows, /useFollowStore\.getState\(\)\.add\(myUid, targetUid\)/);
+  assert.match(feed, /useFollowingIds/);
+  assert.match(store, /add: /); assert.match(store, /remove: /);
+  assert.match(read('apps/mobile/app/_layout.tsx'), /useFollowStore\.getState\(\)\.reset\(\)/);
+});
+
+test('requests to trips that no longer exist or are hidden say so and offer no dead View Trip', () => {
+  const card = read('apps/mobile/components/community/JoinRequestCard.tsx');
+  assert.match(card, /This trip is no longer available/);
+  assert.match(card, /request\.status === 'approved' && onViewTrip && !note/);
+  assert.match(read('apps/mobile/app/(app)/profile/join-requests.tsx'), /useTripAvailability/);
+});
+
+test('failed sends keep the text; refused queued sends come back to the composer; deleted accounts cannot be messaged; empty chats are not listed', () => {
+  assert.match(read('apps/mobile/components/chat/ChatInput.tsx'), /mergeDraft\(current, restore\.text\)/);
+  for (const hook of ['useMessages', 'useGroupChat']) assert.match(read(`apps/mobile/hooks/${hook}.ts`), /setRestored\(nextRestore\(text\.trim\(\)\)\)/);
+  assert.match(read('apps/mobile/components/posts/CommentsSheet.tsx'), /Comment not sent/);
+  const dm = read('apps/mobile/app/(app)/chats/[chatId].tsx');
+  assert.match(dm, /This account was deleted\. You can read this conversation but cannot send messages to it\./);
+  assert.match(dm, /otherDeleted/);
+  assert.match(read('apps/mobile/app/(app)/chats/index.tsx'), /c\.lastMessage !== null/);
+  assert.match(read('workers/r2-upload-worker/src/accountDeletion.ts'), new RegExp(`DELETED_NAME = '${shared.DELETED_ACCOUNT_NAME}'`), 'the app and the deletion service use the same label');
+});
+
+test('important errors are visible inside every modal screen (the app-level toast layer sits behind modal windows)', () => {
+  for (const rel of ['apps/mobile/components/posts/CommentsSheet.tsx', 'apps/mobile/components/trips/AddToTripSheet.tsx', 'apps/mobile/components/journal/JournalEntryModal.tsx',
+    'apps/mobile/components/community/ReportModal.tsx', 'apps/mobile/components/community/GroupJoinModal.tsx', 'apps/mobile/components/community/JoinRequestModal.tsx',
+    'apps/mobile/components/trips/ExportPreviewModal.tsx', 'apps/mobile/app/(app)/trips/[id]/itinerary/[dayId].tsx', 'apps/mobile/app/(app)/saved-places/index.tsx', 'apps/mobile/app/(app)/profile/index.tsx']) {
+    const src = read(rel);
+    assert.match(src, /<ToastContainer \/>\s*<\/Modal>/, `${rel} renders toasts inside its modal`);
+  }
+});
+
+test('the discovery opt-in is reconciled after a suspension ends, never republished silently', () => {
+  const hook = read('apps/mobile/hooks/useDiscoveryReconcile.ts');
+  assert.match(hook, /reconcileDiscoveryConsent\(uid, profile\)/);
+  assert.match(read('apps/mobile/app/(app)/_layout.tsx'), /useDiscoveryReconcile\(\)/);
+  const fsrc = read('packages/firebase/src/firestore.ts');
+  assert.match(fsrc, /getDocFromServer\(doc\(db, 'nearbyTravelers', uid\)\)/);
+  assert.match(fsrc, /showInNearbyTravelers: false, updatedAt/);
 });
 
 test('account deletion errors are shown inside the delete screen (a modal hides the toast layer)', () => {

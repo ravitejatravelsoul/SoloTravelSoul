@@ -458,6 +458,22 @@ const leaveGroupChats: Step['run'] = (ctx) => {
   });
 };
 
+// Group invitations are addressed to an e-mail address. The ones this user sent go with them, and so do the ones addressed to
+// their address: once the account is gone nothing should linger that a later holder of the same address could see.
+const removeGroupInvites: Step['run'] = async (ctx) => {
+  const { uid, email, store } = ctx;
+  await eachMatch(ctx, 'sent', 'groupInvites', [{ field: 'inviterUid', op: 'EQUAL', value: uid }], {}, (invite) => deleteTree(ctx, invite.path));
+  const [lookup, profile] = await Promise.all([store.get(`userLookup/${uid}`), store.get(`users/${uid}`)]);
+  const addresses = new Set<string>();
+  for (const e of [email, lookup?.data.email, profile?.data.email]) {
+    if (typeof e === 'string' && e.trim()) addresses.add(e.trim().toLowerCase());
+  }
+  let i = 0;
+  for (const address of [...addresses].sort()) {
+    await eachMatch(ctx, `to${i++}`, 'groupInvites', [{ field: 'inviteeEmail', op: 'EQUAL', value: address }], {}, (invite) => deleteTree(ctx, invite.path));
+  }
+};
+
 // Groups another user is still creating can list this user as a pending
 // member (with name and unread entry). Remove the UID and its identity fields;
 // the group, its creator and other members are untouched. Conditional on the
@@ -482,19 +498,38 @@ const leavePendingGroups: Step['run'] = (ctx) => {
     }));
 };
 
+// Direct chats: the other participant keeps the history, labelled "Deleted User". Each deletion records itself in
+// `deletedParticipants` (written only here; the rules refuse client writes to it) in the same conditional commit that
+// anonymizes the participant. When every participant is recorded, nobody is left to preserve the conversation for, so the
+// chat and its messages are deleted. Two deletions racing each other serialize on the document's updateTime: the
+// second one reads the first one's record and finishes the job; a retry after a crash between the record and the delete
+// finds all participants recorded and deletes. A participant's display name is never evidence of deletion (a creator
+// chooses it), only the record is. Chats anonymized before this record existed have none and are not swept.
+// Safety reports live in `reports` and are not touched by deleting a chat.
 const anonymizeDirectChats: Step['run'] = (ctx) => {
   const { uid, store } = ctx;
   return eachMatch(ctx, 'chats', 'direct_chats', [{ field: 'participants', op: 'ARRAY_CONTAINS', value: uid }], {}, async (chat) => {
-    const info = (chat.data.participantInfo as Record<string, Record<string, unknown>> | undefined)?.[uid];
-    const unread = (chat.data.unreadCounts as Record<string, unknown> | undefined)?.[uid];
-    if (info?.name === DELETED_NAME && unread === undefined) return;
-    // participants keeps the UID so the other user's read access is unchanged.
-    await store.commit([{
-      kind: 'update',
-      path: chat.path,
-      set: { [`participantInfo.${uid}`]: { name: DELETED_NAME, initials: '?' } },
-      remove: [`unreadCounts.${uid}`],
-    }]);
+    let everyoneGone = false;
+    await atomically(store, async () => {
+      const current = await store.get(chat.path);
+      if (!current) { everyoneGone = false; return null; }
+      const participants = (current.data.participants as string[] | undefined) ?? [];
+      const recorded = ((current.data.deletedParticipants as string[] | undefined) ?? []).filter((p) => typeof p === 'string');
+      const gone = [...new Set([...recorded, uid])];
+      everyoneGone = participants.length > 0 && participants.every((p) => gone.includes(p));
+      const info = (current.data.participantInfo as Record<string, Record<string, unknown>> | undefined)?.[uid];
+      const unread = (current.data.unreadCounts as Record<string, unknown> | undefined)?.[uid];
+      if (recorded.includes(uid) && info?.name === DELETED_NAME && unread === undefined) return null; // already recorded; the delete (if due) happens below
+      // participants keeps the UID so the other user's read access is unchanged.
+      return [{
+        kind: 'update',
+        path: current.path,
+        set: { [`participantInfo.${uid}`]: { name: DELETED_NAME, initials: '?' }, deletedParticipants: gone },
+        remove: [`unreadCounts.${uid}`],
+        updateTime: current.updateTime,
+      }];
+    });
+    if (everyoneGone) await deleteTree(ctx, chat.path);
   });
 };
 
@@ -645,6 +680,7 @@ export const DELETION_STEPS: readonly Step[] = [
   // Chats: anonymize messages before leaving, so a retry can still find them.
   { id: 'sentMessages', run: anonymizeSentMessages },
   { id: 'groupChats', run: leaveGroupChats },
+  { id: 'groupInvites', run: removeGroupInvites },
   { id: 'pendingGroups', run: leavePendingGroups },
   { id: 'directChats', run: anonymizeDirectChats },
   // Identity and private data.

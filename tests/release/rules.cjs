@@ -5,11 +5,12 @@ const assert = require('node:assert/strict');
 const { initializeTestEnvironment, assertFails } = require('@firebase/rules-unit-testing');
 const sdk = require('firebase/firestore');
 const root = path.resolve(__dirname, '../..');
+const TERMS = '2026-10-19';
 let sharedModule;
 function loadShared() {
   if (!sharedModule) {
     sharedModule = { exports: {} };
-    for (const f of ['moderation', 'preferences']) {
+    for (const f of ['moderation', 'preferences', 'types/Community', 'policy']) {
       const m = { exports: {} };
       const code = ts.transpileModule(fs.readFileSync(path.join(root, `packages/shared/src/${f}.ts`), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
       new Function('module', 'exports', 'require', code)(m, m.exports, require);
@@ -50,6 +51,8 @@ function client(file, db) {
         'publicProfiles/owner': { uid: 'owner', profileVisibility: 'public', followersCount: 0, followingCount: 0 },
         'userLookup/victim': { uid: 'victim', email: 'victim@example.test' },
         'direct_chats/chat': { participants: ['actor', 'owner'], unreadCounts: { actor: 0, owner: 0 } },
+        // Everyone who creates content has accepted the current Terms (rules refuse content creation otherwise).
+        ...Object.fromEntries(['actor', 'owner', 'bob', 'carol', 'friend', 'mod', 'outsider', 'rho', 'sam', 'tess', 'gone', 'sus', 'r1', 'r2', 'r3', 'lift1', 'lift2', 'mod2'].map((u) => [`users/${u}`, { termsAcceptedVersion: TERMS }])),
       })) await sdk.setDoc(sdk.doc(db, p), data);
     });
     const db = env.authenticatedContext('actor', { email: 'actor@example.test' }).firestore();
@@ -73,7 +76,7 @@ function client(file, db) {
     await check('private users can follow, retries keep counters correct', async () => { await posts.followUser('actor', 'owner'); await posts.followUser('actor', 'owner'); assert.equal((await get('publicProfiles/owner')).followersCount, 1); await posts.unfollowUser('actor', 'owner'); await posts.unfollowUser('actor', 'owner'); assert.equal((await get('publicProfiles/owner')).followersCount, 0); });
     await check('profile edits and visibility preserve relationship counters', async () => {
       await posts.followUser('actor','owner');
-      await sdk.setDoc(sdk.doc(db,'users/actor'), { email:'actor@example.test' });
+      await sdk.setDoc(sdk.doc(db,'users/actor'), { email:'actor@example.test', termsAcceptedVersion: TERMS });
       const profiles=client('packages/firebase/src/firestore.ts',db);
       await profiles.upsertPublicProfile('actor',{name:'Actor',profileVisibility:'public'});
       assert.equal((await get('publicProfiles/actor')).followingCount,1);
@@ -164,9 +167,6 @@ function client(file, db) {
     });
     const info = { name: 'X', initials: 'X' };
     const chatActions = (target, tag) => [
-      ['create group containing it', () => chat.createGroup('actor', 'Trip', ['actor', 'friend', target], {})],
-      ['add it to an existing group', () => sdk.updateDoc(sdk.doc(db, `groups/existing-${target}`), { members: sdk.arrayUnion(target) })],
-      ['replace group members to include it', () => sdk.updateDoc(sdk.doc(db, `groups/existing-${target}`), { members: ['actor', 'friend', 'other', target] })],
       ['create direct chat with it', async () => {
         await env.withSecurityRulesDisabled(ctx => sdk.deleteDoc(sdk.doc(ctx.firestore(), `direct_chats/${chat.directChatId('actor', target)}`)));
         try { await chat.getOrCreateDirectChat('actor', info, target, info); }
@@ -187,70 +187,9 @@ function client(file, db) {
       });
     }
     for (const [name, action] of chatActions('staying', 'staying')) await check(`allow chat: ${name} (unaffected)`, () => action());
-    assert.ok((await get(`groups/existing-staying`)).members.includes('staying'));
-    for (const target of ['leaving', 'gone', 'staying']) {
-      await check(`large group listing ${target} late: refused member dropped, everyone else kept`, async () => {
-        const id = await chat.createGroup('actor', `Big-${target}`, ['actor', ...Array.from({ length: 12 }, (_, i) => `member${i}`), target],
-          { [target]: { name: target, initials: 'T' }, member0: { name: 'm0', initials: 'M' } });
-        let g;
-        await env.withSecurityRulesDisabled(async ctx => { g = (await sdk.getDoc(sdk.doc(ctx.firestore(), `groups/${id}`))).data(); });
-        const expectMember = target === 'staying';
-        assert.equal(g.members.length, expectMember ? 14 : 13);
-        assert.equal(g.members.includes(target), expectMember);
-        assert.equal(g.memberInfo[target] !== undefined, expectMember);
-        assert.equal(g.unreadCounts[target] !== undefined, expectMember);
-        assert.deepEqual(g.pendingMembers, []);
-      });
-    }
-    // Group creation interrupted between chunks or before rollback: the group is
-    // hidden from every member's list until the creator's client resumes it.
-    // Resolves with the first group list that satisfies `ready` (snapshots may come from cache first).
-    const groupsWhen = (mod, uid, ready) => new Promise((resolve, reject) => {
-      let unsub;
-      const timer = setTimeout(() => { unsub && unsub(); reject(new Error('group list never reached the expected state')); }, 8000);
-      unsub = mod.subscribeToGroups(uid, (groups) => {
-        if (!ready(groups)) return;
-        clearTimeout(timer); setTimeout(() => unsub && unsub(), 0); resolve(groups);
-      });
-    });
-    const has = (id) => (groups) => groups.some((g) => g.id === id);
-    // A complete group shared by actor and friend: a list containing it is server-confirmed.
-    await sdk.setDoc(sdk.doc(db, 'groups/marker'), { name: 'Marker', createdBy: 'actor', members: ['actor', 'friend'], memberInfo: {}, unreadCounts: {}, lastMessage: null, updatedAt: sdk.Timestamp.now() });
-    const firstGroups = (mod, uid) => groupsWhen(mod, uid, has('marker'));
     // withSecurityRulesDisabled resolves to undefined, so capture the read explicitly.
     const adminGet = async (p) => { let data; await env.withSecurityRulesDisabled(async (ctx) => { data = (await sdk.getDoc(sdk.doc(ctx.firestore(), p))).data(); }); return data; };
     const adminSet = (p, data) => env.withSecurityRulesDisabled((ctx) => sdk.setDoc(sdk.doc(ctx.firestore(), p), data));
-    const friendChat = client('packages/firebase/src/chat.ts', env.authenticatedContext('friend').firestore());
-    const waitFor = async (fn) => { for (let i = 0; i < 50; i++) { if (await fn()) return true; await new Promise((r) => setTimeout(r, 100)); } return false; };
-    const groupData = (pending) => ({ name: 'Paused', createdBy: 'actor', members: ['actor', 'friend', ...Array.from({ length: 6 }, (_, i) => `p${i}`)],
-      pendingMembers: pending, memberInfo: {}, unreadCounts: {}, lastMessage: null, updatedAt: sdk.Timestamp.now() });
-    await check('interrupted group creation is hidden, then resumed by the creator', async () => {
-      // State left by an app killed after the first chunk (seeded directly: a single
-      // client write may add at most 8 checked identities).
-      await adminSet('groups/interrupted', groupData(['q1', 'q2', 'q3']));
-      assert.ok(!(await firstGroups(friendChat, 'friend')).some((g) => g.id === 'interrupted'), 'hidden from members while pending');
-      // The creator's client sees it (from the server: it was seeded there) and resumes;
-      // its own list shows the group only once creation is complete.
-      await groupsWhen(chat, 'actor', has('interrupted'));
-      assert.ok(await waitFor(async () => !((await adminGet('groups/interrupted'))?.pendingMembers?.length)));
-      assert.equal((await adminGet('groups/interrupted')).members.length, 11);
-      await groupsWhen(friendChat, 'friend', has('interrupted')); // visible once complete
-    });
-    await check('interrupted creation with a refused pending member: member dropped on resume, group completes', async () => {
-      // Pending entries listed before the account deletion started (rules refuse adding them now).
-      await adminSet('groups/refused', { ...groupData(['q1', 'gone']), memberInfo: { gone: { name: 'Gone' }, q1: { name: 'Q' } }, unreadCounts: { gone: 0, q1: 0 } });
-      assert.ok(!(await firstGroups(friendChat, 'friend')).some((g) => g.id === 'refused'), 'hidden while pending');
-      await chat.completeGroupCreation('refused');
-      const g = await adminGet('groups/refused');
-      assert.ok(g.members.includes('q1') && !g.members.includes('gone'));
-      assert.deepEqual([g.pendingMembers, g.memberInfo.gone, g.unreadCounts.gone, g.memberInfo.q1.name], [[], undefined, undefined, 'Q']);
-      // Concurrent resumes (two app instances of the creator) converge to the same result.
-      await adminSet('groups/refused2', { ...groupData(['gone', 'q2']), memberInfo: { gone: { name: 'Gone' } }, unreadCounts: { gone: 0 } });
-      await Promise.all([chat.completeGroupCreation('refused2'), chat.completeGroupCreation('refused2')]);
-      const g2 = await adminGet('groups/refused2');
-      assert.deepEqual([g2.pendingMembers, g2.members.includes('q2'), g2.members.includes('gone'), g2.memberInfo.gone], [[], true, false, undefined]);
-      await groupsWhen(friendChat, 'friend', has('refused2')); // visible once complete
-    });
     // ── Moderation: content filter, report queue, auto-hide, moderator actions, suspension ──
     const shared = loadShared();
     await env.withSecurityRulesDisabled(async ctx => {
@@ -395,12 +334,16 @@ function client(file, db) {
     });
     const bobDb = env.authenticatedContext('bob').firestore();
     const carolDb = env.authenticatedContext('carol').firestore();
+    const chatOf = (uid) => client('packages/firebase/src/chat.ts', env.authenticatedContext(uid, { email: `${uid}@example.test` }).firestore());
     const gdoc = (d, p) => sdk.doc(d, p);
     await check('group identity: a deleting UID cannot be added as member or pending member (create or update)', async () => {
       await assertFails(sdk.setDoc(gdoc(bobDb, 'groups/n1'), { name: 'n', createdBy: 'bob', members: ['bob', 'gone'], memberInfo: {}, unreadCounts: {} }));
       await assertFails(sdk.updateDoc(gdoc(bobDb, 'groups/bobGroup'), { members: sdk.arrayUnion('gone') }));
       await assertFails(sdk.setDoc(gdoc(bobDb, 'groups/n2'), { name: 'n', createdBy: 'bob', members: ['bob'], pendingMembers: ['gone'], memberInfo: { gone: { name: 'Gone' } }, unreadCounts: { gone: 0 } }));
       await assertFails(sdk.updateDoc(gdoc(bobDb, 'groups/bobGroup'), { pendingMembers: sdk.arrayUnion('gone') }));
+      // The deleting account cannot join through an invitation either.
+      await env.withSecurityRulesDisabled((ctx) => sdk.setDoc(sdk.doc(ctx.firestore(), 'groupInvites/bobGroup_gone@example.test'), { groupId: 'bobGroup', groupName: 'G', inviterUid: 'bob', inviterName: 'Bob', inviteeEmail: 'gone@example.test', status: 'pending', expiresAt: sdk.Timestamp.fromMillis(Date.now() + 3600000) }));
+      await assertFails(chatOf('gone').acceptGroupInvite({ id: 'bobGroup_gone@example.test', groupId: 'bobGroup' }, { uid: 'gone', info: { name: 'Gone', initials: 'G' } }));
     });
     await check('group identity: memberInfo / unreadCounts keys cannot be added for non-members (creator or member)', async () => {
       await assertFails(sdk.updateDoc(gdoc(bobDb, 'groups/bobGroup'), { 'memberInfo.gone': { name: 'Gone' } }));
@@ -409,16 +352,18 @@ function client(file, db) {
     });
     await check('group identity: normal group operations keep working', async () => {
       await sdk.updateDoc(gdoc(bobDb, 'groups/bobGroupLeft'), { name: 'renamed' }); // stale memberInfo of a former member is tolerated
-      await sdk.updateDoc(gdoc(bobDb, 'groups/bobGroup'), { members: sdk.arrayUnion('dave'), 'memberInfo.dave': { name: 'Dave' }, 'unreadCounts.dave': 0 });
+      await sdk.updateDoc(gdoc(bobDb, 'groups/bobGroup'), { members: sdk.arrayRemove('carol') }); // the creator can remove a member
+      await sdk.updateDoc(gdoc(bobDb, 'groups/bobGroup'), { members: sdk.arrayUnion('carol'), 'memberInfo.carol': { name: 'Carol' } }).then(() => assert.fail('creator must not add people directly'), () => {});
+      await env.withSecurityRulesDisabled((ctx) => sdk.updateDoc(sdk.doc(ctx.firestore(), 'groups/bobGroup'), { members: ['bob', 'carol'] }));
       await sdk.updateDoc(gdoc(carolDb, 'groups/bobGroup'), { 'unreadCounts.bob': 2, lastMessage: { senderId: 'carol', text: 'hi' }, updatedAt: sdk.serverTimestamp() });
-      await sdk.setDoc(gdoc(bobDb, 'groups/n3'), { name: 'n', createdBy: 'bob', members: ['bob'], pendingMembers: ['erin'], memberInfo: { bob: { name: 'Bob' }, erin: { name: 'Erin' } }, unreadCounts: { bob: 0, erin: 0 } });
+      await sdk.setDoc(gdoc(bobDb, 'groups/n3'), { name: 'n', createdBy: 'bob', members: ['bob'], memberInfo: { bob: { name: 'Bob' } }, unreadCounts: { bob: 0 } });
     });
     // ── Travel preferences and traveler discovery (compatibility onboarding) ──
     await env.withSecurityRulesDisabled(async ctx => {
       const adb = ctx.firestore();
       for (const [p, data] of Object.entries({
-        'users/pia': { name: 'Pia', profileVisibility: 'public', showInNearbyTravelers: true, shareCompatibility: false },
-        'users/quin': { name: 'Quin', profileVisibility: 'private', showInNearbyTravelers: false },
+        'users/pia': { termsAcceptedVersion: TERMS, name: 'Pia', profileVisibility: 'public', showInNearbyTravelers: true, shareCompatibility: false },
+        'users/quin': { termsAcceptedVersion: TERMS, name: 'Quin', profileVisibility: 'private', showInNearbyTravelers: false },
         'users/legacy': { name: 'Old', travelStyles: ['backpacker'], interests: ['surfing'] },
         'users/sus': { name: 'Sus', profileVisibility: 'public', showInNearbyTravelers: true },
         'accountSuspensions/sus': { suspendedBy: 'mod', reason: 'r', createdAt: sdk.Timestamp.now() },
@@ -687,7 +632,8 @@ function client(file, db) {
       await sam.leavePublicTrip(qaTrip, 'sam');
       assert.equal((await sdk.getDoc(sdk.doc(rhoDb, `publicTrips/${qaTrip}`))).data().memberCount, 1);
       assert.equal((await sdk.getDoc(sdk.doc(rhoDb, `trips/${qaTrip}/members/sam`))).exists(), false);
-      await assertFails(sam.leavePublicTrip(qaTrip, 'sam')); // no longer a member
+      await sam.leavePublicTrip(qaTrip, 'sam'); // a retry after success is a no-op, not an error
+      assert.equal((await sdk.getDoc(sdk.doc(rhoDb, `publicTrips/${qaTrip}`))).data().memberCount, 1);
     });
     await check('terms acceptance: only a version string and the server time', async () => {
       const tomDb = ctxDb('tom'); const tom = client(FS, tomDb);
@@ -702,6 +648,7 @@ function client(file, db) {
     });
     await check('leave group chat: a member removes only themselves; others cannot be removed; non-members cannot', async () => {
       await env.withSecurityRulesDisabled(async ctx => {
+        await sdk.setDoc(sdk.doc(ctx.firestore(), 'users/gmember'), { termsAcceptedVersion: TERMS });
         await sdk.setDoc(sdk.doc(ctx.firestore(), 'groups/qag'), { name: 'QA group', createdBy: 'gcreator', members: ['gcreator', 'gmember'], memberInfo: {}, lastMessage: null, unreadCounts: { gcreator: 0, gmember: 0 } });
       });
       const gDb = ctxDb('gmember'); const g = client('packages/firebase/src/chat.ts', gDb);
@@ -715,6 +662,303 @@ function client(file, db) {
         assert.equal(msgs.size, 1); assert.equal(msgs.docs[0].data().text, 'Gem left the group'); assert.equal(msgs.docs[0].data().type, 'system');
       });
       await assertFails(sdk.getDocs(sdk.collection(gDb, 'groups/qag/messages'))); // no longer a member: cannot read it
+    });
+    // ── Follow-up phase (2026-10-20): invitations, moderation of trips and groups, Terms barrier, leaving, lifting suspensions ──
+    const CHAT = 'packages/firebase/src/chat.ts', MOD = 'packages/firebase/src/moderation.ts';
+    const people = ['ivy', 'jon', 'kai', 'lee', 'mia', 'nia', 'oli', 'pat', 'quentin', 'rae', 'zed', 'dee'];
+    await env.withSecurityRulesDisabled(async ctx => {
+      const adb = ctx.firestore();
+      for (const u of people) await sdk.setDoc(sdk.doc(adb, `users/${u}`), { termsAcceptedVersion: TERMS, name: u });
+      await sdk.setDoc(sdk.doc(adb, 'blocks/nia/blocked/ivy'), { blockedUid: 'ivy' });
+    });
+    const dbOf = (uid) => ctxDb(uid);
+    const em = (uid) => `${uid}@example.test`;
+    const person = (uid) => ({ name: uid, initials: uid[0].toUpperCase() });
+    const inviteDoc = (group, uid) => `groupInvites/${group}_${em(uid)}`;
+    const ivyChat = chatOf('ivy');
+    let G;
+    await check('group chat: the creator starts alone; nobody is added directly (create or update, with or without a pending list)', async () => {
+      G = await ivyChat.createGroup('ivy', 'Trip', person('ivy'));
+      assert.deepEqual((await adminGet(`groups/${G}`)).members, ['ivy']);
+      const d = dbOf('ivy');
+      await assertFails(sdk.setDoc(sdk.doc(d, 'groups/x1'), { name: 'x', createdBy: 'ivy', members: ['ivy', 'jon'], memberInfo: {}, unreadCounts: {}, lastMessage: null }));
+      await assertFails(sdk.setDoc(sdk.doc(d, 'groups/x2'), { name: 'x', createdBy: 'ivy', members: ['ivy'], pendingMembers: ['jon'], memberInfo: {}, unreadCounts: {}, lastMessage: null }));
+      await assertFails(sdk.updateDoc(sdk.doc(d, `groups/${G}`), { members: sdk.arrayUnion('jon') }));
+      await assertFails(sdk.updateDoc(sdk.doc(d, `groups/${G}`), { pendingMembers: sdk.arrayUnion('jon') }));
+    });
+    await check('invitation: only the group creator invites; the sender cannot be spoofed and cannot invite themselves; extra fields and long expiry are refused', async () => {
+      await ivyChat.inviteToGroup({ id: G, name: 'Trip' }, { uid: 'ivy', name: 'Ivy' }, ' Jon@Example.test ');
+      await assertFails(chatOf('kai').inviteToGroup({ id: G, name: 'Trip' }, { uid: 'kai', name: 'Kai' }, em('lee')));
+      await assertFails(ivyChat.inviteToGroup({ id: G, name: 'Trip' }, { uid: 'kai', name: 'Kai' }, em('lee')));
+      await assertFails(ivyChat.inviteToGroup({ id: G, name: 'Trip' }, { uid: 'ivy', name: 'Ivy' }, em('ivy')));
+      const base = { groupId: G, groupName: 'Trip', inviterUid: 'ivy', inviterName: 'Ivy', inviteeEmail: em('lee'), status: 'pending', createdAt: sdk.serverTimestamp(), updatedAt: sdk.serverTimestamp(), expiresAt: sdk.Timestamp.fromMillis(Date.now() + 3600000) };
+      await assertFails(sdk.setDoc(sdk.doc(dbOf('ivy'), inviteDoc(G, 'lee')), { ...base, extra: 1 }));
+      await assertFails(sdk.setDoc(sdk.doc(dbOf('ivy'), inviteDoc(G, 'lee')), { ...base, expiresAt: sdk.Timestamp.fromMillis(Date.now() + 40 * 86400000) }));
+      await assertFails(sdk.setDoc(sdk.doc(dbOf('ivy'), inviteDoc(G, 'lee')), { ...base, inviteeEmail: em('mia') })); // id must match the address
+      await assertFails(sdk.setDoc(sdk.doc(dbOf('ivy'), inviteDoc(G, 'lee')), { ...base, groupName: 'what the fuck' }));
+      assert.deepEqual((await adminGet(`groups/${G}`)).members, ['ivy'], 'sending an invitation adds nobody');
+    });
+    await check('invitation: only the addressed person reads it; the sender sees what they sent; no account lookup is needed or revealed', async () => {
+      const mine = await sdk.getDocs(sdk.query(sdk.collection(dbOf('jon'), 'groupInvites'), sdk.where('inviteeEmail', '==', em('jon')), sdk.where('status', '==', 'pending')));
+      assert.equal(mine.size, 1);
+      await assertFails(sdk.getDocs(sdk.query(sdk.collection(dbOf('kai'), 'groupInvites'), sdk.where('inviteeEmail', '==', em('jon')))));
+      await assertFails(sdk.getDoc(sdk.doc(dbOf('kai'), inviteDoc(G, 'jon'))));
+      await assertFails(sdk.getDocs(sdk.collection(dbOf('kai'), 'groupInvites')));
+      const sent = await sdk.getDocs(sdk.query(sdk.collection(dbOf('ivy'), 'groupInvites'), sdk.where('inviterUid', '==', 'ivy'), sdk.where('groupId', '==', G)));
+      assert.equal(sent.size, 1);
+      // An invitation to an address with no account looks identical to the sender (it is just a document).
+      await ivyChat.inviteToGroup({ id: G, name: 'Trip' }, { uid: 'ivy', name: 'Ivy' }, 'nobody-has-this@example.test');
+    });
+    await check('invitation: joining is only by accepting; adding yourself, accepting for someone else, or accepting without an invitation is refused', async () => {
+      const grab = { members: sdk.arrayUnion('jon'), 'memberInfo.jon': person('jon'), 'unreadCounts.jon': 0, updatedAt: sdk.serverTimestamp() };
+      await assertFails(sdk.updateDoc(sdk.doc(dbOf('jon'), `groups/${G}`), grab)); // invited, but has not accepted
+      await assertFails(chatOf('kai').acceptGroupInvite({ id: `${G}_${em('kai')}`, groupId: G }, { uid: 'kai', info: person('kai') })); // no invitation at all
+      await assertFails(chatOf('kai').acceptGroupInvite({ id: `${G}_${em('jon')}`, groupId: G }, { uid: 'kai', info: person('kai') })); // jon's invitation
+      assert.deepEqual((await adminGet(`groups/${G}`)).members, ['ivy']);
+    });
+    await check('invitation: accepting joins atomically, marks the invitation accepted, replays and re-invites are refused, and the member can read and leave', async () => {
+      const invite = { id: `${G}_${em('jon')}`, groupId: G };
+      await chatOf('jon').acceptGroupInvite(invite, { uid: 'jon', info: person('jon') });
+      const g = await adminGet(`groups/${G}`);
+      assert.deepEqual([g.members, g.memberInfo.jon.name, g.unreadCounts.jon], [['ivy', 'jon'], 'jon', 0]);
+      assert.equal((await adminGet(inviteDoc(G, 'jon'))).status, 'accepted');
+      await assertFails(chatOf('jon').acceptGroupInvite(invite, { uid: 'jon', info: person('jon') })); // replay
+      await assertFails(ivyChat.inviteToGroup({ id: G, name: 'Trip' }, { uid: 'ivy', name: 'Ivy' }, em('jon'))); // a decided invitation is final
+      await sdk.getDocs(sdk.collection(dbOf('jon'), `groups/${G}/messages`)); // member can read
+      await chatOf('jon').leaveChatGroup(G, 'jon', 'jon');
+      assert.deepEqual((await adminGet(`groups/${G}`)).members, ['ivy']);
+      await assertFails(sdk.getDocs(sdk.collection(dbOf('jon'), `groups/${G}/messages`))); // no access after leaving
+      await assertFails(chatOf('jon').acceptGroupInvite(invite, { uid: 'jon', info: person('jon') })); // the old acceptance cannot be reused to rejoin
+    });
+    await check('invitation: declining is final; the sender cannot re-send over a decline', async () => {
+      await ivyChat.inviteToGroup({ id: G, name: 'Trip' }, { uid: 'ivy', name: 'Ivy' }, em('kai'));
+      await chatOf('kai').declineGroupInvite(`${G}_${em('kai')}`);
+      await assertFails(chatOf('kai').acceptGroupInvite({ id: `${G}_${em('kai')}`, groupId: G }, { uid: 'kai', info: person('kai') }));
+      await assertFails(ivyChat.inviteToGroup({ id: G, name: 'Trip' }, { uid: 'ivy', name: 'Ivy' }, em('kai')));
+      assert.deepEqual((await adminGet(`groups/${G}`)).members, ['ivy']);
+    });
+    await check('invitation: the sender can withdraw a pending one (and send a fresh one later); the withdrawn one cannot be accepted', async () => {
+      await ivyChat.inviteToGroup({ id: G, name: 'Trip' }, { uid: 'ivy', name: 'Ivy' }, em('lee'));
+      await assertFails(chatOf('kai').cancelGroupInvite(`${G}_${em('lee')}`)); // not the sender
+      await ivyChat.cancelGroupInvite(`${G}_${em('lee')}`);
+      await assertFails(chatOf('lee').acceptGroupInvite({ id: `${G}_${em('lee')}`, groupId: G }, { uid: 'lee', info: person('lee') }));
+      await ivyChat.inviteToGroup({ id: G, name: 'Trip' }, { uid: 'ivy', name: 'Ivy' }, em('lee'));
+      await chatOf('lee').acceptGroupInvite({ id: `${G}_${em('lee')}`, groupId: G }, { uid: 'lee', info: person('lee') });
+      assert.deepEqual((await adminGet(`groups/${G}`)).members, ['ivy', 'lee']);
+    });
+    await check('invitation: an expired one cannot be accepted (the sender can re-send)', async () => {
+      await adminSet(inviteDoc(G, 'mia'), { groupId: G, groupName: 'Trip', inviterUid: 'ivy', inviterName: 'Ivy', inviteeEmail: em('mia'), status: 'pending', createdAt: sdk.Timestamp.now(), updatedAt: sdk.Timestamp.now(), expiresAt: sdk.Timestamp.fromMillis(Date.now() - 1000) });
+      await assertFails(chatOf('mia').acceptGroupInvite({ id: `${G}_${em('mia')}`, groupId: G }, { uid: 'mia', info: person('mia') }));
+      await ivyChat.inviteToGroup({ id: G, name: 'Trip' }, { uid: 'ivy', name: 'Ivy' }, em('mia')); // fresh over expired
+      await chatOf('mia').acceptGroupInvite({ id: `${G}_${em('mia')}`, groupId: G }, { uid: 'mia', info: person('mia') });
+      assert.ok((await adminGet(`groups/${G}`)).members.includes('mia'));
+    });
+    await check('invitation: blocked, suspended and Terms-less people cannot join', async () => {
+      await ivyChat.inviteToGroup({ id: G, name: 'Trip' }, { uid: 'ivy', name: 'Ivy' }, em('nia'));
+      await assertFails(chatOf('nia').acceptGroupInvite({ id: `${G}_${em('nia')}`, groupId: G }, { uid: 'nia', info: person('nia') })); // nia blocked ivy
+      for (const u of ['sus', 'legacy']) {
+        await adminSet(inviteDoc(G, u), { groupId: G, groupName: 'Trip', inviterUid: 'ivy', inviterName: 'Ivy', inviteeEmail: em(u), status: 'pending', createdAt: sdk.Timestamp.now(), updatedAt: sdk.Timestamp.now(), expiresAt: sdk.Timestamp.fromMillis(Date.now() + 3600000) });
+        await assertFails(chatOf(u).acceptGroupInvite({ id: `${G}_${em(u)}`, groupId: G }, { uid: u, info: person(u) }));
+      }
+      assert.ok(!(await adminGet(`groups/${G}`)).members.some((m) => ['nia', 'sus', 'legacy'].includes(m)));
+    });
+    await check('invitation: a deleting or suspended inviter cannot send', async () => {
+      await adminSet('groups/gonegrp', { name: 'G', createdBy: 'gone', members: ['gone'], memberInfo: {}, unreadCounts: {}, lastMessage: null });
+      await assertFails(chatOf('gone').inviteToGroup({ id: 'gonegrp', name: 'G' }, { uid: 'gone', name: 'Gone' }, em('kai')));
+      await adminSet('groups/susgrp', { name: 'G', createdBy: 'sus', members: ['sus'], memberInfo: {}, unreadCounts: {}, lastMessage: null });
+      await assertFails(chatOf('sus').inviteToGroup({ id: 'susgrp', name: 'G' }, { uid: 'sus', name: 'Sus' }, em('kai')));
+    });
+    // ── Terms barrier ──
+    const infoX = { name: 'X', initials: 'X' };
+    const termsActions = {
+      post: (u, t) => sdk.setDoc(sdk.doc(dbOf(u), `travelPosts/${t}`), { authorId: u, caption: 'x', body: '', location: '', country: '', likeCount: 0, commentCount: 0, saveCount: 0, visibility: 'public', isArchived: false, createdAt: sdk.serverTimestamp() }),
+      comment: (u, t) => { const d = dbOf(u); const b = sdk.writeBatch(d); b.set(sdk.doc(d, `postComments/${t}`), { authorId: u, authorName: 'X', authorPhoto: null, postId: 'p', parentCommentId: null, text: 'hi', replyCount: 0, isDeleted: false, createdAt: sdk.serverTimestamp(), updatedAt: sdk.serverTimestamp() }); b.update(sdk.doc(d, 'travelPosts/p'), { commentCount: sdk.increment(1), lastCommentId: t, updatedAt: sdk.serverTimestamp() }); return b.commit(); },
+      journal: (u, t) => sdk.setDoc(sdk.doc(dbOf(u), `travelJournals/${t}`), { authorId: u, title: 'T', body: 'b', likeCount: 0, commentCount: 0, saveCount: 0, visibility: 'public', isArchived: false, createdAt: sdk.serverTimestamp() }),
+      publicTrip: (u, t) => sdk.setDoc(sdk.doc(dbOf(u), `publicTrips/${t}`), { ownerUid: u, title: 'T', description: '', destination: 'Rome', destinationKey: 'rome', memberCount: 1, isAcceptingMembers: true, createdAt: sdk.serverTimestamp(), updatedAt: sdk.serverTimestamp() }),
+      travelGroup: (u, t) => sdk.setDoc(sdk.doc(dbOf(u), `travelGroups/${t}`), { ownerUid: u, name: 'N', description: '', visibility: 'public', memberCount: 1, createdAt: sdk.serverTimestamp(), updatedAt: sdk.serverTimestamp() }),
+      tripJoinRequest: (u, t) => sdk.setDoc(sdk.doc(dbOf(u), `tripJoinRequests/${t}_${u}`), { requestId: `${t}_${u}`, tripId: t, ownerUid: 'owner', requestorUid: u, status: 'pending' }),
+      groupJoinRequest: (u, t) => sdk.setDoc(sdk.doc(dbOf(u), `groupJoinRequests/${t}_${u}`), { requestId: `${t}_${u}`, groupId: t, ownerUid: 'owner', requestorUid: u, status: 'pending' }),
+      activityFeed: (u, t) => sdk.setDoc(sdk.doc(dbOf(u), `activityFeed/${t}`), { feedItemId: t, type: 'trip_shared', actorUid: u, actorName: 'X', targetId: 'x', targetType: 'trip', targetTitle: 'T', visibility: 'public', createdAt: sdk.serverTimestamp() }),
+      groupChat: (u) => chatOf(u).createGroup(u, 'T', infoX),
+      directChat: (u, t) => chatOf(u).getOrCreateDirectChat(u, infoX, `peer-${t}`, infoX),
+      directMessage: (u, t) => chatOf(u).sendDirectMessage(`${u}_peer`, u, 'hello', `m-${t}`, ['peer']),
+    };
+    await adminSet('users/legacy', { name: 'Old' });
+    await adminSet('users/dee', { termsAcceptedVersion: TERMS, name: 'dee', profileVisibility: 'public', showInNearbyTravelers: false });
+    for (const u of ['legacy', 'dee']) await adminSet(`direct_chats/${u}_peer`, { participants: [u, 'peer'].sort(), participantInfo: {}, lastMessage: null, unreadCounts: { [u]: 0, peer: 0 } });
+    for (const [name, action] of Object.entries(termsActions)) {
+      await check(`terms: ${name} is refused until the current Terms are accepted, and works after`, async () => {
+        await assertFails(action('legacy', `tl-${name}`));
+        await action('dee', `td-${name}`);
+      });
+    }
+    await check('terms: an older accepted version does not count; acceptance, reporting and leaving a group stay open without it', async () => {
+      await adminSet('users/olduser', { name: 'Older', termsAcceptedVersion: '2025-01-01' });
+      await assertFails(termsActions.post('olduser', 'old-post'));
+      await adminSet('groups/legacygrp', { name: 'G', createdBy: 'ivy', members: ['ivy', 'legacy'], memberInfo: {}, unreadCounts: {}, lastMessage: null });
+      await chatOf('legacy').leaveChatGroup('legacygrp', 'legacy', 'Old');
+      assert.deepEqual((await adminGet('groups/legacygrp')).members, ['ivy']);
+      await client(FS, dbOf('legacy')).reportContent('legacy', 'user', 'ivy', 'spam', '');
+      await client(FS, dbOf('legacy')).acceptTerms('legacy', TERMS);
+      await termsActions.post('legacy', 'after-accept');
+    });
+    await check('terms: the version in the rules is the one the app asks people to accept', async () => {
+      const policy = fs.readFileSync(path.join(root, 'packages/shared/src/policy.ts'), 'utf8').match(/TERMS_VERSION = '([^']+)'/)[1];
+      assert.equal(policy, TERMS);
+      assert.ok(fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8').includes(`get('termsAcceptedVersion', '') == '${policy}'`));
+    });
+    // ── Direct chats whose other participant's account was deleted ──
+    await check('deleted participants: only the deletion service writes the record; messages to a chat with one are refused, history stays readable', async () => {
+      await assertFails(sdk.setDoc(sdk.doc(dbOf('ivy'), 'direct_chats/ivy_kai'), { participants: ['ivy', 'kai'], participantInfo: {}, lastMessage: null, unreadCounts: { ivy: 0, kai: 0 }, deletedParticipants: [] }));
+      await assertFails(sdk.setDoc(sdk.doc(dbOf('ivy'), 'direct_chats/ivy_kai'), { participants: ['ivy', 'kai'], participantInfo: {}, lastMessage: null, unreadCounts: { ivy: 0, kai: 0 }, createdBy: 'kai' }));
+      await adminSet('direct_chats/dp_ivy_kai', { participants: ['ivy', 'kai'], participantInfo: {}, lastMessage: null, unreadCounts: { ivy: 0, kai: 0 }, deletedParticipants: ['kai'] });
+      await adminSet('direct_chats/dp_ivy_kai/messages/old', { senderId: 'kai', text: 'bye', clientId: 'old', sentAt: sdk.Timestamp.now() });
+      await assertFails(chatOf('ivy').sendDirectMessage('dp_ivy_kai', 'ivy', 'are you there', 'dp-1', ['kai']));
+      await assertFails(sdk.updateDoc(sdk.doc(dbOf('ivy'), 'direct_chats/dp_ivy_kai'), { deletedParticipants: [] }));
+      assert.equal((await sdk.getDocs(sdk.collection(dbOf('ivy'), 'direct_chats/dp_ivy_kai/messages'))).size, 1);
+      await chatOf('ivy').markDirectChatRead('dp_ivy_kai', 'ivy');
+    });
+    // ── Moderating public trips and community groups ──
+    const nowTs = sdk.Timestamp.now();
+    await env.withSecurityRulesDisabled(async ctx => {
+      const adb = ctx.firestore();
+      for (const [p, data] of Object.entries({
+        'publicTrips/mt1': { ownerUid: 'oli', ownerName: 'Oli', title: 'Moderated trip', description: 'd', destination: 'Rome', destinationKey: 'rome', memberCount: 3, maxMembers: 6, isAcceptingMembers: true, createdAt: nowTs, updatedAt: nowTs },
+        'trips/mt1/members/oli': { uid: 'oli', role: 'owner', displayName: 'Oli' },
+        'trips/mt1/members/pat': { uid: 'pat', role: 'member', displayName: 'Pat' },
+        'trips/mt1/members/rae': { uid: 'rae', role: 'member', displayName: 'Rae' },
+        'tripJoinRequests/mt1_zed': { requestId: 'mt1_zed', tripId: 'mt1', ownerUid: 'oli', requestorUid: 'zed', requestorName: 'Zed', status: 'pending', createdAt: nowTs },
+        'travelGroups/mg1': { ownerUid: 'oli', ownerName: 'Oli', name: 'Moderated group', description: 'd', destination: 'Rome', visibility: 'public', capacity: 8, memberCount: 3, isAcceptingMembers: true, createdAt: nowTs, updatedAt: nowTs },
+        'travelGroups/mg1/members/oli': { uid: 'oli', role: 'owner', displayName: 'Oli' },
+        'travelGroups/mg1/members/pat': { uid: 'pat', role: 'member', displayName: 'Pat' },
+        'travelGroups/mg1/members/rae': { uid: 'rae', role: 'member', displayName: 'Rae' },
+        'groupJoinRequests/mg1_zed': { requestId: 'mg1_zed', groupId: 'mg1', groupName: 'Moderated group', ownerUid: 'oli', requestorUid: 'zed', requestorName: 'Zed', status: 'pending', createdAt: nowTs },
+      })) await sdk.setDoc(sdk.doc(adb, p), data);
+    });
+    const modClient = client(MOD, modDb);
+    const rawStatus = (dbx, coll, id, status, by) => sdk.updateDoc(sdk.doc(dbx, `${coll}/${id}`), { moderationStatus: status, moderatedBy: by, moderatedAt: sdk.serverTimestamp() });
+    for (const [kind, coll, id, req, member] of [['trip', 'publicTrips', 'mt1', 'tripJoinRequests', 'trips'], ['group', 'travelGroups', 'mg1', 'groupJoinRequests', 'travelGroups']]) {
+      await check(`moderation of a ${kind}: only moderators set the status, and only with their own id`, async () => {
+        await assertFails(rawStatus(dbOf('oli'), coll, id, 'hidden', 'oli')); // the owner
+        await assertFails(rawStatus(dbOf('pat'), coll, id, 'hidden', 'pat')); // a member
+        await assertFails(rawStatus(modDb, coll, id, 'hidden', 'someone-else')); // forged moderator id
+        await assertFails(rawStatus(modDb, coll, id, 'archived', 'mod')); // unknown status
+        await assertFails(sdk.updateDoc(sdk.doc(modDb, `${coll}/${id}`), { moderationStatus: 'hidden', moderatedBy: 'mod', moderatedAt: sdk.serverTimestamp(), description: 'edited by a moderator' }));
+        await modClient.setItemModeration(kind, id, 'mod', 'hidden');
+        assert.equal((await adminGet(`${coll}/${id}`)).moderationStatus, 'hidden');
+      });
+      await check(`moderation of a ${kind}: while hidden the owner cannot edit, restore, delete or recreate it`, async () => {
+        const o = dbOf('oli');
+        await assertFails(sdk.updateDoc(sdk.doc(o, `${coll}/${id}`), { description: 'still editing', updatedAt: sdk.serverTimestamp() }));
+        await assertFails(rawStatus(o, coll, id, 'visible', 'oli'));
+        await assertFails(sdk.updateDoc(sdk.doc(o, `${coll}/${id}`), { moderationStatus: 'visible' }));
+        await assertFails(sdk.updateDoc(sdk.doc(o, `${coll}/${id}`), { moderationStatus: sdk.deleteField(), updatedAt: sdk.serverTimestamp() }));
+        await assertFails(sdk.deleteDoc(sdk.doc(o, `${coll}/${id}`)));
+        await assertFails(sdk.setDoc(sdk.doc(o, `${coll}/${id}`), { ownerUid: 'oli', title: 'fresh', name: 'fresh', description: '', visibility: 'public', destination: 'Rome', memberCount: 1, createdAt: sdk.serverTimestamp(), updatedAt: sdk.serverTimestamp() }));
+        assert.equal((await adminGet(`${coll}/${id}`)).moderationStatus, 'hidden');
+      });
+      await check(`moderation of a ${kind}: while hidden it takes no new requests and the owner cannot approve one`, async () => {
+        await assertFails(termsActions[kind === 'trip' ? 'tripJoinRequest' : 'groupJoinRequest']('quentin', id));
+        const od = dbOf('oli');
+        const b = sdk.writeBatch(od);
+        b.update(sdk.doc(od, `${req}/${id}_zed`), { status: 'approved', updatedAt: sdk.serverTimestamp() });
+        b.set(sdk.doc(od, `${member}/${id}/members/zed`), { uid: 'zed', displayName: 'Zed', photoURL: null, role: 'member', joinedAt: sdk.serverTimestamp() });
+        b.update(sdk.doc(od, `${coll}/${id}`), { memberCount: sdk.increment(1), updatedAt: sdk.serverTimestamp() });
+        await assertFails(b.commit());
+      });
+      await check(`moderation of a ${kind}: members can still leave and anyone can still report while hidden`, async () => {
+        const fsClient = client(FS, dbOf('pat'));
+        await (kind === 'trip' ? fsClient.leavePublicTrip(id, 'pat') : fsClient.leaveGroup(id, 'pat'));
+        assert.equal((await adminGet(`${coll}/${id}`)).memberCount, 2);
+        await fsClient.reportContent('pat', kind, id, 'safety', 'seen this while hidden');
+        assert.ok(await adminGet(`reports/${kind}___${id}___pat`));
+      });
+      await check(`moderation of a ${kind}: the discovery filter leaves it out; removed stays removed; restoring brings it back and the owner can edit again`, async () => {
+        const qd = dbOf('quentin');
+        const listed = await sdk.getDocs(kind === 'group' ? sdk.query(sdk.collection(qd, coll), sdk.where('visibility', '==', 'public')) : sdk.collection(qd, coll));
+        const asApp = listed.docs.map((d) => ({ id: d.id, moderationStatus: d.data().moderationStatus })).filter((x) => loadShared().isListed(x));
+        assert.ok(!asApp.some((x) => x.id === id), 'hidden item filtered');
+        await modClient.setItemModeration(kind, id, 'mod', 'removed');
+        await assertFails(rawStatus(dbOf('oli'), coll, id, 'visible', 'oli'));
+        await modClient.setItemModeration(kind, id, 'mod', 'visible');
+        await sdk.updateDoc(sdk.doc(dbOf('oli'), `${coll}/${id}`), { description: 'edited after restore', updatedAt: sdk.serverTimestamp() });
+        await termsActions[kind === 'trip' ? 'tripJoinRequest' : 'groupJoinRequest']('quentin', id);
+        assert.ok(await adminGet(`${req}/${id}_quentin`), 'requests are accepted again once visible');
+      });
+    }
+    await check('leave trip: retries, a second tap racing the first, and the organizer; the count falls exactly once', async () => {
+      const rae = client(FS, dbOf('rae'));
+      const before = (await adminGet('publicTrips/mt1')).memberCount;
+      const outcomes = await Promise.allSettled([rae.leavePublicTrip('mt1', 'rae'), rae.leavePublicTrip('mt1', 'rae')]);
+      assert.ok(outcomes.every((o) => o.status === 'fulfilled'), 'both calls report success');
+      await rae.leavePublicTrip('mt1', 'rae'); // lost-acknowledgement retry
+      assert.equal((await adminGet('publicTrips/mt1')).memberCount, before - 1);
+      assert.equal(await adminGet('trips/mt1/members/rae'), undefined, 'no access left: the member document is gone');
+      await assert.rejects(client(FS, dbOf('oli')).leavePublicTrip('mt1', 'oli'), (e) => e.code === 'community/organizer-cannot-leave'); // the organizer cannot leave
+      assert.ok(await adminGet('trips/mt1/members/oli'));
+    });
+    await check('leave community group: retries, a racing second tap and the owner; the count falls exactly once; access ends', async () => {
+      const rae = client(FS, dbOf('rae'));
+      const before = (await adminGet('travelGroups/mg1')).memberCount;
+      const outcomes = await Promise.allSettled([rae.leaveGroup('mg1', 'rae'), rae.leaveGroup('mg1', 'rae')]);
+      assert.ok(outcomes.every((o) => o.status === 'fulfilled'));
+      await rae.leaveGroup('mg1', 'rae');
+      assert.equal((await adminGet('travelGroups/mg1')).memberCount, before - 1);
+      assert.equal(await adminGet('travelGroups/mg1/members/rae'), undefined);
+      await assert.rejects(client(FS, dbOf('oli')).leaveGroup('mg1', 'oli'), (e) => e.code === 'community/organizer-cannot-leave'); // the owner cannot leave
+      assert.ok(await adminGet('travelGroups/mg1/members/oli'));
+      await assertFails(sdk.updateDoc(sdk.doc(dbOf('quentin'), 'travelGroups/mg1'), { memberCount: sdk.increment(-1), updatedAt: sdk.serverTimestamp() })); // a stranger cannot lower the count
+    });
+    await check('trip availability: gone, unavailable and available', async () => {
+      const fsClient = client(FS, dbOf('quentin'));
+      assert.equal(await fsClient.getTripAvailability('mt1'), 'available');
+      assert.equal(await fsClient.getTripAvailability('does-not-exist'), 'gone');
+      await modClient.setItemModeration('trip', 'mt1', 'mod', 'hidden');
+      assert.equal(await fsClient.getTripAvailability('mt1'), 'unavailable');
+      await modClient.setItemModeration('trip', 'mt1', 'mod', 'visible');
+    });
+    // ── Lifting a suspension ──
+    await check('lift suspension: moderators only, not for an account being deleted, and not by a suspended moderator', async () => {
+      await env.withSecurityRulesDisabled(async ctx => {
+        const adb = ctx.firestore();
+        for (const [p, data] of Object.entries({
+          'accountSuspensions/lift1': { suspendedBy: 'mod', reason: 'x', createdAt: sdk.Timestamp.now() },
+          'accountSuspensions/lift2': { suspendedBy: 'mod', reason: 'x', createdAt: sdk.Timestamp.now() },
+          'accountSuspensions/gone': { suspendedBy: 'mod', reason: 'x', createdAt: sdk.Timestamp.now() },
+          'moderators/mod2': { grantedBy: 'owner-console' },
+          'accountSuspensions/mod2': { suspendedBy: 'mod', reason: 'x', createdAt: sdk.Timestamp.now() },
+        })) await sdk.setDoc(sdk.doc(adb, p), data);
+      });
+      await assertFails(client(MOD, dbOf('oli')).unsuspendUser('lift1')); // not a moderator
+      await assertFails(client(MOD, dbOf('lift1')).unsuspendUser('lift1')); // not a self-service lift
+      await assertFails(modClient.unsuspendUser('gone')); // being deleted
+      await assertFails(client(MOD, dbOf('mod2')).unsuspendUser('lift2')); // the moderator is suspended
+      assert.ok(await adminGet('accountSuspensions/lift2'));
+      await modClient.unsuspendUser('lift1');
+      assert.equal(await adminGet('accountSuspensions/lift1'), undefined);
+      const listed = await sdk.getDocs(sdk.collection(modDb, 'accountSuspensions'));
+      assert.ok(listed.size >= 2, 'moderators can list suspensions');
+      await assertFails(sdk.getDocs(sdk.collection(dbOf('oli'), 'accountSuspensions')));
+      await assertFails(sdk.getDoc(sdk.doc(dbOf('oli'), 'accountSuspensions/lift2'))); // not another account's
+      await sdk.getDoc(sdk.doc(dbOf('lift2'), 'accountSuspensions/lift2')); // your own
+    });
+    // ── Discovery consent after a suspension ──
+    await check('discovery consent: an opt-in with no record behind it is switched off once the suspension is gone; never republished', async () => {
+      await adminSet('users/dee', { termsAcceptedVersion: TERMS, name: 'dee', profileVisibility: 'public', showInNearbyTravelers: true, shareCompatibility: false });
+      const deeFs = client(FS, dbOf('dee'));
+      await adminSet('accountSuspensions/dee', { suspendedBy: 'mod', reason: 'x', createdAt: sdk.Timestamp.now() });
+      assert.equal(await deeFs.reconcileDiscoveryConsent('dee', { showInNearbyTravelers: true }), false, 'still suspended: nothing changes');
+      assert.equal((await adminGet('users/dee')).showInNearbyTravelers, true);
+      await modClient.unsuspendUser('dee');
+      assert.equal(await deeFs.reconcileDiscoveryConsent('dee', { showInNearbyTravelers: false }), false, 'not opted in: nothing to do');
+      assert.equal(await deeFs.reconcileDiscoveryConsent('dee', { showInNearbyTravelers: true }), true);
+      assert.equal((await adminGet('users/dee')).showInNearbyTravelers, false);
+      assert.equal(await adminGet('nearbyTravelers/dee'), undefined, 'no record was written');
+      // A record that exists means consent is in effect: leave it alone.
+      await adminSet('users/dee', { termsAcceptedVersion: TERMS, name: 'dee', profileVisibility: 'public', showInNearbyTravelers: true, shareCompatibility: false });
+      await adminSet('nearbyTravelers/dee', { uid: 'dee', displayName: 'dee', photoURL: null, currentCity: '', travelStyles: [], interests: [], languages: [], travelPace: null, travelSchedule: null, groupSizePreference: null, destination: null, destinationKey: null, destinationStartDate: null, destinationEndDate: null, updatedAt: sdk.Timestamp.now() });
+      assert.equal(await deeFs.reconcileDiscoveryConsent('dee', { showInNearbyTravelers: true }), false);
+      assert.equal((await adminGet('users/dee')).showInNearbyTravelers, true);
     });
     console.log(`${checks} release rule checks passed`);
   } finally { await env.cleanup(); }

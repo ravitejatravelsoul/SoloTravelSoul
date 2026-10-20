@@ -40,8 +40,12 @@ function queueModule(be) {
   const data = new Map();
   const storage = { getItem: async (k) => data.get(k) ?? null, setItem: async (k, v) => { data.set(k, v); } };
   const lock = load('apps/mobile/utils/queueLock.ts', {});
-  return load('apps/mobile/utils/chatQueue.ts', { './queueLock': lock, '@react-native-async-storage/async-storage': { default: storage },
+  // A fresh draft store per queue: the queue stashes texts it dropped there and the chat hooks hand them back to the composer.
+  const draft = load('apps/mobile/utils/draftRestore.ts', {});
+  const mod = load('apps/mobile/utils/chatQueue.ts', { './queueLock': lock, './draftRestore': draft, '@react-native-async-storage/async-storage': { default: storage },
     '@solotravelsoul/firebase': { sendDirectMessage: (...a) => be.sendDirectMessage(...a), sendGroupMessage: (...a) => be.sendGroupMessage(...a) } });
+  mod.draft = draft;
+  return mod;
 }
 
 const dm = (id) => ({ type: 'dm.send', chatId: 'u_v', senderId: 'u', text: 'hi', clientId: id, otherUids: ['v'] });
@@ -74,7 +78,7 @@ function chatHook(kind, be, cq, net) {
     : { subscribeToGroupMessages: () => () => {}, sendGroupMessage: (...a) => be.sendGroupMessage(...a), markGroupRead: async () => {} };
   const render = renderHook((react) => {
     const mod = load(kind === 'dm' ? 'apps/mobile/hooks/useMessages.ts' : 'apps/mobile/hooks/useGroupChat.ts', {
-      react, '@solotravelsoul/firebase': firebase, '@/utils/chatQueue': cq,
+      react, '@solotravelsoul/firebase': firebase, '@/utils/chatQueue': cq, '@/utils/draftRestore': cq.draft,
       '@/stores/authStore': { useAuthStore: auth },
       '@/hooks/useNetworkState': { useNetworkState: () => ({ isConnected: !net.offline }) },
       '@/stores/uiStore': { useUIStore: { getState: () => ({ addToast: (m, t) => toasts.push([t, m]) }) } },
@@ -156,6 +160,7 @@ for (const kind of ['dm', 'group']) {
     deepEqual(h.render().messages, [], 'no pending bubble left behind');
     assert.equal(h.toasts.length, 1);
     assert.equal(h.toasts[0][0], 'error');
+    assert.equal(h.render().restored.text, 'blocked', 'the refused text goes back to the composer');
     assert.equal(await cq.getChatQueueSize('u'), 0, 'not queued for later delivery');
     be.suspended = false;
     await cq.processChatQueue('u');
@@ -175,6 +180,23 @@ for (const kind of ['dm', 'group']) {
     assert.equal(await cq.getChatQueueSize('u'), 0);
   });
 
+  test(`${kind} hook: text of a queued send refused while the chat was closed is handed back when it is opened, once, and never delivered`, async () => {
+    const be = backend();
+    const cq = queueModule(be);
+    await cq.enqueueChatOp('u', kind === 'dm' ? dm('z') : group('z')); // queued while offline; no chat screen is open
+    be.suspended = true;
+    const r = await cq.processChatQueue('u');
+    assert.equal(r.rejected.length, 1);
+    be.suspended = false;
+    const opened = chatHook(kind, be, cq, { offline: false });
+    assert.equal(opened.render().restored.text, 'hi', 'the text comes back when the chat is opened');
+    assert.equal(opened.toasts.length, 1, 'with a message saying why');
+    const again = chatHook(kind, be, cq, { offline: false });
+    assert.equal(again.render().restored, null, 'it is handed back once');
+    await cq.processChatQueue('u');
+    deepEqual(be.delivered, [], 'and it was never delivered');
+  });
+
   test(`${kind} hook offline: queued send refused on reconnect (suspended) clears its bubble and is never delivered after unsuspension`, async () => {
     const be = backend();
     const cq = queueModule(be);
@@ -188,6 +210,7 @@ for (const kind of ['dm', 'group']) {
     const r = await cq.processChatQueue('u');
     assert.equal(r.rejected.length, 1);
     deepEqual(h.render().messages, [], 'pending bubble removed after the rejection');
+    assert.equal(h.render().restored.text, 'offline', 'and its text is back in the composer');
     be.suspended = false;
     await cq.processChatQueue('u');
     deepEqual(be.delivered, []);

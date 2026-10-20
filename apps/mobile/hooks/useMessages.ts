@@ -5,6 +5,7 @@ import {
   markDirectChatRead,
 } from '@solotravelsoul/firebase';
 import { enqueueChatOp, isPermanentRejection, onChatOpsRejected } from '@/utils/chatQueue';
+import { nextRestore, takeUndelivered, type DraftRestore } from '@/utils/draftRestore';
 import { useAuthStore } from '@/stores/authStore';
 import { useNetworkState } from '@/hooks/useNetworkState';
 import { useUIStore } from '@/stores/uiStore';
@@ -28,17 +29,29 @@ export function useMessages(chatId: string, otherUids: string[]) {
 
   const [confirmed, setConfirmed] = useState<DirectMessage[]>([]);
   const [pending, setPending] = useState<DirectMessage[]>([]);
+  // A send the server refused outright: its text goes back to the composer so nothing the person wrote is lost.
+  const [restored, setRestored] = useState<DraftRestore | null>(null);
 
-  // Queued sends the server refused later (offline, then suspended) are dropped
-  // by the queue; remove their pending bubbles so they are not shown as sending.
+  // Queued sends the server refused later (offline, then suspended) are dropped by the queue and never delivered
+  // afterwards; their bubbles go away and their text returns to the composer (now, or when the chat is opened).
+  const recoverUndelivered = useCallback(() => {
+    if (!uid || !chatId) return;
+    const texts = takeUndelivered(uid, chatId);
+    if (texts.length === 0) return;
+    setRestored(nextRestore(texts.join('\n')));
+    useUIStore.getState().addToast('A message you sent while offline could not be delivered. It is back in the message box.', 'error');
+  }, [uid, chatId]);
+
   useEffect(() => {
     if (!uid) return;
+    recoverUndelivered();
     return onChatOpsRejected((owner, ops) => {
       if (owner !== uid) return;
       const ids = new Set(ops.map((o) => o.clientId));
       setPending((prev) => prev.filter((m) => !ids.has(m.clientId)));
+      recoverUndelivered();
     });
-  }, [uid]);
+  }, [uid, recoverUndelivered]);
 
   // Subscribe to Firestore snapshot
   useEffect(() => {
@@ -102,7 +115,8 @@ export function useMessages(chatId: string, otherUids: string[]) {
         // Refused by the rules (e.g. suspended account): retrying cannot succeed.
         if (isPermanentRejection(e)) {
           setPending((prev) => prev.filter((m) => m.clientId !== clientId));
-          useUIStore.getState().addToast('Message not sent. You cannot send to this chat right now (your account or the conversation is restricted).', 'error');
+          setRestored(nextRestore(text.trim()));
+          useUIStore.getState().addToast('Message not sent. You cannot send to this chat right now (your account or the conversation is restricted). Your text is still in the message box.', 'error');
           return;
         }
         // Snapshot didn't arrive in time or send failed — queue for retry
@@ -120,5 +134,5 @@ export function useMessages(chatId: string, otherUids: string[]) {
     [uid, chatId, isConnected, otherUids, notifyEnqueued],
   );
 
-  return { messages, sendMessage };
+  return { messages, sendMessage, restored };
 }

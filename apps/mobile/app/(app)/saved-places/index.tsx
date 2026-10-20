@@ -29,6 +29,7 @@ import {
   Shadow,
 } from '@/constants/theme';
 import type { SavedPlace, PlaceEntry, PlaceCategory } from '@solotravelsoul/shared';
+import { ToastContainer } from '@/components/ui/Toast';
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -495,6 +496,7 @@ function PlaceDetailModal({
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      <ToastContainer />
     </Modal>
   );
 }

@@ -16,6 +16,8 @@ import { Text, EmptyState } from '@/components/ui';
 import { CommentItem } from './CommentItem';
 import { useComments } from '@/hooks/useComments';
 import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { ToastContainer } from '@/components/ui/Toast';
+import { useUIStore } from '@/stores/uiStore';
 
 interface Props {
   postId: string;
@@ -42,9 +44,16 @@ export function CommentsSheet({ postId, authorId, onClose }: Props) {
     if (!text.trim() || submitting) return;
     const t = text.trim();
     setText('');
-    const parentId = replyTo?.id ?? null;
+    const reply = replyTo;
     setReplyTo(null);
-    await submit(t, parentId);
+    try {
+      await submit(t, reply?.id ?? null);
+    } catch {
+      // Nothing the person wrote is lost: the comment goes back in the box with an error shown inside this sheet.
+      setText((current) => (current ? `${t}\n${current}` : t));
+      setReplyTo(reply);
+      useUIStore.getState().addToast('Comment not sent. Check your connection (or your account status) and try again.', 'error');
+    }
   }, [text, submitting, replyTo, submit]);
 
   return (
@@ -131,6 +140,7 @@ export function CommentsSheet({ postId, authorId, onClose }: Props) {
           </SafeAreaView>
         </KeyboardAvoidingView>
       </View>
+      <ToastContainer />
     </Modal>
   );
 }

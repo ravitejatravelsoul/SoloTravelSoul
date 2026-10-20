@@ -2,6 +2,9 @@
 // request screens and the sign-up agreement say the same thing (a release test compares them).
 // NOT legal advice: the owner and a qualified lawyer must review all of it before launch.
 
+/** What other people see in place of a deleted account's name (the deletion service writes the same text). */
+export const DELETED_ACCOUNT_NAME = 'Deleted User';
+
 /** Bump when the Terms, Privacy Policy or community rules change in a way users must re-accept. */
 export const TERMS_VERSION = '2026-10-19';
 

@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text, Avatar } from '@/components/ui';
 import { RequesterAnswers } from './RequesterAnswers';
 import type { TripJoinRequest, RequestStatus } from '@solotravelsoul/shared';
+import type { TripAvailability } from '@solotravelsoul/firebase';
 import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 
 const STATUS_CONFIG: Record<RequestStatus, { label: string; color: string; icon: string }> = {
@@ -22,14 +23,23 @@ function timeAgo(date: Date): string {
   return `${days}d ago`;
 }
 
+/** Plain-language state of a trip that can no longer be acted on, or null while it can. */
+function unavailableNote(availability: TripAvailability | undefined): string | null {
+  if (availability === 'gone') return 'This trip is no longer available. The organizer may have deleted it or their account.';
+  if (availability === 'unavailable') return 'This trip is currently not available.';
+  return null;
+}
+
 interface SentCardProps {
   request: TripJoinRequest;
+  availability?: TripAvailability;
   onCancel?: () => void;
   onViewTrip?: () => void;
 }
 
-export function SentRequestCard({ request, onCancel, onViewTrip }: SentCardProps) {
+export function SentRequestCard({ request, availability, onCancel, onViewTrip }: SentCardProps) {
   const config = STATUS_CONFIG[request.status];
+  const note = unavailableNote(availability);
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -44,12 +54,13 @@ export function SentRequestCard({ request, onCancel, onViewTrip }: SentCardProps
       </View>
       <Text style={styles.destination}>{request.tripDestination}</Text>
       <Text style={styles.timeAgo}>Sent {timeAgo(request.createdAt)}</Text>
+      {note && <Text style={styles.unavailable} accessibilityRole="alert">{note}</Text>}
       {request.status === 'pending' && onCancel && (
         <TouchableOpacity style={styles.actionBtn} onPress={onCancel} activeOpacity={0.7}>
           <Text style={styles.actionBtnLabel}>Cancel request</Text>
         </TouchableOpacity>
       )}
-      {request.status === 'approved' && onViewTrip && (
+      {request.status === 'approved' && onViewTrip && !note && (
         <TouchableOpacity style={[styles.actionBtn, styles.actionBtnPrimary]} onPress={onViewTrip} activeOpacity={0.7}>
           <Text style={[styles.actionBtnLabel, styles.actionBtnPrimaryLabel]}>View Trip</Text>
         </TouchableOpacity>
@@ -60,11 +71,13 @@ export function SentRequestCard({ request, onCancel, onViewTrip }: SentCardProps
 
 interface ReceivedCardProps {
   request: TripJoinRequest;
+  availability?: TripAvailability;
   onApprove: () => void;
   onReject: () => void;
 }
 
-export function ReceivedRequestCard({ request, onApprove, onReject }: ReceivedCardProps) {
+export function ReceivedRequestCard({ request, availability, onApprove, onReject }: ReceivedCardProps) {
+  const note = unavailableNote(availability);
   return (
     <View style={styles.card}>
       <View style={styles.requesterRow}>
@@ -78,15 +91,18 @@ export function ReceivedRequestCard({ request, onApprove, onReject }: ReceivedCa
       {request.message ? (
         <Text style={styles.message} numberOfLines={3}>&ldquo;{request.message}&rdquo;</Text>
       ) : null}
+      {note && <Text style={styles.unavailable} accessibilityRole="alert">{note} It cannot take new members.</Text>}
       {request.status === 'pending' && <RequesterAnswers requestorUid={request.requestorUid} />}
       {request.status === 'pending' && (
         <View style={styles.actionsRow}>
           <TouchableOpacity style={[styles.actionBtn, styles.rejectBtn]} onPress={onReject} activeOpacity={0.7}>
-            <Text style={[styles.actionBtnLabel, styles.rejectLabel]}>Reject</Text>
+            <Text style={[styles.actionBtnLabel, styles.rejectLabel]}>{note ? 'Decline' : 'Reject'}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionBtn, styles.approveBtn]} onPress={onApprove} activeOpacity={0.7}>
-            <Text style={[styles.actionBtnLabel, styles.approveLabel]}>Approve</Text>
-          </TouchableOpacity>
+          {!note && (
+            <TouchableOpacity style={[styles.actionBtn, styles.approveBtn]} onPress={onApprove} activeOpacity={0.7}>
+              <Text style={[styles.actionBtnLabel, styles.approveLabel]}>Approve</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
       {request.status !== 'pending' && (
@@ -122,6 +138,7 @@ const styles = StyleSheet.create({
   },
   statusLabel: { fontSize: FontSize.xs, fontWeight: FontWeight.semibold },
   destination: { fontSize: FontSize.sm, color: Colors.textSecondary },
+  unavailable: { fontSize: FontSize.sm, color: Colors.textSecondary, backgroundColor: Colors.background, padding: Spacing.sm, borderRadius: Radius.sm },
   timeAgo: { fontSize: FontSize.xs, color: Colors.placeholder },
   actionBtn: {
     paddingVertical: Spacing.sm,
