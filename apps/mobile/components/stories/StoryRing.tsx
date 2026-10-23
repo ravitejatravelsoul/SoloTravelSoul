@@ -27,7 +27,7 @@ export const StoryRing = memo(function StoryRing({ hasStory, seen, size = 80, ch
           width: ringSize,
           height: ringSize,
           borderRadius: ringSize / 2,
-          borderColor: seen ? '#D1D5DB' : '#1270C2',
+          borderColor: seen ? '#D1D5DB' : '#00897B',
         },
       ]}
     >

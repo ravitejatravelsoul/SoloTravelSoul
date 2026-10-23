@@ -1,9 +1,9 @@
 import { useEffect, memo, useCallback, useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Screen, Text } from '@/components/ui';
+import { Screen, Text, ScreenHeader, PressableScale } from '@/components/ui';
 import { useTripStore } from '@/stores/tripStore';
 import { useItinerary } from '@/hooks/useItinerary';
 import { formatDayLabel, tripStatus, tripCurrentDay, tripDurationDays } from '@/utils/dateUtils';
@@ -15,6 +15,7 @@ import {
   FontSize,
   FontWeight,
   Shadow,
+  Fonts,
 } from '@/constants/theme';
 import { TripMapView } from '@/components/map/TripMapView';
 import type { ItineraryDay } from '@solotravelsoul/shared';
@@ -71,43 +72,31 @@ export default function ItineraryScreen() {
     <Screen loading={loading} padded={false}>
 
       {/* ── Header ── */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-        >
-          <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
-        <View style={{ flex: 1, marginLeft: Spacing.md }}>
-          <Text variant="h3" numberOfLines={1}>
-            {trip?.destination ?? 'Itinerary'}
-          </Text>
-          {itinerary.length > 0 && !loading && (
-            <Text variant="caption" style={styles.headerSub}>
-              {itinerary.length} day{itinerary.length !== 1 ? 's' : ''} planned
-            </Text>
-          )}
-        </View>
-        {itinerary.length > 0 && !loading && (
-          <TouchableOpacity
-            onPress={() => setViewMode((v) => (v === 'list' ? 'map' : 'list'))}
-            hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-            style={styles.mapToggleBtn}
-          >
-            <Ionicons
-              name={viewMode === 'map' ? 'list-outline' : 'map-outline'}
-              size={22}
-              color={Colors.primary}
-            />
-          </TouchableOpacity>
-        )}
-        {status === 'active' && (
-          <View style={styles.activeBadge}>
-            <View style={styles.activeDot} />
-            <Text style={styles.activeText}>Active</Text>
+      <ScreenHeader
+        title={trip?.destination ?? 'Itinerary'}
+        subtitle={itinerary.length > 0 && !loading ? `${itinerary.length} day${itinerary.length !== 1 ? 's' : ''} planned` : undefined}
+        right={
+          <View style={styles.headerRight}>
+            {status === 'active' && (
+              <View style={styles.activeBadge}>
+                <View style={styles.activeDot} />
+                <Text style={styles.activeText}>Active</Text>
+              </View>
+            )}
+            {itinerary.length > 0 && !loading && (
+              <PressableScale
+                onPress={() => setViewMode((v) => (v === 'list' ? 'map' : 'list'))}
+                guardMs={300}
+                style={styles.mapToggleBtn}
+                accessibilityRole="button"
+                accessibilityLabel={viewMode === 'map' ? 'Show the day list' : 'Show the map'}
+              >
+                <Ionicons name={viewMode === 'map' ? 'list-outline' : 'map-outline'} size={22} color={Colors.primaryDark} />
+              </PressableScale>
+            )}
           </View>
-        )}
-      </View>
+        }
+      />
 
       {!loading && itinerary.length > 0 && viewMode === 'map' && (
         <TripMapView itinerary={itinerary} />
@@ -241,8 +230,11 @@ const DayRow = memo(function DayRow({
       </View>
 
       {/* ── Card ── */}
-      <TouchableOpacity
-        activeOpacity={0.8}
+      <PressableScale
+        scaleTo={0.98}
+        guardMs={500}
+        accessibilityRole="button"
+        accessibilityLabel={`${formatDayLabel(day.date)}, ${placeCount} place${placeCount !== 1 ? 's' : ''}${isToday ? ', today' : ''}`}
         onPress={() => router.push(`/(app)/trips/${tripId}/itinerary/${day.id}`)}
         style={[
           styles.card,
@@ -304,7 +296,7 @@ const DayRow = memo(function DayRow({
             {isToday ? 'Add places for today →' : 'Tap to plan this day'}
           </Text>
         )}
-      </TouchableOpacity>
+      </PressableScale>
     </View>
   );
 });
@@ -312,16 +304,8 @@ const DayRow = memo(function DayRow({
 // ── Styles ────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: Spacing.lg,
-    paddingTop: Spacing['2xl'],
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  headerSub: { color: Colors.textSecondary, marginTop: 1 },
-  mapToggleBtn: { padding: Spacing.xs, marginLeft: Spacing.xs },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  mapToggleBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.tealSoft, alignItems: 'center', justifyContent: 'center' },
   activeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -341,7 +325,7 @@ const styles = StyleSheet.create({
     marginHorizontal: Spacing.lg,
     marginTop: Spacing.lg,
     marginBottom: Spacing.sm,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     padding: Spacing.lg,
     ...Shadow.md,
   },
@@ -358,8 +342,8 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.semibold,
   },
   progressBannerDay: {
-    fontSize: FontSize.xl,
-    fontWeight: FontWeight.extrabold,
+    fontFamily: Fonts.displayHeavy,
+    fontSize: FontSize['2xl'],
     color: Colors.white,
     marginTop: 2,
   },
@@ -396,7 +380,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   summaryChipText: {
-    fontSize: FontSize.xs,
+    fontSize: FontSize.sm,
     color: Colors.textSecondary,
     fontWeight: FontWeight.medium,
   },
@@ -415,13 +399,13 @@ const styles = StyleSheet.create({
   // Left column: badge + connecting line
   timelineCol: {
     alignItems: 'center',
-    width: 36,
+    width: 40,
     paddingTop: 4,
   },
   dayBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: Colors.chipBackground,
     alignItems: 'center',
     justifyContent: 'center',
@@ -438,8 +422,8 @@ const styles = StyleSheet.create({
     borderColor: Colors.success,
   },
   dayNum: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.bold,
+    fontFamily: Fonts.display,
+    fontSize: FontSize.md,
     color: Colors.textSecondary,
   },
   dayNumToday: { color: Colors.white },
@@ -461,10 +445,10 @@ const styles = StyleSheet.create({
   card: {
     flex: 1,
     backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     borderWidth: 1,
-    borderColor: Colors.border,
-    padding: Spacing.md,
+    borderColor: Colors.borderLight,
+    padding: Spacing.lg,
     gap: Spacing.sm,
     marginBottom: Spacing.sm,
     ...Shadow.sm,
@@ -472,7 +456,7 @@ const styles = StyleSheet.create({
   cardToday: {
     borderColor: Colors.primary,
     borderWidth: 1.5,
-    backgroundColor: Colors.primary + '04',
+    backgroundColor: Colors.tealSoft,
   },
   cardPast: {
     backgroundColor: Colors.background,
@@ -486,23 +470,23 @@ const styles = StyleSheet.create({
   },
   dayLabel: {
     flex: 1,
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.semibold,
+    fontFamily: Fonts.display,
+    fontSize: FontSize.lg,
     color: Colors.textPrimary,
-    lineHeight: 20,
+    lineHeight: 26,
   },
   dayLabelPast: { color: Colors.textSecondary },
 
   todayBadge: {
-    backgroundColor: Colors.primary + '18',
+    backgroundColor: Colors.primaryDark,
     paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: Radius.full,
   },
   todayBadgeText: {
-    fontSize: 11,
+    fontSize: FontSize.xs,
     fontWeight: FontWeight.bold,
-    color: Colors.primary,
+    color: Colors.white,
   },
   pastHint: {
     fontSize: FontSize.xs,
@@ -516,19 +500,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     backgroundColor: Colors.chipBackground,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 3,
     borderRadius: Radius.full,
   },
   pillPast: { backgroundColor: Colors.background },
   pillText: {
-    fontSize: FontSize.xs,
+    fontSize: FontSize.sm,
     color: Colors.textSecondary,
   },
-  pillTextPast: { color: Colors.placeholder },
+  pillTextPast: { color: Colors.textSecondary },
   emptyHint: {
-    fontSize: FontSize.xs,
-    color: Colors.placeholder,
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
     fontStyle: 'italic',
   },
 

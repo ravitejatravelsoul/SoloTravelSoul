@@ -18,7 +18,7 @@ import {
 import { getUserInitials } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
-import { Colors, FontSize, FontWeight, Radius, Spacing } from '@/constants/theme';
+import { Colors, FontSize, FontWeight, Radius, Spacing, Fonts } from '@/constants/theme';
 import type { UserLookup } from '@solotravelsoul/shared';
 
 export default function NewChatScreen() {
@@ -176,11 +176,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingBottom: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    backgroundColor: Colors.background,
   },
-  title: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  title: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   body: { padding: Spacing.lg, gap: Spacing.md },
   label: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.textSecondary },
   searchRow: { flexDirection: 'row', gap: Spacing.sm },

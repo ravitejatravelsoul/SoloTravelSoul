@@ -346,7 +346,7 @@ test('journal card: like control never overlapped; author and read time shrink/w
     '@/components/ui': { Text: 'Text', Avatar: 'Avatar' }, '@/components/posts/LikeButton': { LikeButton: 'LikeButton' },
     '@/hooks/useJournals': { useLikeJournal: () => ({ liked: false, toggling: false, toggle() {} }) },
     '@solotravelsoul/shared': { getUserInitials: () => 'AB' },
-    '@/constants/theme': { Colors: {}, Spacing: { xs: 4, sm: 8, md: 12, '2xl': 24 }, Radius: {}, FontSize: { xs: 12, sm: 14, xl: 20 }, FontWeight: {}, Shadow: {} },
+    '@/constants/theme': { Colors: {}, Spacing: { xs: 4, sm: 8, md: 12, '2xl': 24 }, Radius: {}, FontSize: { xs: 12, sm: 14, xl: 20 }, FontWeight: {}, Fonts: { display: 'Baloo2_700Bold' }, Shadow: {} },
   });
   const longName = 'Maximiliana Alexandrovna Featherstonehaugh-Whittingham';
   const tree = card.JournalCard({ journal: { journalId: 'j', title: 'T', authorName: longName, readTimeMinutes: 1, likeCount: 1_234_567 } });
@@ -620,7 +620,7 @@ test('font-scale re-commit with many elements (real React): unique ids, caller i
 test('Explore search bar adapts to the system text size: a minimum height, no fixed height that clips 2.0x text', () => {
   const src = fs.readFileSync(path.join(root, 'apps/mobile/app/(app)/discover/index.tsx'), 'utf8');
   const styles = src.slice(src.indexOf('searchBar: {'), src.indexOf('loader:'));
-  assert.match(styles, /minHeight: 42/, 'normal-size height is kept as a minimum');
+  assert.match(styles, /minHeight: 48/, 'normal-size height is kept as a minimum');
   assert.doesNotMatch(styles, /height:/, 'no fixed height on the bar or on the input');
 });
 
@@ -681,6 +681,121 @@ test('published contact addresses are the working mailbox; no @solotravelsoul.ap
   // The Safety screen's mailto target and its label are the same constant.
   const safety = fs.readFileSync(path.join(root, 'apps/mobile/app/(app)/profile/safety.tsx'), 'utf8');
   assert.match(safety, /Linking\.openURL\(`mailto:\$\{CONTACT_EMAIL\}`\)[\s\S]{0,400}<Text style=\{styles\.linkLabel\}>\{CONTACT_EMAIL\}<\/Text>/);
+});
+
+test('redesign: press feedback never fires an action twice, and reduced motion removes the animation', () => {
+  const calls = { spring: 0 };
+  const rnFake = { Animated: { Value: function Value() {}, spring: () => { calls.spring++; return { start() {} }; }, createAnimatedComponent: (c) => c }, Pressable: 'Pressable' };
+  const load = (reduced) => component('apps/mobile/components/ui/PressableScale.tsx', {
+    react: { useCallback: (fn) => fn, useRef: (v) => ({ current: v }) },
+    'react-native': rnFake,
+    '@/constants/theme': { Motion: { pressScale: 0.96, spring: { damping: 14, stiffness: 220, mass: 0.8 } } },
+    '@/hooks/useReducedMotion': { useReducedMotion: () => reduced },
+  }).PressableScale;
+  let fired = 0;
+  const guarded = load(false)({ onPress: () => { fired++; }, guardMs: 350, children: 'x' });
+  guarded.props.onPress({}); guarded.props.onPress({});
+  assert.equal(fired, 1, 'a second press inside the guard window is ignored');
+  fired = 0;
+  const open = load(false)({ onPress: () => { fired++; }, children: 'x' });
+  open.props.onPress({}); open.props.onPress({});
+  assert.equal(fired, 2, 'no guard unless asked for');
+  const moving = load(false)({ onPress() {}, children: 'x' });
+  moving.props.onPressIn({}); moving.props.onPressOut({});
+  assert.equal(calls.spring, 2, 'press in and out each spring');
+  calls.spring = 0;
+  const still = load(true)({ onPress() {}, children: 'x' });
+  still.props.onPressIn({}); still.props.onPressOut({});
+  assert.equal(calls.spring, 0, 'reduced motion: no spring at all');
+  // Only a transform is animated: layout size never changes while the finger is down.
+  const src = fs.readFileSync(path.join(root, 'apps/mobile/components/ui/PressableScale.tsx'), 'utf8');
+  assert.match(src, /useNativeDriver: true/);
+  assert.match(src, /transform: \[\{ scale \}\]/);
+});
+
+test('redesign: bundled photographs are cropped from their own proportions (a magnified corner was shown on Android)', () => {
+  const slots = []; let i = 0;
+  const react = { useState: (init) => { const k = i++; if (!(k in slots)) slots[k] = init; return [slots[k], (v) => { slots[k] = typeof v === 'function' ? v(slots[k]) : v; }]; } };
+  const rn = { Image: Object.assign('Image', { resolveAssetSource: () => ({ width: 1080, height: 670 }) }), StyleSheet: { absoluteFill: { position: 'absolute' } }, View: 'View' };
+  const { LocalCover } = component('apps/mobile/components/ui/LocalCover.tsx', { react, 'react-native': rn });
+  const render = () => { i = 0; return LocalCover({ source: 1, focalX: 0.25 }); };
+  let tree = render();
+  assert.equal(tree.props.children.length, 0, 'nothing is drawn until the box is measured');
+  tree.props.onLayout({ nativeEvent: { layout: { width: 400, height: 300 } } });
+  tree = render();
+  const image = tree.props.children[0];
+  const scale = Math.max(400 / 1080, 300 / 670);
+  const st = flat(image.props.style);
+  assert.equal(Math.round(st.width), Math.round(1080 * scale));
+  assert.equal(Math.round(st.height), Math.round(670 * scale));
+  assert.ok(st.width >= 400 && st.height >= 300, 'always covers the box');
+  assert.ok(Math.abs(st.left + (1080 * scale - 400) * 0.25) < 1e-6, 'the focal point decides what is cropped');
+  assert.equal(tree.props.pointerEvents, 'none', 'never takes a touch');
+});
+
+test('redesign: launch hand-off (one native splash, an identical JS overlay, no blank frame, bounded wait)', () => {
+  const layout = fs.readFileSync(path.join(root, 'apps/mobile/app/_layout.tsx'), 'utf8');
+  const overlay = fs.readFileSync(path.join(root, 'apps/mobile/components/LaunchOverlay.tsx'), 'utf8');
+  const app = JSON.parse(fs.readFileSync(path.join(root, 'apps/mobile/app.json'), 'utf8')).expo;
+  const theme = fs.readFileSync(path.join(root, 'apps/mobile/constants/theme.ts'), 'utf8');
+  // The splash stays up from process start until the overlay is on screen; only then is it hidden.
+  assert.match(layout, /SplashScreen\.preventAutoHideAsync\(\)/);
+  assert.equal((layout.match(/SplashScreen\.hideAsync\(\)/g) || []).length, 1, 'hidden in one place only');
+  assert.match(layout, /handleOverlayShown[\s\S]{0,160}SplashScreen\.hideAsync\(\)/);
+  // The wait for fonts and the signed-in state is bounded; a slow or failed start still shows the app.
+  assert.match(layout, /LAUNCH_FALLBACK_MS = 4000/);
+  assert.match(layout, /launchReady/);
+  assert.match(layout, /<LaunchOverlay ready=\{launchReady\} onShown=\{handleOverlayShown\} \/>/);
+  // No artificial delay: the overlay leaves as soon as it is told the app is ready, instantly under reduced motion.
+  assert.doesNotMatch(overlay, /setTimeout|[{,] delay:/);
+  assert.match(overlay, /reducedMotionKnown\(\)\.then\(\(reduced\) => \{[\s\S]{0,120}if \(reduced\) \{ setGone\(true\)/, 'the overlay waits for the system answer, then leaves at once under reduced motion');
+  assert.match(fs.readFileSync(path.join(root, 'apps/mobile/hooks/useReducedMotion.ts'), 'utf8'), /void ensureLoaded\(\);/, 'asked at app start');
+  assert.match(overlay, /accessibilityElementsHidden/);
+  assert.match(overlay, /pointerEvents=\{ready \? 'none' : 'auto'\}/);
+  // Same background colour and logo size natively and in JavaScript.
+  assert.equal(app.splash.backgroundColor.toLowerCase(), '#fff8ee');
+  assert.match(theme, /background: '#FFF8EE'/);
+  assert.equal(app.splash.imageWidth, 220);
+  assert.match(overlay, /Math\.round\(220 \* 0\.62\)/);
+  assert.equal(app.splash.image, './assets/images/splash-icon.png');
+  assert.ok(fs.existsSync(path.join(root, 'apps/mobile/assets/images/splash-icon.png')));
+  assert.ok(fs.statSync(path.join(root, 'apps/mobile/assets/images/brand-mark.png')).size < 300 * 1024, 'the overlay logo is a small asset');
+  // The navigators' default scene colour is light grey; it showed for a frame between the overlay and the first screen
+  // (emulator frames, 2026-10-23). Every navigator paints the app's ivory instead.
+  const layouts = ['_layout.tsx', '(auth)/_layout.tsx', '(app)/chats/_layout.tsx', '(app)/community/_layout.tsx', '(app)/discover/_layout.tsx', '(app)/groups/_layout.tsx', '(app)/trips/_layout.tsx'];
+  for (const l of layouts) assert.match(fs.readFileSync(path.join(root, 'apps/mobile/app', l), 'utf8'), /contentStyle: \{ backgroundColor: Colors\.background \}/, l);
+  assert.match(fs.readFileSync(path.join(root, 'apps/mobile/app/(app)/_layout.tsx'), 'utf8'), /sceneStyle: \{ backgroundColor: Colors\.background \}/);
+});
+
+test('redesign: the first-run introduction shows once, only to signed-out people, and never blocks the app if storage fails', () => {
+  const idx = fs.readFileSync(path.join(root, 'apps/mobile/app/index.tsx'), 'utf8');
+  const onboarding = fs.readFileSync(path.join(root, 'apps/mobile/app/(auth)/onboarding.tsx'), 'utf8');
+  assert.match(idx, /useIntroSeen\(signedOut\)/);
+  assert.match(idx, /AsyncStorage\.getItem\('onboarded'\)/);
+  assert.match(idx, /\.catch\(\(\) => \{ if \(live\) setSeen\(true\); \}\)/, 'an unreadable flag counts as seen');
+  assert.match(idx, /if \(user\) return <Redirect href="\/\(app\)\/home" \/>/, 'a signed-in person never sees it');
+  assert.match(idx, /introSeen \? '\/\(auth\)\/login' : '\/\(auth\)\/onboarding'/);
+  // Skip and the last step both finish through one guarded path that records the flag and ends on the sign-in screen.
+  assert.match(onboarding, /if \(finishing\.current\) return;/);
+  assert.match(onboarding, /AsyncStorage\.setItem\('onboarded', '1'\)/);
+  assert.match(onboarding, /router\.replace\('\/\(auth\)\/login'\)/);
+  assert.match(onboarding, /accessibilityLabel="Skip"/);
+});
+
+test('redesign: motion respects the system setting and never blocks input', () => {
+  const read = (p) => fs.readFileSync(path.join(root, 'apps/mobile', p), 'utf8');
+  const hook = read('hooks/useReducedMotion.ts');
+  assert.match(hook, /isReduceMotionEnabled/);
+  assert.match(hook, /reduceMotionChanged/, 'follows a live change of the setting');
+  for (const f of ['components/ui/Reveal.tsx', 'components/ui/Celebration.tsx', 'components/ui/ExpandingMenu.tsx', 'components/ui/Chip.tsx']) {
+    assert.match(read(f), /isReducedMotion|useReducedMotion/, `${f} checks reduced motion`);
+  }
+  // Decorative layers and the celebration cannot take a touch.
+  assert.match(read('components/ui/Celebration.tsx'), /pointerEvents="none"/);
+  // Core controls guard against repeats while a transition runs.
+  assert.match(read('components/ui/Button.tsx'), /guardMs=\{350\}/);
+  assert.match(read('components/ui/ScreenHeader.tsx'), /guardMs=\{400\}/);
+  assert.match(read('components/ui/BackButton.tsx'), /guardMs=\{400\}/);
 });
 
 (async () => {

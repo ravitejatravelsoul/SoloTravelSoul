@@ -136,8 +136,13 @@ export const PostCard = memo(function PostCard({ post, onPress }: Props) {
 const styles = StyleSheet.create({
   card: {
     backgroundColor: Colors.surface,
-    marginBottom: Spacing.sm,
-    ...Shadow.sm,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.lg,
+    borderRadius: Radius.xl,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    ...Shadow.md,
   },
   header: {
     flexDirection: 'row',
@@ -167,14 +172,15 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   typeBadge: {
-    backgroundColor: Colors.chipBackground,
+    backgroundColor: Colors.coralSoft,
     borderRadius: Radius.full,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
   typeLabel: {
     fontSize: FontSize.xs,
-    color: Colors.textSecondary,
+    fontWeight: FontWeight.semibold,
+    color: Colors.textPrimary,
   },
   actions: {
     flexDirection: 'row',
@@ -217,7 +223,8 @@ const styles = StyleSheet.create({
   },
   hashtag: {
     fontSize: FontSize.sm,
-    color: Colors.primary,
+    color: Colors.primaryDark,
+    fontWeight: FontWeight.medium,
   },
   commentPeek: {
     paddingHorizontal: Spacing.md,

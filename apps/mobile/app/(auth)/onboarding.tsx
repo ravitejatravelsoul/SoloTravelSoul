@@ -1,255 +1,129 @@
-import { useState, useRef, useCallback } from 'react';
-import {
-  View,
-  StyleSheet,
-  Dimensions,
-  ScrollView,
-  TouchableOpacity,
-  StatusBar,
-} from 'react-native';
+import { useCallback, useRef, useState } from 'react';
+import { Animated, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Text, Button } from '@/components/ui';
-import { Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Text, Button, PressableScale, LocalCover } from '@/components/ui';
+import { Colors, FontSize, FontWeight, Radius, Shadow, Spacing } from '@/constants/theme';
+import { isReducedMotion } from '@/hooks/useReducedMotion';
 
-const { width } = Dimensions.get('window');
+interface Slide {
+  emoji: string;
+  title: string;
+  body: string;
+  tint: string;
+  blob: string;
+  photo?: boolean;
+}
 
-const SLIDES = [
-  {
-    emoji: '🌍',
-    title: 'Your World\nAwaits',
-    body: 'SoloTravelSoul is your personal travel companion — built for the independent explorer in you.',
-    gradient: ['#1A7FD4', '#083F72'] as const,
-    accentLight: 'rgba(255,255,255,0.12)',
-  },
-  {
-    emoji: '📅',
-    title: 'Plan Every\nAdventure',
-    body: 'Build day-by-day itineraries with ease. Stay organized from first inspiration to final landing.',
-    gradient: ['#10B981', '#047857'] as const,
-    accentLight: 'rgba(255,255,255,0.10)',
-  },
-  {
-    emoji: '📖',
-    title: 'Journal Every\nMemory',
-    body: 'Capture every moment with words and photos. Your travel story, beautifully preserved forever.',
-    gradient: ['#6366F1', '#4338CA'] as const,
-    accentLight: 'rgba(255,255,255,0.10)',
-  },
-  {
-    emoji: '🧭',
-    title: 'Discover New\nPlaces',
-    body: 'Browse curated destinations across the US. Save your favorites and build the trip of a lifetime.',
-    gradient: ['#F59E0B', '#D97706'] as const,
-    accentLight: 'rgba(255,255,255,0.10)',
-  },
+// First-launch introduction. Photography is used once, on the first card; the others are friendly illustrated panels.
+const SLIDES: Slide[] = [
+  { emoji: '🌍', title: 'Your world awaits', body: 'SoloTravelSoul is a place to plan trips and meet travelers who want the same kind of trip: built for the independent explorer in you.', tint: Colors.tealSoft, blob: Colors.accent, photo: true },
+  { emoji: '🗓️', title: 'Plan every adventure', body: 'Build day-by-day itineraries, packing lists and reminders. Stay organized from first idea to landing.', tint: Colors.coralSoft, blob: Colors.coral },
+  { emoji: '📖', title: 'Keep every memory', body: 'Capture moments with words and photos. Share a post, or keep the journal just for you.', tint: '#FFF1CC', blob: Colors.sun },
+  { emoji: '🧭', title: 'Find your people', body: 'Ask to join public trips and see what you have in common. You choose what to share, and you can leave any time.', tint: '#E9E6FB', blob: Colors.catMountain },
 ];
 
 export default function OnboardingScreen() {
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [page, setPage] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
-  const slide = SLIDES[page];
+  const finishing = useRef(false);
+  const last = page === SLIDES.length - 1;
 
   const goTo = useCallback((next: number) => {
-    scrollRef.current?.scrollTo({ x: next * width, animated: true });
+    scrollRef.current?.scrollTo({ x: next * width, animated: !isReducedMotion() });
     setPage(next);
-  }, []);
+  }, [width]);
 
-  const handleNext = useCallback(async () => {
-    if (page < SLIDES.length - 1) {
-      goTo(page + 1);
-    } else {
-      await AsyncStorage.setItem('onboarded', '1');
-      router.replace('/(auth)/login');
-    }
-  }, [page, goTo]);
-
-  const handleSkip = useCallback(async () => {
-    await AsyncStorage.setItem('onboarded', '1');
+  const finish = useCallback(async () => {
+    if (finishing.current) return;
+    finishing.current = true;
+    try { await AsyncStorage.setItem('onboarded', '1'); } catch { /* the introduction simply shows again next time */ }
     router.replace('/(auth)/login');
   }, []);
 
+  const handleNext = useCallback(() => { if (last) void finish(); else goTo(page + 1); }, [last, page, goTo, finish]);
+
   return (
-    <LinearGradient
-      colors={slide.gradient}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.container}
-    >
-      <StatusBar barStyle="light-content" />
+    <View style={[styles.root, { paddingTop: insets.top }]}>
+      <View style={styles.topRow}>
+        {!last ? (
+          <PressableScale onPress={() => void finish()} guardMs={500} accessibilityRole="button" accessibilityLabel="Skip" style={styles.skip} hitSlop={8}>
+            <Text style={styles.skipText}>Skip</Text>
+          </PressableScale>
+        ) : <View style={styles.skip} />}
+      </View>
 
-      {/* Decorative circles */}
-      <View style={[styles.decCircle1, { backgroundColor: slide.accentLight }]} />
-      <View style={[styles.decCircle2, { backgroundColor: slide.accentLight }]} />
-      <View style={[styles.decCircle3, { backgroundColor: slide.accentLight }]} />
-
-      {/* Skip */}
-      {page < SLIDES.length - 1 && (
-        <TouchableOpacity style={styles.skip} onPress={handleSkip}>
-          <Text style={styles.skipText}>Skip</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Slides */}
       <ScrollView
         ref={scrollRef}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
-        scrollEventThrottle={16}
-        onMomentumScrollEnd={(e) => {
-          const newPage = Math.round(e.nativeEvent.contentOffset.x / width);
-          setPage(newPage);
-        }}
-        style={styles.scroll}
-        scrollEnabled
+        onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / width))}
+        style={styles.pager}
       >
         {SLIDES.map((s, i) => (
-          <View key={i} style={styles.slide}>
-            <Text style={styles.emoji}>{s.emoji}</Text>
-            <Text style={styles.title}>{s.title}</Text>
+          <ScrollView key={i} style={{ width }} contentContainerStyle={styles.slide} showsVerticalScrollIndicator={false}>
+            <View style={[styles.art, { backgroundColor: s.tint }, Shadow.md]}>
+              {s.photo ? (
+                <LocalCover source={require('../../assets/images/hero-hiker.jpg')} focalX={0.25} />
+              ) : (
+                <>
+                  <View style={[styles.blob, styles.blobA, { backgroundColor: s.blob }]} />
+                  <View style={[styles.blob, styles.blobB, { backgroundColor: s.blob }]} />
+                  <Text style={styles.emoji}>{s.emoji}</Text>
+                </>
+              )}
+            </View>
+            <Text variant="h1" style={styles.title} accessibilityRole="header">{s.title}</Text>
             <Text style={styles.body}>{s.body}</Text>
-          </View>
+          </ScrollView>
         ))}
       </ScrollView>
 
-      {/* Footer */}
-      <View style={styles.footer}>
-        {/* Dots */}
-        <View style={styles.dots}>
-          {SLIDES.map((_, i) => (
-            <TouchableOpacity key={i} onPress={() => goTo(i)} hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}>
-              <View style={[styles.dot, i === page ? styles.dotActive : styles.dotInactive]} />
-            </TouchableOpacity>
-          ))}
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, Spacing.lg) + Spacing.sm }]}>
+        <View style={styles.dots} accessibilityLabel={`Page ${page + 1} of ${SLIDES.length}`}>
+          {SLIDES.map((_, i) => <Dot key={i} active={i === page} onPress={() => goTo(i)} />)}
         </View>
-
-        {/* CTA button */}
-        <TouchableOpacity style={styles.ctaBtn} onPress={handleNext} activeOpacity={0.88}>
-          <Text style={styles.ctaText}>
-            {page === SLIDES.length - 1 ? 'Get Started ✈️' : 'Next'}
-          </Text>
-        </TouchableOpacity>
-
-        {/* Tagline */}
-        {page === SLIDES.length - 1 && (
-          <Text style={styles.tagline}>Your adventure starts now</Text>
-        )}
+        <Button label={last ? 'Get started' : 'Next'} onPress={handleNext} fullWidth size="lg" />
       </View>
-    </LinearGradient>
+    </View>
+  );
+}
+
+/** Progress dot: the active one stretches into a pill with a short spring (transform only). */
+function Dot({ active, onPress }: { active: boolean; onPress: () => void }) {
+  const v = useRef(new Animated.Value(active ? 1 : 0)).current;
+  const prev = useRef(active);
+  if (prev.current !== active) {
+    prev.current = active;
+    if (isReducedMotion()) v.setValue(active ? 1 : 0);
+    else Animated.spring(v, { toValue: active ? 1 : 0, useNativeDriver: false, damping: 12, stiffness: 200, mass: 0.7 }).start();
+  }
+  return (
+    <PressableScale onPress={onPress} hitSlop={{ top: 14, bottom: 14, left: 6, right: 6 }} accessibilityRole="button" accessibilityLabel="Go to this page" accessibilityState={{ selected: active }}>
+      <Animated.View style={[styles.dot, { width: v.interpolate({ inputRange: [0, 1], outputRange: [8, 26] }), backgroundColor: active ? Colors.primary : Colors.border }]} />
+    </PressableScale>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  // Decorative background elements
-  decCircle1: {
-    position: 'absolute',
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    top: -80,
-    right: -80,
-  },
-  decCircle2: {
-    position: 'absolute',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    bottom: 180,
-    left: -60,
-  },
-  decCircle3: {
-    position: 'absolute',
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    bottom: 80,
-    right: 40,
-  },
-  skip: {
-    position: 'absolute',
-    top: Spacing['4xl'],
-    right: Spacing.xl,
-    zIndex: 10,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: Radius.full,
-  },
-  skipText: {
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.medium,
-  },
-  scroll: { flex: 1 },
-  slide: {
-    width,
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'flex-start',
-    paddingHorizontal: Spacing['3xl'],
-    paddingTop: Spacing['4xl'],
-    gap: Spacing.lg,
-  },
-  emoji: {
-    fontSize: 72,
-    marginBottom: Spacing.sm,
-  },
-  title: {
-    fontSize: FontSize['4xl'],
-    fontWeight: FontWeight.extrabold,
-    color: 'rgba(255,255,255,0.97)',
-    lineHeight: 44,
-  },
-  body: {
-    fontSize: FontSize.lg,
-    color: 'rgba(255,255,255,0.78)',
-    lineHeight: 26,
-  },
-  footer: {
-    padding: Spacing['2xl'],
-    gap: Spacing.lg,
-    paddingBottom: Spacing['4xl'],
-  },
-  dots: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: Spacing.sm,
-  },
-  dot: {
-    height: 6,
-    borderRadius: 3,
-  },
-  dotActive: {
-    width: 24,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-  },
-  dotInactive: {
-    width: 6,
-    backgroundColor: 'rgba(255,255,255,0.35)',
-  },
-  ctaBtn: {
-    backgroundColor: 'rgba(255,255,255,0.22)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.50)',
-    borderRadius: Radius.xl,
-    paddingVertical: Spacing.md + 2,
-    alignItems: 'center',
-  },
-  ctaText: {
-    fontSize: FontSize.lg,
-    fontWeight: FontWeight.bold,
-    color: 'rgba(255,255,255,0.97)',
-    letterSpacing: 0.3,
-  },
-  tagline: {
-    textAlign: 'center',
-    fontSize: FontSize.sm,
-    color: 'rgba(255,255,255,0.55)',
-    marginTop: -Spacing.sm,
-  },
+  root: { flex: 1, backgroundColor: Colors.background },
+  topRow: { height: 52, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: Spacing.xl },
+  skip: { minWidth: 64, minHeight: 40, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.md },
+  skipText: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.primaryDark },
+  pager: { flex: 1 },
+  slide: { flexGrow: 1, paddingHorizontal: Spacing['2xl'], paddingTop: Spacing['2xl'], paddingBottom: Spacing.xl, gap: Spacing.lg, justifyContent: 'flex-start' },
+  art: { height: 260, borderRadius: Radius['2xl'], overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  blob: { position: 'absolute', opacity: 0.35 },
+  blobA: { width: 220, height: 220, borderRadius: 110, top: -60, right: -50 },
+  blobB: { width: 150, height: 150, borderRadius: 75, bottom: -40, left: -30 },
+  emoji: { fontSize: 96, lineHeight: 120 },
+  title: { fontSize: FontSize['4xl'], lineHeight: 42 },
+  body: { fontSize: FontSize.lg, lineHeight: 27, color: Colors.textSecondary },
+  footer: { paddingHorizontal: Spacing['2xl'], gap: Spacing.xl },
+  dots: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: Spacing.sm },
+  dot: { height: 8, borderRadius: 4 },
 });

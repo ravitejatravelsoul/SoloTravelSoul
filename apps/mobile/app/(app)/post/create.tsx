@@ -13,12 +13,12 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Button } from '@/components/ui';
+import { Text } from '@/components/ui';
 import { useCreatePost } from '@/hooks/usePosts';
 import { uploadPostPhotoFromUri } from '@/utils/storageUpload';
 import { pickImageFromLibrary, resizeImage } from '@/utils/imageUtils';
 import { useAuthStore } from '@/stores/authStore';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import type { PostType } from '@solotravelsoul/shared';
 
 const POST_TYPES: Array<{ type: PostType; label: string; icon: string }> = [
@@ -124,7 +124,7 @@ export default function CreatePostScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
+        <TouchableOpacity onPress={() => router.back()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
           <Ionicons name="close" size={26} color={Colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>New Post</Text>
@@ -154,7 +154,7 @@ export default function CreatePostScreen() {
               {images.map((uri, i) => (
                 <View key={i} style={styles.thumbWrap}>
                   <Image source={{ uri }} style={styles.thumb} />
-                  <TouchableOpacity style={styles.removeBtn} onPress={() => removeImage(i)}>
+                  <TouchableOpacity style={styles.removeBtn} onPress={() => removeImage(i)} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove photo ${i + 1}`}>
                     <Ionicons name="close-circle" size={20} color={Colors.error} />
                   </TouchableOpacity>
                 </View>
@@ -255,6 +255,8 @@ export default function CreatePostScreen() {
                     key={tag}
                     style={styles.tag}
                     onPress={() => setHashtags((h) => h.filter((t) => t !== tag))}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove hashtag ${tag}`}
                   >
                     <Text style={styles.tagText}>#{tag}</Text>
                     <Ionicons name="close" size={12} color={Colors.primary} />
@@ -301,13 +303,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing['2xl'],
     paddingVertical: Spacing.md,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
+    backgroundColor: Colors.background,
   },
   headerTitle: {
+    fontFamily: Fonts.display,
     fontSize: FontSize.lg,
-    fontWeight: FontWeight.semibold,
     color: Colors.textPrimary,
   },
   shareBtn: {

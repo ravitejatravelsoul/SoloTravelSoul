@@ -1,13 +1,13 @@
 import { memo } from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { Text } from '@/components/ui';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Text, PressableScale } from '@/components/ui';
+import { Colors, Spacing, Radius, FontSize, Fonts } from '@/constants/theme';
 
 // Country → gradient pairs (deterministic from country name)
 const DEST_GRADIENTS: Array<readonly [string, string]> = [
-  ['#1270C2', '#3399DB'],
+  ['#00897B', '#19C3B1'],
   ['#F59E0B', '#FBBF24'],
   ['#10B981', '#34D399'],
   ['#8B5CF6', '#A78BFA'],
@@ -32,7 +32,7 @@ export const TrendingDestCard = memo(function TrendingDestCard({ country, postCo
   const gradient = gradientForCountry(country);
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.88}>
+    <PressableScale style={styles.card} onPress={onPress} guardMs={500} accessibilityRole="button" accessibilityLabel={`${country}, ${postCount} post${postCount !== 1 ? 's' : ''}`}>
       <LinearGradient
         colors={[gradient[0], gradient[1]]}
         start={{ x: 0, y: 0 }}
@@ -44,13 +44,13 @@ export const TrendingDestCard = memo(function TrendingDestCard({ country, postCo
         <Text style={styles.country} numberOfLines={2}>{country}</Text>
         <Text style={styles.postCount}>{postCount} post{postCount !== 1 ? 's' : ''}</Text>
       </LinearGradient>
-    </TouchableOpacity>
+    </PressableScale>
   );
 });
 
 const styles = StyleSheet.create({
   card: {
-    width: 140,
+    width: 150,
     borderRadius: Radius.xl,
     overflow: 'hidden',
   },
@@ -71,8 +71,9 @@ const styles = StyleSheet.create({
     right: -20,
   },
   country: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
+    fontFamily: Fonts.display,
+    fontSize: FontSize.lg,
+    lineHeight: 24,
     color: Colors.white,
   },
   postCount: {

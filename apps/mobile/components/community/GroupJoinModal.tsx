@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui';
 import { submitGroupJoinRequest } from '@solotravelsoul/firebase';
 import type { CommunityGroup, UserProfile } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import { ToastContainer } from '@/components/ui/Toast';
 
 const MESSAGE_MAX = 300;
@@ -114,11 +114,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
   },
-  headerTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  headerTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   content: { flex: 1, padding: Spacing.lg, gap: Spacing.lg },
   groupInfo: {
     flexDirection: 'row',

@@ -10,14 +10,14 @@ import {
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Avatar, Chip } from '@/components/ui';
+import { Text, Avatar, Chip, BackButton } from '@/components/ui';
 import { getPublicProfile, getOrCreateDirectChat } from '@solotravelsoul/firebase';
 import { FollowButton } from '@/components/profile/FollowButton';
 import { useIsFollowing } from '@/hooks/useFollows';
 import type { PublicProfile } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useBlockStore } from '@/stores/blockStore';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
 import { getUserInitials } from '@solotravelsoul/shared';
 
 const TRAVEL_STYLE_LABELS: Record<string, string> = {
@@ -157,9 +157,7 @@ export default function PublicProfileScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.navBar}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <Text style={styles.navTitle}>Traveler Profile</Text>
         {!isOwnProfile ? (
           <TouchableOpacity onPress={() => Alert.alert('Options', undefined, [
@@ -169,7 +167,7 @@ export default function PublicProfileScreen() {
           ])} hitSlop={12}>
             <Ionicons name="ellipsis-horizontal" size={22} color={Colors.textPrimary} />
           </TouchableOpacity>
-        ) : <View style={{ width: 24 }} />}
+        ) : <View style={{ width: 44 }} />}
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -265,11 +263,9 @@ export default function PublicProfileScreen() {
 function NavBar() {
   return (
     <View style={styles.navBar}>
-      <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-        <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-      </TouchableOpacity>
+      <BackButton />
       <Text style={styles.navTitle}>Traveler Profile</Text>
-      <View style={{ width: 24 }} />
+      <View style={{ width: 44 }} />
     </View>
   );
 }
@@ -302,11 +298,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
   },
-  navTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  navTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   content: { paddingBottom: Spacing['3xl'] },
   hero: {
     alignItems: 'center',

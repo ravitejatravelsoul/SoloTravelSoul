@@ -18,7 +18,7 @@ import { useCreateJournal } from '@/hooks/useJournals';
 import { uploadPostPhotoFromUri } from '@/utils/storageUpload';
 import { pickImageFromLibrary, resizeImage } from '@/utils/imageUtils';
 import { useAuthStore } from '@/stores/authStore';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 const MAX_TITLE = 120;
 const MAX_BODY = 10000;
@@ -260,11 +260,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing['2xl'],
     paddingVertical: Spacing.md,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
+    backgroundColor: Colors.background,
   },
-  headerTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold },
+  headerTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg },
   publishBtn: {
     backgroundColor: Colors.primary,
     borderRadius: Radius.full,

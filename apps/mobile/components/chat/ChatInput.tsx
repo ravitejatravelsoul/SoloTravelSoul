@@ -62,6 +62,7 @@ export function ChatInput({ onSend, disabled, placeholder = 'Message…', restor
           onChangeText={(t) => setText(t.slice(0, MAX_CHARS))}
           placeholder={placeholder}
           placeholderTextColor={Colors.placeholder}
+          accessibilityLabel="Message"
           multiline
           maxLength={MAX_CHARS}
           returnKeyType="default"
@@ -73,6 +74,8 @@ export function ChatInput({ onSend, disabled, placeholder = 'Message…', restor
             style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
             onPress={handleSend}
             disabled={!canSend}
+            accessibilityRole="button"
+            accessibilityLabel="Send message"
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Ionicons name="send" size={18} color={canSend ? Colors.white : Colors.placeholder} />
@@ -90,7 +93,7 @@ const styles = StyleSheet.create({
   container: {
     borderTopWidth: 1,
     borderTopColor: Colors.border,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.sm,
     paddingBottom: Platform.OS === 'ios' ? Spacing.xl : Spacing.sm,
@@ -98,27 +101,31 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    backgroundColor: Colors.card,
-    borderRadius: Radius.xl,
-    paddingLeft: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius['2xl'],
+    paddingLeft: Spacing.lg,
     paddingRight: 6,
     paddingVertical: 6,
+    minHeight: 52,
   },
   inputRowDisabled: {
     opacity: 0.6,
   },
   input: {
     flex: 1,
-    fontSize: FontSize.sm,
+    fontSize: FontSize.md,
     color: Colors.textPrimary,
-    maxHeight: 100,
+    maxHeight: 120,
+    alignSelf: 'center',
     paddingTop: Platform.OS === 'ios' ? 4 : 0,
     paddingBottom: Platform.OS === 'ios' ? 4 : 0,
   },
   sendBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',

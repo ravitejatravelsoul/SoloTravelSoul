@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { BackButton } from '@/components/ui/BackButton';
 import {
   View,
   Text,
@@ -13,7 +14,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { getGroup, leaveChatGroup, inviteToGroup, cancelGroupInvite, subscribeToGroupInvitesSent } from '@solotravelsoul/firebase';
 import { useAuthStore } from '@/stores/authStore';
-import { Colors, FontSize, FontWeight, Radius, Spacing } from '@/constants/theme';
+import { Colors, FontSize, FontWeight, Radius, Spacing, Fonts } from '@/constants/theme';
 import { format } from 'date-fns';
 import type { TravelGroup, GroupInvite } from '@solotravelsoul/shared';
 
@@ -156,9 +157,7 @@ export default function GroupDetailScreen() {
   return (
     <View style={styles.root}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="chevron-back" size={26} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <Text style={styles.headerTitle} numberOfLines={1}>Group Info</Text>
         <View style={{ width: 34 }} />
       </View>
@@ -249,11 +248,9 @@ const styles = StyleSheet.create({
     paddingTop: 56,
     paddingBottom: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    backgroundColor: Colors.background,
   },
-  headerTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  headerTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   body: { padding: Spacing.lg, gap: Spacing.lg, paddingBottom: 40 },
   avatarWrap: { alignItems: 'center', gap: Spacing.sm },
   avatar: {
@@ -277,7 +274,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
   },
   chatBtnText: { color: Colors.white, fontWeight: FontWeight.semibold, fontSize: FontSize.sm },
-  sectionLabel: { fontSize: FontSize.xs, fontWeight: FontWeight.semibold, color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8 },
+  sectionLabel: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary, marginTop: Spacing.xl, marginBottom: Spacing.sm },
   membersCard: { backgroundColor: Colors.surface, borderRadius: Radius.lg, overflow: 'hidden' },
   memberDivider: { height: 1, backgroundColor: Colors.borderLight, marginLeft: 56 },
   memberRow: { flexDirection: 'row', alignItems: 'center', padding: Spacing.md, gap: Spacing.md },

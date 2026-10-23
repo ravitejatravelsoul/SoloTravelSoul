@@ -15,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, EmptyState } from '@/components/ui';
 import { CommentItem } from './CommentItem';
 import { useComments } from '@/hooks/useComments';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, Fonts } from '@/constants/theme';
 import { ToastContainer } from '@/components/ui/Toast';
 import { useUIStore } from '@/stores/uiStore';
 
@@ -180,8 +180,8 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.borderLight,
   },
   title: {
+    fontFamily: Fonts.display,
     fontSize: FontSize.lg,
-    fontWeight: FontWeight.semibold,
     color: Colors.textPrimary,
   },
   loader: { padding: Spacing['3xl'] },

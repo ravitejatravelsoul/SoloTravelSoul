@@ -23,7 +23,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useTripStore } from '@/stores/tripStore';
 import { saveProfileWithDiscovery } from '@/utils/discovery';
 import { useUIStore } from '@/stores/uiStore';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 const BIO_MAX = 500;
 
@@ -32,7 +32,7 @@ const BIO_MAX = 500;
 const UPLOADS_ENABLED = isUploadsEnabled();
 
 function SectionHeader({ title }: { title: string }) {
-  return <Text style={styles.sectionHeader}>{title}</Text>;
+  return <Text style={styles.sectionHeader} accessibilityRole="header">{title.charAt(0) + title.slice(1).toLowerCase()}</Text>;
 }
 
 export default function EditProfileScreen() {
@@ -276,21 +276,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
   },
-  navTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  navTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   saveLabel: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.primary },
   scroll: { flex: 1 },
   content: { paddingBottom: Spacing['3xl'] },
   avatarRow: { alignItems: 'center', paddingVertical: Spacing['2xl'], gap: Spacing.sm },
   photoHint: { color: Colors.textSecondary },
   sectionHeader: {
-    fontSize: 11,
-    fontWeight: FontWeight.bold,
-    color: Colors.textSecondary,
-    letterSpacing: 0.7,
+    fontFamily: Fonts.display,
+    fontSize: FontSize.lg,
+    color: Colors.textPrimary,
     paddingHorizontal: Spacing.lg,
     marginTop: Spacing.xl,
     marginBottom: Spacing.sm,

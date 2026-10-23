@@ -1,7 +1,6 @@
 import { useState, useCallback } from 'react';
 import {
   View,
-  FlatList,
   TouchableOpacity,
   StyleSheet,
   SectionList,
@@ -10,6 +9,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDirectChats } from '@/hooks/useDirectChats';
 import { useMyGroupInvites } from '@/hooks/useGroupInvites';
 import { GroupInviteCard } from '@/components/chat/GroupInviteCard';
@@ -18,8 +18,8 @@ import { useEmailVerification } from '@/hooks/useEmailVerification';
 import { useAuthStore } from '@/stores/authStore';
 import { useHaptics } from '@/hooks/useHaptics';
 import { ChatListItem } from '@/components/chat/ChatListItem';
-import { Text, Skeleton, EmptyState } from '@/components/ui';
-import { Colors, FontSize, FontWeight, Spacing, Radius } from '@/constants/theme';
+import { Text, Skeleton, PressableScale } from '@/components/ui';
+import { Colors, FontSize, FontWeight, Fonts, Spacing, Radius } from '@/constants/theme';
 import type { DirectChat, TravelGroup } from '@solotravelsoul/shared';
 
 // ── Chat skeleton row ─────────────────────────────────────────────────
@@ -62,6 +62,7 @@ const sk = StyleSheet.create({
 
 export default function ChatsIndexScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const haptics = useHaptics();
   const { directChats: allDirectChats, groups, loadingChats } = useDirectChats();
@@ -151,23 +152,29 @@ export default function ChatsIndexScreen() {
   return (
     <View style={styles.root}>
       {/* Header */}
-      <View style={styles.header}>
-        <Text variant="h2">Chats</Text>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
+        <Text variant="h2" accessibilityRole="header">Chats</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity
+          <PressableScale
             style={styles.iconBtn}
             onPress={handleNewGroup}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            guardMs={500}
+            accessibilityRole="button"
+            accessibilityLabel="New group"
+            hitSlop={6}
           >
-            <Ionicons name="people-outline" size={22} color={Colors.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity
+            <Ionicons name="people-outline" size={22} color={Colors.primaryDark} />
+          </PressableScale>
+          <PressableScale
             style={styles.iconBtn}
             onPress={handleNewChat}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            guardMs={500}
+            accessibilityRole="button"
+            accessibilityLabel="New message"
+            hitSlop={6}
           >
-            <Ionicons name="create-outline" size={22} color={Colors.primary} />
-          </TouchableOpacity>
+            <Ionicons name="create-outline" size={22} color={Colors.primaryDark} />
+          </PressableScale>
         </View>
       </View>
 
@@ -249,19 +256,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 60,
     paddingBottom: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    backgroundColor: Colors.background,
   },
   headerActions: {
     flexDirection: 'row',
     gap: Spacing.md,
   },
   iconBtn: {
-    padding: 4,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.tealSoft,
   },
   list: {
     paddingBottom: 32,
@@ -273,16 +282,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   sectionTitle: {
-    fontSize: FontSize.xs,
-    fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    fontFamily: Fonts.display,
+    fontSize: FontSize.lg,
+    color: Colors.textPrimary,
   },
   separator: {
     height: 1,
     backgroundColor: Colors.borderLight,
-    marginLeft: 72,
+    marginLeft: 76,
   },
 
   // ── Empty state ───────────────────────────────────────────────────

@@ -7,12 +7,11 @@ import {
   TextInput,
   ActivityIndicator,
   RefreshControl,
-  FlatList,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Avatar } from '@/components/ui';
+import { Text, Avatar, PressableScale, Reveal } from '@/components/ui';
 import { ExploreSection } from '@/components/explore/ExploreSection';
 import { TrendingDestCard } from '@/components/explore/TrendingDestCard';
 import { PostCard } from '@/components/posts/PostCard';
@@ -24,7 +23,7 @@ import { subscribeNearbyTravelers, subscribePublicTrips } from '@solotravelsoul/
 import { useAuthStore } from '@/stores/authStore';
 import { useBlockStore } from '@/stores/blockStore';
 import { getUserInitials } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, Fonts, Shadow } from '@/constants/theme';
 import type { TravelPost } from '@solotravelsoul/shared';
 import type { NearbyTraveler, PublicTrip } from '@solotravelsoul/shared';
 
@@ -105,13 +104,16 @@ export default function ExploreScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* ── Search bar ── */}
+      {/* ── Header and search ── */}
       <View style={styles.searchWrap}>
+        <Text style={styles.pageTitle} accessibilityRole="header">Discover</Text>
+        <Text variant="caption" style={styles.pageSub}>Places, stories and trips from fellow travelers</Text>
         <View style={styles.searchBar}>
           <Ionicons name="search" size={18} color={Colors.placeholder} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search destinations, places..."
+            accessibilityLabel="Search destinations and places"
             placeholderTextColor={Colors.placeholder}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -139,6 +141,23 @@ export default function ExploreScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} />
           }
         >
+          {/* ── Open trips shortcut ── */}
+          <Reveal>
+            <PressableScale
+              style={styles.tripsBanner}
+              onPress={() => router.push('/(app)/discover/trips' as never)}
+              guardMs={500}
+              accessibilityRole="button"
+              accessibilityLabel="Find a trip to join"
+            >
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.bannerTitle}>Find a trip to join</Text>
+                <Text style={styles.bannerSub}>Browse open trips and ask to travel together.</Text>
+              </View>
+              <View style={styles.bannerArrow}><Ionicons name="arrow-forward" size={20} color={Colors.coral} /></View>
+            </PressableScale>
+          </Reveal>
+
           {/* ── Trending Destinations ── */}
           {trendingDests.length > 0 && (
             <ExploreSection title="Trending Destinations" icon="trending-up">
@@ -243,21 +262,38 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   searchWrap: {
     paddingHorizontal: Spacing['2xl'],
-    paddingVertical: Spacing.md,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.md,
+    gap: Spacing.xs,
   },
+  pageTitle: { fontFamily: Fonts.displayHeavy, fontSize: 30, lineHeight: 38, color: Colors.textPrimary },
+  pageSub: { marginBottom: Spacing.sm },
+  tripsBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    marginHorizontal: Spacing['2xl'],
+    marginBottom: Spacing['2xl'],
+    padding: Spacing.lg,
+    borderRadius: Radius.xl,
+    backgroundColor: Colors.primaryDark,
+    ...Shadow.md,
+  },
+  bannerTitle: { fontFamily: Fonts.display, fontSize: FontSize.xl, lineHeight: 28, color: Colors.white },
+  bannerSub: { fontSize: FontSize.sm, color: 'rgba(255,255,255,0.88)', marginTop: 2 },
+  bannerArrow: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.white, alignItems: 'center', justifyContent: 'center' },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
-    backgroundColor: Colors.chipBackground,
-    borderRadius: Radius.xl,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.full,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     // A minimum, not a fixed height: 42 at normal text size, grows with the system text size instead of clipping.
-    minHeight: 42,
+    minHeight: 48,
   },
   searchInput: {
     flex: 1,
@@ -267,7 +303,7 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
   },
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  content: { paddingTop: Spacing.xl },
+  content: { paddingTop: Spacing.md },
   postCardWrap: { width: 280 },
   travelerCard: { alignItems: 'center', gap: 6, width: 70 },
   travelerName: { fontSize: FontSize.xs, color: Colors.textSecondary, textAlign: 'center' },

@@ -10,13 +10,13 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Avatar, Button, Chip } from '@/components/ui';
+import { Text, Avatar, Button, Chip, ScreenHeader, PressableScale } from '@/components/ui';
 import { subscribeNearbyTravelers, subscribeDestinationTravelers } from '@solotravelsoul/firebase';
 import type { NearbyTraveler, TravelPreferences } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useBlockStore } from '@/stores/blockStore';
 import { getUserInitials, compareTravelers, preferencesOf, LEVEL_LABELS, TRAVEL_STYLE_LABELS } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
 
 export default function DiscoverTravelersScreen() {
   const profile = useAuthStore((s) => s.profile);
@@ -54,7 +54,7 @@ export default function DiscoverTravelersScreen() {
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <NavBar />
         <View style={styles.center}>
-          <Ionicons name="earth" size={64} color={Colors.primary} />
+          <Ionicons name="earth" size={64} color={Colors.primaryDark} />
           <Text style={styles.optInTitle}>Find fellow solo travelers</Text>
           <Text style={styles.optInSubtitle}>
             Show your profile to other travelers visiting the same places. City-level only — no GPS.
@@ -122,25 +122,20 @@ export default function DiscoverTravelersScreen() {
 }
 
 function NavBar() {
-  return (
-    <View style={styles.navBar}>
-      <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-        <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-      </TouchableOpacity>
-      <Text style={styles.navTitle}>Nearby Travelers</Text>
-      <View style={{ width: 24 }} />
-    </View>
-  );
+  return <ScreenHeader title="Nearby travelers" />;
 }
 
 function TravelerCard({ traveler, me }: { traveler: NearbyTraveler; me: TravelPreferences }) {
   // Explained on the device from what both travelers chose to share; no extra reads.
   const result = compareTravelers(me, traveler);
   return (
-    <TouchableOpacity
+    <PressableScale
       style={styles.travelerCard}
       onPress={() => router.push(`/(app)/community/profile/${traveler.uid}` as never)}
-      activeOpacity={0.85}
+      guardMs={500}
+      scaleTo={0.98}
+      accessibilityRole="button"
+      accessibilityLabel={`${traveler.displayName}, ${traveler.destination ?? traveler.currentCity}, ${LEVEL_LABELS[result.level]}`}
     >
       <Avatar uri={traveler.photoURL} initials={getUserInitials(traveler.displayName)} size={48} />
       <View style={styles.travelerInfo}>
@@ -160,8 +155,8 @@ function TravelerCard({ traveler, me }: { traveler: NearbyTraveler; me: TravelPr
         {result.reasons.slice(0, 2).map((r) => <Text key={r} style={styles.reason}>✓ {r}</Text>)}
         {result.differences.slice(0, 1).map((d) => <Text key={d} style={styles.reason}>↔ {d}</Text>)}
       </View>
-      <Ionicons name="chevron-forward" size={16} color={Colors.placeholder} />
-    </TouchableOpacity>
+      <Ionicons name="chevron-forward" size={16} color={Colors.textSecondary} />
+    </PressableScale>
   );
 }
 
@@ -173,56 +168,52 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
   },
-  navTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  navTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   filterBar: {
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
   },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.background,
-    borderRadius: Radius.lg,
-    paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.lg,
     gap: Spacing.sm,
-    height: 40,
+    minHeight: 48,
     borderWidth: 1,
     borderColor: Colors.border,
   },
   searchInput: { flex: 1, fontSize: FontSize.md, color: Colors.textPrimary },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing['2xl'], gap: Spacing.lg },
-  optInTitle: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.textPrimary, textAlign: 'center' },
+  optInTitle: { fontFamily: Fonts.displayHeavy, fontSize: 26, lineHeight: 34, color: Colors.textPrimary, textAlign: 'center' },
   optInSubtitle: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
   laterBtn: { paddingVertical: Spacing.sm },
   laterLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
-  emptyTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold, color: Colors.textPrimary, textAlign: 'center' },
+  emptyTitle: { fontFamily: Fonts.display, fontSize: FontSize.xl, color: Colors.textPrimary, textAlign: 'center' },
   emptySubtitle: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
   list: { padding: Spacing.lg },
   travelerCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.borderLight,
     padding: Spacing.lg,
     gap: Spacing.md,
     ...Shadow.sm,
   },
   travelerInfo: { flex: 1, gap: Spacing.xs },
-  travelerName: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  travelerName: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   locationText: { fontSize: FontSize.sm, color: Colors.textSecondary },
-  chips: { flexDirection: 'row', gap: Spacing.xs },
-  matchLevel: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.primary, marginTop: 2 },
-  reason: { fontSize: FontSize.xs, color: Colors.textSecondary },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },
+  matchLevel: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.primaryDark, marginTop: 2 },
+  reason: { fontSize: FontSize.sm, color: Colors.textSecondary },
   matchLink: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginBottom: Spacing.sm },
-  matchLinkText: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: FontWeight.semibold },
+  matchLinkText: { fontSize: FontSize.sm, color: Colors.primaryDark, fontWeight: FontWeight.semibold },
 });

@@ -1,9 +1,10 @@
 import { memo } from 'react';
-import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/Text';
+import { PressableScale } from '@/components/ui/PressableScale';
 import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { formatDateRange, tripDurationDays, tripStatus, daysUntil, tripCurrentDay } from '@/utils/dateUtils';
 import type { PlannedTrip } from '@solotravelsoul/shared';
@@ -52,10 +53,13 @@ export const TripCard = memo(function TripCard({ trip }: TripCardProps) {
   const duration = tripDurationDays(trip.startDate, trip.endDate);
 
   return (
-    <TouchableOpacity
+    <PressableScale
       onPress={() => router.push(`/(app)/trips/${trip.id}`)}
-      activeOpacity={0.84}
+      guardMs={500}
+      scaleTo={0.98}
       style={styles.wrapper}
+      accessibilityRole="button"
+      accessibilityLabel={`${trip.destination}, ${formatDateRange(trip.startDate, trip.endDate)}, ${statusLabel}`}
     >
       {/* Gradient accent strip */}
       <LinearGradient
@@ -93,7 +97,7 @@ export const TripCard = memo(function TripCard({ trip }: TripCardProps) {
           )}
         </View>
       </View>
-    </TouchableOpacity>
+    </PressableScale>
   );
 });
 
@@ -101,19 +105,19 @@ const styles = StyleSheet.create({
   wrapper: {
     flexDirection: 'row',
     backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.borderLight,
     overflow: 'hidden',
     ...Shadow.md,
   },
   accentBar: {
-    width: 5,
+    width: 8,
   },
   body: {
     flex: 1,
-    padding: Spacing.md,
-    gap: Spacing.sm,
+    padding: Spacing.lg,
+    gap: Spacing.md,
   },
   topRow: {
     flexDirection: 'row',

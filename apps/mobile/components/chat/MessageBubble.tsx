@@ -34,7 +34,7 @@ export function MessageBubble({ text, isMine, senderName, status }: MessageBubbl
 const styles = StyleSheet.create({
   row: {
     paddingHorizontal: Spacing.lg,
-    marginVertical: 2,
+    marginVertical: 3,
   },
   rowMine: {
     alignItems: 'flex-end',
@@ -45,15 +45,17 @@ const styles = StyleSheet.create({
   bubble: {
     maxWidth: '78%',
     paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: Radius.lg,
+    paddingVertical: 10,
+    borderRadius: Radius.xl,
   },
   bubbleMine: {
-    backgroundColor: Colors.primary,
+    backgroundColor: '#00796B',
     borderBottomRightRadius: Radius.sm,
   },
   bubbleTheirs: {
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
     borderBottomLeftRadius: Radius.sm,
   },
   pending: {
@@ -62,12 +64,12 @@ const styles = StyleSheet.create({
   senderName: {
     fontSize: FontSize.xs,
     fontWeight: FontWeight.semibold,
-    color: Colors.accent,
+    color: Colors.primaryDark,
     marginBottom: 3,
   },
   text: {
-    fontSize: FontSize.sm,
-    lineHeight: 20,
+    fontSize: FontSize.md,
+    lineHeight: 22,
   },
   textMine: {
     color: Colors.white,

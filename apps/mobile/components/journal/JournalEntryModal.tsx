@@ -17,8 +17,7 @@ import {
   FontWeight,
   Radius,
   Shadow,
-  Spacing,
-} from '@/constants/theme';
+  Spacing, Fonts } from '@/constants/theme';
 import type { JournalEntry, JournalMood, PlaceEntry } from '@solotravelsoul/shared';
 import { ToastContainer } from '@/components/ui/Toast';
 
@@ -255,7 +254,7 @@ export function JournalEntryModal({
 // ── Styles ────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: Colors.surface },
+  flex: { flex: 1, backgroundColor: Colors.background },
 
   handle: {
     alignSelf: 'center',
@@ -273,10 +272,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
   },
-  headerTitle: { fontSize: FontSize.md, fontWeight: FontWeight.semibold },
+  headerTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg },
   cancelBtn: { fontSize: FontSize.md, color: Colors.textSecondary },
   saveBtn: { fontSize: FontSize.md, color: Colors.primary, fontWeight: FontWeight.semibold },
   saveBtnDisabled: { color: Colors.placeholder },

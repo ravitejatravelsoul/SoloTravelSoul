@@ -9,7 +9,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, FontWeight, Radius } from '@/constants/theme';
+import { Colors, FontWeight } from '@/constants/theme';
 
 interface AvatarProps {
   uri?: string | null;

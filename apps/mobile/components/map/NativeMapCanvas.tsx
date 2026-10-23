@@ -36,7 +36,7 @@ const PIN_SIZE_LABELED = 26; // day-number pin diameter
 const USER_DOT = 14;         // user location dot diameter
 const LINE_H = 1.5;          // connection line thickness
 const GRID_COLOR = 'rgba(48,90,155,0.07)';
-const LINE_COLOR = 'rgba(18,112,194,0.20)';
+const LINE_COLOR = 'rgba(0,137,123,0.20)';
 const BG = ['#EDF2F8', '#E2EBF4'] as const;
 const GRID_FRACS = [0.25, 0.5, 0.75];
 

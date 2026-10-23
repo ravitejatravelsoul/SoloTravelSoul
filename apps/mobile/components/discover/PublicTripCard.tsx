@@ -1,12 +1,23 @@
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { useState } from 'react';
+import { View, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Text, Avatar, Chip } from '@/components/ui';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Text, Avatar, Chip, PressableScale } from '@/components/ui';
+import { useMediaSource } from '@/hooks/useMediaSource';
 import type { PublicTrip } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Fonts, Shadow } from '@/constants/theme';
 
 function formatDateRange(start: Date, end: Date): string {
   const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
   return `${start.toLocaleDateString('en-US', opts)} – ${end.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`;
+}
+
+// Trips without a cover photo get a warm gradient picked from the destination, so the same place always looks the same.
+const COVER_GRADIENTS = [Gradients.ocean, Gradients.sunset, Gradients.mountain, Gradients.adventure, Gradients.solo, Gradients.hidden] as const;
+function coverGradient(destination: string) {
+  let h = 0;
+  for (let i = 0; i < destination.length; i++) h = (h * 31 + destination.charCodeAt(i)) >>> 0;
+  return COVER_GRADIENTS[h % COVER_GRADIENTS.length];
 }
 
 interface PublicTripCardProps {
@@ -15,93 +26,107 @@ interface PublicTripCardProps {
 }
 
 export function PublicTripCard({ trip, onPress }: PublicTripCardProps) {
+  const mediaSrc = useMediaSource();
+  const [coverFailed, setCoverFailed] = useState(false);
   const memberLabel = trip.maxMembers
-    ? `${trip.memberCount} / ${trip.maxMembers}`
+    ? `${trip.memberCount} of ${trip.maxMembers} places taken`
     : `${trip.memberCount} member${trip.memberCount !== 1 ? 's' : ''}`;
+  const open = trip.isAcceptingMembers && (trip.maxMembers == null || trip.memberCount < trip.maxMembers);
+  const title = trip.title || trip.destination;
+  const showPhoto = !!trip.coverPhotoURL && !coverFailed;
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.85}>
-      {/* Destination badge */}
-      <View style={styles.header}>
-        <View style={styles.destBadge}>
-          <Ionicons name="location" size={12} color={Colors.primary} />
-          <Text style={styles.destText} numberOfLines={1}>{trip.destination}</Text>
+    <PressableScale
+      style={styles.card}
+      onPress={onPress}
+      guardMs={500}
+      scaleTo={0.98}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}, ${trip.destination}, ${open ? 'open to join' : 'not accepting requests'}`}
+    >
+      <View style={styles.cover}>
+        {showPhoto ? (
+          <Image source={mediaSrc(trip.coverPhotoURL!)} style={StyleSheet.absoluteFill} resizeMode="cover" onError={() => setCoverFailed(true)} accessibilityIgnoresInvertColors />
+        ) : (
+          <LinearGradient colors={coverGradient(trip.destination)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill}>
+            <Ionicons name="airplane" size={64} color="rgba(255,255,255,0.35)" style={styles.coverIcon} />
+          </LinearGradient>
+        )}
+        <LinearGradient colors={Gradients.scrim} style={styles.coverScrim} />
+        <View style={styles.coverBadges}>
+          <View style={styles.destBadge}>
+            <Ionicons name="location" size={12} color={Colors.primaryDark} />
+            <Text style={styles.destText} numberOfLines={1}>{trip.destination}</Text>
+          </View>
+          <View style={[styles.statusBadge, open ? styles.statusOpen : styles.statusClosed]}>
+            <Text style={styles.statusText}>{open ? 'Open' : trip.isAcceptingMembers ? 'Full' : 'Closed'}</Text>
+          </View>
         </View>
-        {!trip.isAcceptingMembers && (
-          <View style={styles.fullBadge}>
-            <Text style={styles.fullBadgeText}>FULL</Text>
+      </View>
+
+      <View style={styles.body}>
+        <Text style={styles.title} numberOfLines={2}>{title}</Text>
+        <View style={styles.ownerRow}>
+          <Avatar uri={trip.ownerPhotoURL} initials={trip.ownerName[0] ?? '?'} size={26} />
+          <Text style={styles.ownerName} numberOfLines={1}>{trip.ownerName}</Text>
+        </View>
+        <View style={styles.meta}>
+          <View style={styles.metaItem}>
+            <Ionicons name="calendar-outline" size={14} color={Colors.textSecondary} />
+            <Text style={styles.metaText}>{formatDateRange(trip.startDate, trip.endDate)}</Text>
+          </View>
+          <View style={styles.metaItem}>
+            <Ionicons name="people-outline" size={14} color={Colors.textSecondary} />
+            <Text style={styles.metaText}>{memberLabel}</Text>
+          </View>
+        </View>
+        {trip.tags.length > 0 && (
+          <View style={styles.tags}>
+            {trip.tags.slice(0, 3).map((t) => (
+              <Chip key={t} label={t} style={styles.tag} />
+            ))}
           </View>
         )}
       </View>
-
-      {/* Trip title */}
-      <Text style={styles.title} numberOfLines={2}>{trip.title || trip.destination}</Text>
-
-      {/* Owner */}
-      <View style={styles.ownerRow}>
-        <Avatar uri={trip.ownerPhotoURL} initials={trip.ownerName[0] ?? '?'} size={24} />
-        <Text style={styles.ownerName} numberOfLines={1}>{trip.ownerName}</Text>
-      </View>
-
-      {/* Meta */}
-      <View style={styles.meta}>
-        <View style={styles.metaItem}>
-          <Ionicons name="calendar-outline" size={13} color={Colors.textSecondary} />
-          <Text style={styles.metaText}>{formatDateRange(trip.startDate, trip.endDate)}</Text>
-        </View>
-        <View style={styles.metaItem}>
-          <Ionicons name="people-outline" size={13} color={Colors.textSecondary} />
-          <Text style={styles.metaText}>{memberLabel}</Text>
-        </View>
-      </View>
-
-      {/* Tags */}
-      {trip.tags.length > 0 && (
-        <View style={styles.tags}>
-          {trip.tags.slice(0, 3).map((t) => (
-            <Chip key={t} label={t} style={styles.tag} />
-          ))}
-        </View>
-      )}
-    </TouchableOpacity>
+    </PressableScale>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
     backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
+    overflow: 'hidden',
     borderWidth: 1,
-    borderColor: Colors.border,
-    padding: Spacing.lg,
-    gap: Spacing.sm,
-    ...Shadow.sm,
+    borderColor: Colors.borderLight,
+    ...Shadow.md,
   },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  cover: { height: 132, backgroundColor: Colors.chipBackground, justifyContent: 'flex-end' },
+  coverIcon: { position: 'absolute', right: 16, top: 14 },
+  coverScrim: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 70 },
+  coverBadges: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.md, gap: Spacing.sm },
   destBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: Colors.primary + '12',
+    backgroundColor: Colors.surface,
     borderRadius: Radius.full,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 3,
-    maxWidth: '75%',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 5,
+    flexShrink: 1,
   },
-  destText: { fontSize: FontSize.xs, fontWeight: FontWeight.semibold, color: Colors.primary },
-  fullBadge: {
-    backgroundColor: Colors.error + '15',
-    borderRadius: Radius.full,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 3,
-  },
-  fullBadgeText: { fontSize: 10, fontWeight: FontWeight.bold, color: Colors.error, letterSpacing: 0.5 },
-  title: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary, lineHeight: 24 },
-  ownerRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  destText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.primaryDark, flexShrink: 1 },
+  statusBadge: { borderRadius: Radius.full, paddingHorizontal: Spacing.md, paddingVertical: 5 },
+  statusOpen: { backgroundColor: Colors.accent },
+  statusClosed: { backgroundColor: Colors.coralSoft },
+  statusText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  body: { padding: Spacing.lg, gap: Spacing.sm },
+  title: { fontFamily: Fonts.display, fontSize: FontSize.xl, lineHeight: 27, color: Colors.textPrimary },
+  ownerRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   ownerName: { fontSize: FontSize.sm, color: Colors.textSecondary, flex: 1 },
-  meta: { flexDirection: 'row', gap: Spacing.lg },
+  meta: { flexDirection: 'row', flexWrap: 'wrap', columnGap: Spacing.lg, rowGap: Spacing.xs },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  metaText: { fontSize: FontSize.xs, color: Colors.textSecondary },
+  metaText: { fontSize: FontSize.sm, color: Colors.textSecondary },
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },
-  tag: { paddingHorizontal: Spacing.sm, paddingVertical: 2 },
+  tag: { paddingHorizontal: Spacing.sm, paddingVertical: 2, minHeight: 28 },
 });

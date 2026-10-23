@@ -1,7 +1,7 @@
 import { memo, useState, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert, TextInput } from 'react-native';
 import { useModerationActions } from '@/hooks/useModerationActions';
-import { Ionicons } from '@expo/vector-icons';
+
 import { Text, Avatar } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
 import { getUserInitials } from '@solotravelsoul/shared';

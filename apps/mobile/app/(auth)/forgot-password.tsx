@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { TouchableOpacity, View, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { Screen, Text, Input, Button } from '@/components/ui';
+import { Text, Input, Button } from '@/components/ui';
+import { AuthShell } from '@/components/auth/AuthShell';
 import { useAuth } from '@/hooks/useAuth';
 import { Colors, Spacing } from '@/constants/theme';
 import { isValidEmail } from '@/utils/validations';
@@ -27,29 +27,27 @@ export default function ForgotPasswordScreen() {
   };
 
   return (
-    <Screen scroll padded>
-      <View style={styles.nav}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
+    <AuthShell
+      compact
+      title="Reset password"
+      subtitle={sent ? undefined : 'We will email you a link to choose a new one'}
+      footer={
+        <TouchableOpacity onPress={() => router.back()} hitSlop={8} accessibilityRole="link" accessibilityLabel="Back to sign in">
+          <Text variant="caption" color={Colors.primaryDark} bold>Back to sign in</Text>
         </TouchableOpacity>
-        <Text variant="h3">Reset password</Text>
-        <View style={{ width: 24 }} />
-      </View>
-
+      }
+    >
       {sent ? (
         <View style={styles.sent}>
           <Text style={styles.sentIcon}>📬</Text>
           <Text variant="h3" center>Check your inbox</Text>
           <Text variant="body" center style={styles.sentDesc}>
-            We sent a password reset link to {email}. Check your spam folder if you don&apos;t see it.
+            If an account exists for {email}, a reset link is on its way. It can take a few minutes; check your spam folder too.
           </Text>
           <Button label="Back to sign in" onPress={() => router.replace('/(auth)/login')} fullWidth />
         </View>
       ) : (
-        <View style={styles.form}>
-          <Text variant="body" style={styles.desc}>
-            Enter your email and we&apos;ll send you a link to reset your password.
-          </Text>
+        <>
           <Input
             label="Email"
             value={email}
@@ -60,29 +58,15 @@ export default function ForgotPasswordScreen() {
             placeholder="you@example.com"
             error={error}
           />
-          <Button
-            label="Send reset link"
-            onPress={handleSend}
-            loading={loading}
-            fullWidth
-            size="lg"
-          />
-        </View>
+          <Button label="Send reset link" onPress={handleSend} loading={loading} fullWidth size="lg" />
+        </>
       )}
-    </Screen>
+    </AuthShell>
   );
 }
 
 const styles = StyleSheet.create({
-  nav: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing['2xl'],
-  },
-  desc: { color: Colors.textSecondary, marginBottom: Spacing.lg },
-  form: { gap: Spacing.lg },
-  sent: { flex: 1, alignItems: 'center', gap: Spacing.lg, paddingTop: Spacing['4xl'] },
-  sentIcon: { fontSize: 56 },
-  sentDesc: { color: Colors.textSecondary, lineHeight: 22, marginBottom: Spacing.lg },
+  sent: { alignItems: 'center', gap: Spacing.lg },
+  sentIcon: { fontSize: 56, lineHeight: 70 },
+  sentDesc: { color: Colors.textSecondary, lineHeight: 22 },
 });

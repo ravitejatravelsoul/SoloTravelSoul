@@ -1,4 +1,8 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { Colors } from '@/constants/theme';
+import { useFonts } from 'expo-font';
+import { Baloo2_700Bold } from '@expo-google-fonts/baloo-2/700Bold';
+import { Baloo2_800ExtraBold } from '@expo-google-fonts/baloo-2/800ExtraBold';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -13,11 +17,15 @@ import { useFollowStore } from '@/stores/followStore';
 import { useAuthStore } from '@/stores/authStore';
 import { ToastContainer } from '@/components/ui';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { LaunchOverlay } from '@/components/LaunchOverlay';
 import { validateEnv } from '@/utils/envCheck';
 import { installFontScaleRelayout } from '@/utils/fontScaleRelayout';
 
 SplashScreen.preventAutoHideAsync();
 installFontScaleRelayout();
+
+/** If fonts or the first auth state take longer than this, the launch picture leaves anyway: loading can never trap the user. */
+const LAUNCH_FALLBACK_MS = 4000;
 
 export default function RootLayout() {
   const { setUser, setProfile, setInitialized } = useAuthStore(
@@ -28,6 +36,18 @@ export default function RootLayout() {
     }))
   );
 
+  // Launch: the native splash (ivory, logo) hands over to an identical JavaScript picture; that picture leaves as soon as the
+  // display fonts and the first auth state are ready, or after a bounded fallback.
+  const [fontsLoaded, fontError] = useFonts({ Baloo2_700Bold, Baloo2_800ExtraBold });
+  const initialized = useAuthStore((s) => s.initialized);
+  const [fallback, setFallback] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setFallback(true), LAUNCH_FALLBACK_MS);
+    return () => clearTimeout(timer);
+  }, []);
+  const launchReady = ((fontsLoaded || !!fontError) && initialized) || fallback;
+  const handleOverlayShown = useCallback(() => { SplashScreen.hideAsync().catch(() => {}); }, []);
+
   useEffect(() => {
     validateEnv(); // dev-only warning, never throws
 
@@ -35,7 +55,6 @@ export default function RootLayout() {
       // No valid Firebase config — skip network subscription and boot to login.
       // The user will see a sign-in error when they attempt login, not a crash.
       setInitialized(true);
-      SplashScreen.hideAsync();
       return;
     }
 
@@ -79,7 +98,6 @@ export default function RootLayout() {
       }
       if (!active || version !== currentVersion) return;
       setInitialized(true);
-      SplashScreen.hideAsync();
     });
     return () => { active = false; version++; unsub(); unsubToken(); };
   }, []);
@@ -88,8 +106,9 @@ export default function RootLayout() {
     <ErrorBoundary>
       <SafeAreaProvider>
         <StatusBar style="dark" />
-        <Stack screenOptions={{ headerShown: false }} />
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: Colors.background } }} />
         <ToastContainer />
+        <LaunchOverlay ready={launchReady} onShown={handleOverlayShown} />
       </SafeAreaProvider>
     </ErrorBoundary>
   );

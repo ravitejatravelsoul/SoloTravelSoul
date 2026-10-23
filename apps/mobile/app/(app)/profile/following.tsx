@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react';
 import { View, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Avatar, EmptyState } from '@/components/ui';
+import { Text, Avatar, EmptyState, BackButton } from '@/components/ui';
 import { FollowButton } from '@/components/profile/FollowButton';
 import { useFollowing, useIsFollowing } from '@/hooks/useFollows';
 import { getPublicProfile } from '@solotravelsoul/firebase';
 import { useAuthStore } from '@/stores/authStore';
 import { getUserInitials } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
 import type { PublicProfile } from '@solotravelsoul/shared';
 
 function FollowingRow({ followingUid }: { followingUid: string }) {
@@ -60,11 +60,9 @@ export default function FollowingScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <Text variant="h3" style={styles.title}>Following</Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 44 }} />
       </View>
 
       <FlatList
@@ -97,11 +95,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing['2xl'],
     paddingVertical: Spacing.lg,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
+    backgroundColor: Colors.background,
   },
-  title: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold },
+  title: { fontFamily: Fonts.display, fontSize: FontSize.lg },
   list: { padding: Spacing.lg, gap: 0 },
   row: {
     flexDirection: 'row',

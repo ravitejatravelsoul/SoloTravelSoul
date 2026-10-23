@@ -11,7 +11,7 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Skeleton } from '@/components/ui';
+import { Text, Skeleton, ScreenHeader, EmptyState, Reveal } from '@/components/ui';
 import { PublicTripCard } from '@/components/discover/PublicTripCard';
 import { usePublicTrips } from '@/hooks/usePublicTrips';
 import { useBlockStore } from '@/stores/blockStore';
@@ -35,13 +35,7 @@ export default function PublicTripsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.navBar}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.navTitle}>Explore Trips</Text>
-        <View style={{ width: 24 }} />
-      </View>
+      <ScreenHeader title="Explore trips" subtitle="Public trips you can ask to join" />
 
       {/* Search + filter */}
       <View style={styles.filterBar}>
@@ -82,38 +76,28 @@ export default function PublicTripsScreen() {
           ))}
         </View>
       ) : error ? (
-        <View style={styles.center}>
-          <Text style={styles.emptyTitle}>Couldn&apos;t load trips</Text>
-          <TouchableOpacity onPress={reload} style={styles.retryBtn}>
-            <Text style={styles.retryLabel}>Try again</Text>
-          </TouchableOpacity>
-        </View>
+        <EmptyState variant="error" title="Couldn't load trips" subtitle="Check your connection and try again." actionLabel="Try again" onAction={reload} />
       ) : visibleTrips.length === 0 ? (
-        <View style={styles.center}>
-          <Ionicons name="map-outline" size={56} color={Colors.placeholder} />
-          <Text style={styles.emptyTitle}>No public trips found</Text>
-          <Text style={styles.emptySubtitle}>
-            {debouncedSearch
-              ? `No trips match "${debouncedSearch}"`
-              : 'Check back later for new trips'}
-          </Text>
-          {debouncedSearch ? (
-            <TouchableOpacity onPress={() => { setSearch(''); setDebouncedSearch(''); }} style={styles.retryBtn}>
-              <Text style={styles.retryLabel}>Clear filters</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
+        <EmptyState
+          emoji="🗺️"
+          title="No public trips found"
+          subtitle={debouncedSearch ? `No trips match "${debouncedSearch}"` : 'Check back later for new trips'}
+          actionLabel={debouncedSearch ? 'Clear filters' : undefined}
+          onAction={debouncedSearch ? () => { setSearch(''); setDebouncedSearch(''); } : undefined}
+        />
       ) : (
         <FlatList
           data={visibleTrips}
           keyExtractor={(t) => t.tripId}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => (
-            <PublicTripCard
-              trip={item}
-              onPress={() => router.push(`/(app)/discover/trips/${item.tripId}` as never)}
-            />
+          renderItem={({ item, index }) => (
+            <Reveal index={index}>
+              <PublicTripCard
+                trip={item}
+                onPress={() => router.push(`/(app)/discover/trips/${item.tripId}` as never)}
+              />
+            </Reveal>
           )}
           ItemSeparatorComponent={() => <View style={{ height: Spacing.md }} />}
           ListFooterComponent={loading ? <ActivityIndicator style={{ marginTop: Spacing.lg }} color={Colors.primary} /> : null}
@@ -125,41 +109,27 @@ export default function PublicTripsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
-  navBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
-  },
-  navTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },
   filterBar: {
-    backgroundColor: Colors.surface,
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    paddingBottom: Spacing.md,
     gap: Spacing.sm,
   },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.background,
-    borderRadius: Radius.lg,
-    paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.lg,
     gap: Spacing.sm,
-    height: 40,
-    borderWidth: 1,
+    minHeight: 48,
+    borderWidth: 1.5,
     borderColor: Colors.border,
   },
-  searchInput: { flex: 1, fontSize: FontSize.md, color: Colors.textPrimary },
-  filterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  filterLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: Colors.textPrimary },
-  list: { padding: Spacing.lg },
-  skeleton: { height: 140, borderRadius: Radius.lg, marginBottom: Spacing.md },
+  searchInput: { flex: 1, fontSize: FontSize.md, color: Colors.textPrimary, paddingVertical: Spacing.sm },
+  filterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.sm },
+  filterLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  list: { padding: Spacing.lg, paddingBottom: Spacing['3xl'] },
+  skeleton: { height: 260, borderRadius: Radius.xl, marginBottom: Spacing.md },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing['2xl'], gap: Spacing.md },
   emptyTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold, color: Colors.textPrimary, textAlign: 'center' },
   emptySubtitle: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },

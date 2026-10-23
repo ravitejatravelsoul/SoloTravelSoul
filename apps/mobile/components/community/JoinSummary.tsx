@@ -4,7 +4,7 @@ import { Text } from '@/components/ui';
 import { COMPATIBILITY_NOTICE, JOIN_SAFETY_REMINDER } from '@solotravelsoul/shared';
 import type { NearbyTraveler, PublicTrip, TravelPreferences } from '@solotravelsoul/shared';
 import { tripFacts, organizerAnswers, compareAnswers, comparisonHeadline, type AnswerComparison, type SummaryRow } from '@/utils/tripSummary';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 /** From this system text scale the label sits above its value, so a long label never breaks in the middle of a word. */
 const STACK_FROM_FONT_SCALE = 1.4;
@@ -37,10 +37,10 @@ export function ComparisonList({ comparison }: { comparison: AnswerComparison })
         <View key={`d-${t}`} style={styles.line}><Ionicons name="swap-horizontal" size={16} color={Colors.warning} /><Text style={styles.lineText}>{t}</Text></View>
       ))}
       {c.otherShared && c.notProvided.length > 0 && (
-        <View style={styles.line}><Ionicons name="remove-circle-outline" size={16} color={Colors.placeholder} /><Text style={styles.lineText}>Not provided by them: {c.notProvided.join(', ')}</Text></View>
+        <View style={styles.line}><Ionicons name="remove-circle-outline" size={16} color={Colors.textSecondary} /><Text style={styles.lineText}>Not provided by them: {c.notProvided.join(', ')}</Text></View>
       )}
       {c.youHaveNotAnswered.length > 0 && (
-        <View style={styles.line}><Ionicons name="help-circle-outline" size={16} color={Colors.placeholder} /><Text style={styles.lineText}>You have not answered: {c.youHaveNotAnswered.join(', ')} (Profile · Travel preferences)</Text></View>
+        <View style={styles.line}><Ionicons name="help-circle-outline" size={16} color={Colors.textSecondary} /><Text style={styles.lineText}>You have not answered: {c.youHaveNotAnswered.join(', ')} (Profile · Travel preferences)</Text></View>
       )}
     </View>
   );
@@ -62,15 +62,15 @@ export function JoinSummary({ trip, organizer, viewer, showAnswers = true }: Pro
       <Rows rows={tripFacts(trip)} />
       {showAnswers && (
         <>
-          <Text style={styles.subTitle}>THE ORGANIZER&apos;S TRAVEL ANSWERS</Text>
+          <Text style={styles.subTitle}>The organizer&apos;s travel answers</Text>
           <Rows rows={organizerAnswers(organizer)} />
           {!organizer && <Text style={styles.hint}>Shown only when the organizer chose to share them.</Text>}
-          <Text style={styles.subTitle}>HOW YOUR ANSWERS COMPARE</Text>
+          <Text style={styles.subTitle}>How your answers compare</Text>
           <ComparisonList comparison={comparison} />
         </>
       )}
       <View style={styles.notice}>
-        <Ionicons name="shield-checkmark-outline" size={18} color={Colors.primary} />
+        <Ionicons name="shield-checkmark-outline" size={20} color={Colors.primaryDark} />
         <View style={{ flex: 1 }}>
           <Text style={styles.noticeText}>{COMPATIBILITY_NOTICE}</Text>
           <Text style={[styles.noticeText, { marginTop: Spacing.xs }]}>{JOIN_SAFETY_REMINDER}</Text>
@@ -85,14 +85,14 @@ const styles = StyleSheet.create({
   rowStacked: { flexDirection: 'column', gap: 0, paddingVertical: Spacing.sm },
   rowLabelStacked: { fontSize: FontSize.sm, color: Colors.textSecondary },
   rowLabel: { width: 118, fontSize: FontSize.sm, color: Colors.textSecondary },
-  rowValue: { flex: 1, fontSize: FontSize.sm, color: Colors.textPrimary, fontWeight: FontWeight.medium },
-  notProvided: { color: Colors.placeholder, fontWeight: FontWeight.regular, fontStyle: 'italic' },
-  subTitle: { fontSize: 11, fontWeight: FontWeight.bold, color: Colors.textSecondary, letterSpacing: 0.7, marginTop: Spacing.lg, marginBottom: Spacing.xs },
-  hint: { fontSize: FontSize.xs, color: Colors.placeholder, marginTop: Spacing.xs },
+  rowValue: { flex: 1, fontSize: FontSize.md, color: Colors.textPrimary, fontWeight: FontWeight.medium },
+  notProvided: { color: Colors.textSecondary, fontWeight: FontWeight.regular, fontStyle: 'italic' },
+  subTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary, marginTop: Spacing.lg, marginBottom: Spacing.xs },
+  hint: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: Spacing.xs },
   comparison: { gap: Spacing.xs },
-  headline: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.textPrimary, marginBottom: Spacing.xs },
+  headline: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.xs },
   line: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm },
-  lineText: { flex: 1, fontSize: FontSize.sm, color: Colors.textSecondary, lineHeight: 20 },
-  notice: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg, padding: Spacing.md, borderRadius: Radius.lg, backgroundColor: Colors.primary + '0F' },
-  noticeText: { fontSize: FontSize.xs, color: Colors.textSecondary, lineHeight: 18 },
+  lineText: { flex: 1, fontSize: FontSize.md, color: Colors.textPrimary, lineHeight: 22 },
+  notice: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg, padding: Spacing.md, borderRadius: Radius.lg, backgroundColor: Colors.tealSoft },
+  noticeText: { fontSize: FontSize.sm, color: Colors.textPrimary, lineHeight: 20 },
 });

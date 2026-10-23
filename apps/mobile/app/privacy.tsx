@@ -1,7 +1,7 @@
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
-import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { Screen, Text, Divider } from '@/components/ui';
+import { View, StyleSheet } from 'react-native';
+
+
+import { Screen, Text, Divider, ScreenHeader } from '@/components/ui';
 import { Colors, Spacing } from '@/constants/theme';
 import { CONTACT_EMAIL } from '@/constants/contact';
 
@@ -53,13 +53,7 @@ const SECTIONS = [
 export default function PrivacyScreen() {
   return (
     <Screen scroll padded>
-      <View style={styles.nav}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
-        <Text variant="h3">Privacy Policy</Text>
-        <View style={{ width: 24 }} />
-      </View>
+      <ScreenHeader title="Privacy Policy" />
 
       <Text variant="caption" style={styles.intro}>
         SoloTravelSoul is built for travelers, by travelers. Your memories are yours.
@@ -91,6 +85,6 @@ const styles = StyleSheet.create({
   },
   divider: { marginVertical: Spacing.xl },
   section: { marginBottom: Spacing.xl, gap: Spacing.xs },
-  sectionTitle: { color: Colors.primary },
+  sectionTitle: { color: Colors.primaryDark },
   sectionBody: { color: Colors.textSecondary, lineHeight: 22 },
 });

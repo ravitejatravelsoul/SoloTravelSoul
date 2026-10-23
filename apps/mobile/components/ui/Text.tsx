@@ -4,7 +4,7 @@ import {
   type TextStyle,
   StyleSheet,
 } from 'react-native';
-import { Colors, FontSize, FontWeight } from '@/constants/theme';
+import { Colors, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 type Variant = 'h1' | 'h2' | 'h3' | 'body' | 'bodyLarge' | 'caption' | 'label' | 'error';
 
@@ -38,23 +38,24 @@ export function Text({
 }
 
 const styles = StyleSheet.create<Record<Variant, TextStyle>>({
+  // Headings use the bundled display face (it carries its own weight; no fontWeight, which would fake-bold it).
   h1: {
+    fontFamily: Fonts.displayHeavy,
     fontSize: FontSize['3xl'],
-    fontWeight: FontWeight.bold,
     color: Colors.textPrimary,
-    lineHeight: 36,
+    lineHeight: 38,
   },
   h2: {
+    fontFamily: Fonts.display,
     fontSize: FontSize['2xl'],
-    fontWeight: FontWeight.bold,
     color: Colors.textPrimary,
-    lineHeight: 30,
+    lineHeight: 32,
   },
   h3: {
+    fontFamily: Fonts.display,
     fontSize: FontSize.xl,
-    fontWeight: FontWeight.semibold,
     color: Colors.textPrimary,
-    lineHeight: 26,
+    lineHeight: 28,
   },
   bodyLarge: {
     fontSize: FontSize.lg,

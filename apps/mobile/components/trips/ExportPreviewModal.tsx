@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { Text } from '@/components/ui';
 import { formatTripSummary } from '@/utils/formatTripSummary';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
 import type { PlannedTrip, ItineraryDay, ChecklistItem } from '@solotravelsoul/shared';
 import { ToastContainer } from '@/components/ui/Toast';
 
@@ -175,12 +175,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
   },
   headerTitle: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
+    fontFamily: Fonts.display,
+    fontSize: FontSize.lg,
     color: Colors.textPrimary,
   },
   closeBtn: {

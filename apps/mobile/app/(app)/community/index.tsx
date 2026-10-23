@@ -3,14 +3,14 @@ import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text } from '@/components/ui';
+import { Text, PressableScale } from '@/components/ui';
 import {
   subscribeTripJoinRequestsForOwner,
   subscribeGroupJoinRequestsForOwner,
 } from '@solotravelsoul/firebase';
 import { useAuthStore } from '@/stores/authStore';
 import { shouldOfferPreferenceSetup } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
 
 function FeatureCard({
   icon,
@@ -19,6 +19,8 @@ function FeatureCard({
   onPress,
   badge,
   comingSoon,
+  tint = Colors.tealSoft,
+  tintIcon = Colors.primaryDark,
 }: {
   icon: string;
   title: string;
@@ -26,16 +28,21 @@ function FeatureCard({
   onPress?: () => void;
   badge?: number;
   comingSoon?: boolean;
+  tint?: string;
+  tintIcon?: string;
 }) {
   return (
-    <TouchableOpacity
+    <PressableScale
       style={[styles.featureCard, comingSoon && styles.featureCardDim]}
       onPress={onPress}
       disabled={!onPress || comingSoon}
-      activeOpacity={0.8}
+      guardMs={500}
+      scaleTo={0.98}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}. ${subtitle}${badge ? `. ${badge} waiting` : ''}`}
     >
-      <View style={styles.featureIcon}>
-        <Ionicons name={icon as never} size={28} color={comingSoon ? Colors.placeholder : Colors.primary} />
+      <View style={[styles.featureIcon, { backgroundColor: tint }]}>
+        <Ionicons name={icon as never} size={28} color={comingSoon ? Colors.textSecondary : tintIcon} />
       </View>
       <View style={styles.featureText}>
         <View style={styles.featureTitleRow}>
@@ -53,8 +60,8 @@ function FeatureCard({
         </View>
         <Text style={styles.featureSubtitle}>{subtitle}</Text>
       </View>
-      {!comingSoon && <Ionicons name="chevron-forward" size={18} color={Colors.placeholder} />}
-    </TouchableOpacity>
+      {!comingSoon && <Ionicons name="chevron-forward" size={18} color={Colors.textSecondary} />}
+    </PressableScale>
   );
 }
 
@@ -78,7 +85,7 @@ export default function CommunityScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.navBar}>
-        <Text style={styles.navTitle}>Community</Text>
+        <Text style={styles.navTitle} accessibilityRole="header">Community</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -86,10 +93,12 @@ export default function CommunityScreen() {
         {/* Owner dashboard — only shown when there are pending requests */}
         {totalPending > 0 && (
           <>
-            <Text style={styles.sectionLabel}>ACTION NEEDED</Text>
+            <Text style={styles.sectionLabel}>Action needed</Text>
             <View style={styles.card}>
               <FeatureCard
                 icon="notifications"
+                tint={Colors.coralSoft}
+                tintIcon={Colors.coral}
                 title="Pending Requests"
                 subtitle="Review join requests for your trips and groups"
                 onPress={() => router.push('/(app)/community/my-requests' as never)}
@@ -105,16 +114,16 @@ export default function CommunityScreen() {
             onPress={() => router.push({ pathname: '/(app)/profile/preferences', params: { from: 'community' } } as never)}
             accessibilityRole="button"
           >
-            <Ionicons name="sparkles-outline" size={20} color={Colors.primary} />
+            <Ionicons name="sparkles-outline" size={22} color={Colors.primaryDark} />
             <View style={{ flex: 1 }}>
               <Text style={styles.setupTitle}>{resuming ? 'Finish your travel preferences' : 'Set up travel preferences'}</Text>
               <Text style={styles.setupText}>Optional, about a minute. Helps explain which travelers suit your trips.</Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={Colors.placeholder} />
+            <Ionicons name="chevron-forward" size={16} color={Colors.textSecondary} />
           </TouchableOpacity>
         )}
 
-        <Text style={styles.sectionLabel}>MANAGE</Text>
+        <Text style={styles.sectionLabel}>Manage</Text>
         <View style={styles.card}>
           <FeatureCard
             icon="shield-checkmark"
@@ -125,27 +134,31 @@ export default function CommunityScreen() {
           />
         </View>
 
-        <Text style={styles.sectionLabel}>TRAVEL GROUPS</Text>
+        <Text style={styles.sectionLabel}>Travel groups</Text>
         <View style={styles.card}>
           <FeatureCard
             icon="people"
+            tint="#FFF1CC"
+            tintIcon="#A06A00"
             title="Travel Groups"
             subtitle="Discover and join groups traveling to your destination"
             onPress={() => router.push('/(app)/community/groups' as never)}
           />
         </View>
 
-        <Text style={styles.sectionLabel}>EXPLORE</Text>
+        <Text style={styles.sectionLabel}>Explore</Text>
         <View style={styles.card}>
           <FeatureCard
             icon="map"
+            tint="#E9E6FB"
+            tintIcon="#5B4BC4"
             title="Public Trips"
             subtitle="Browse trips and request to join as a co-traveler"
             onPress={() => router.push('/(app)/discover/trips' as never)}
           />
         </View>
 
-        <Text style={styles.sectionLabel}>DISCOVER</Text>
+        <Text style={styles.sectionLabel}>Discover</Text>
         <View style={styles.card}>
           <FeatureCard
             icon="git-compare"
@@ -156,6 +169,8 @@ export default function CommunityScreen() {
           <View style={styles.divider} />
           <FeatureCard
             icon="location"
+            tint={Colors.coralSoft}
+            tintIcon={Colors.coral}
             title="Nearby Travelers"
             subtitle="Find travelers visiting the same destination"
             onPress={() => router.push('/(app)/community/travelers' as never)}
@@ -176,34 +191,31 @@ export default function CommunityScreen() {
 const styles = StyleSheet.create({
   setupCard: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg, marginTop: Spacing.md,
-    borderRadius: Radius.lg, backgroundColor: Colors.primary + '10', borderWidth: 1, borderColor: Colors.primary + '30',
+    borderRadius: Radius.xl, backgroundColor: Colors.tealSoft, borderWidth: 1, borderColor: Colors.accent,
   },
-  setupTitle: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  setupTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   setupText: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
   safe: { flex: 1, backgroundColor: Colors.background },
   navBar: {
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
   },
-  navTitle: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  navTitle: { fontFamily: Fonts.displayHeavy, fontSize: 28, lineHeight: 36, color: Colors.textPrimary },
   content: { padding: Spacing.lg, paddingBottom: Spacing['3xl'], gap: Spacing.sm },
   sectionLabel: {
-    fontSize: 11,
-    fontWeight: FontWeight.bold,
-    color: Colors.textSecondary,
-    letterSpacing: 0.7,
+    fontFamily: Fonts.display,
+    fontSize: FontSize.xl,
+    color: Colors.textPrimary,
     marginTop: Spacing.xl,
     marginBottom: Spacing.xs,
     marginLeft: 2,
   },
   card: {
     backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.borderLight,
     overflow: 'hidden',
     ...Shadow.sm,
   },
@@ -219,14 +231,13 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 14,
-    backgroundColor: Colors.primary + '12',
     alignItems: 'center',
     justifyContent: 'center',
   },
   featureText: { flex: 1 },
   featureTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  featureTitle: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
-  featureSubtitle: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2, lineHeight: 18 },
+  featureTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
+  featureSubtitle: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2, lineHeight: 20 },
   soonBadge: {
     backgroundColor: Colors.warning + '20',
     borderRadius: Radius.full,
@@ -235,7 +246,7 @@ const styles = StyleSheet.create({
   },
   soonLabel: { fontSize: 10, fontWeight: FontWeight.bold, color: Colors.warning },
   pendingBadge: {
-    backgroundColor: Colors.error,
+    backgroundColor: Colors.coral,
     borderRadius: Radius.full,
     minWidth: 20,
     height: 20,

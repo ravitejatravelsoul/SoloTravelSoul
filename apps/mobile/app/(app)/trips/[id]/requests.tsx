@@ -7,16 +7,16 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text } from '@/components/ui';
+import { Text, BackButton } from '@/components/ui';
 import { ReceivedRequestCard } from '@/components/community/JoinRequestCard';
 import { subscribeRequestsForTrip, approveTripJoinRequest, rejectTripJoinRequest } from '@solotravelsoul/firebase';
 import type { TripJoinRequest, RequestStatus } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useTripStore } from '@/stores/tripStore';
-import { Colors, Spacing, FontSize, FontWeight } from '@/constants/theme';
+import { Colors, Spacing, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 type Filter = 'pending' | 'approved' | 'all';
 
@@ -72,14 +72,12 @@ export default function TripRequestsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.navBar}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <View>
           <Text style={styles.navTitle}>Join Requests</Text>
           {trip && <Text style={styles.navSubtitle} numberOfLines={1}>{trip.destination}</Text>}
         </View>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 44 }} />
       </View>
 
       {/* Filter tabs */}
@@ -138,11 +136,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
   },
-  navTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary, textAlign: 'center' },
+  navTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary, textAlign: 'center' },
   navSubtitle: { fontSize: FontSize.xs, color: Colors.textSecondary, textAlign: 'center' },
   tabBar: {
     flexDirection: 'row',

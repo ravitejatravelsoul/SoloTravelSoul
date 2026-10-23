@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useMediaSource } from '@/hooks/useMediaSource';
 import {
   View,
@@ -16,7 +16,9 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Avatar, Chip } from '@/components/ui';
+import { Text, Avatar, Chip, Button } from '@/components/ui';
+import { getUserProfile } from '@solotravelsoul/firebase';
+import { useAuthStore } from '@/stores/authStore';
 import { ProfileStats } from '@/components/profile/ProfileStats';
 import { PhotoGrid } from '@/components/profile/PhotoGrid';
 import { JournalCard } from '@/components/journals/JournalCard';
@@ -29,7 +31,7 @@ import { useAuthorPosts } from '@/hooks/usePosts';
 import { useAuthorJournals } from '@/hooks/useJournals';
 import { useFollowCounts } from '@/hooks/useFollows';
 import { getUserInitials } from '@solotravelsoul/shared';
-import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
 import { ToastContainer } from '@/components/ui/Toast';
 
 type ProfileTab = 'posts' | 'journals' | 'trips';
@@ -86,11 +88,40 @@ export default function ProfileScreen() {
   const { followersCount, followingCount } = useFollowCounts(uid);
   const allTrips = [...upcoming, ...past];
 
+  // If the app started without a connection the profile never loaded; after a few seconds offer a retry instead of a spinner that never ends.
+  const authUid = useAuthStore((s) => s.user?.uid);
+  const setProfile = useAuthStore((s) => s.setProfile);
+  const [slow, setSlow] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  useEffect(() => {
+    if (profile) { setSlow(false); return; }
+    const t = setTimeout(() => setSlow(true), 6000);
+    return () => clearTimeout(t);
+  }, [profile]);
+  const retryProfile = async () => {
+    if (!authUid || retrying) return;
+    setRetrying(true);
+    try {
+      const p = await getUserProfile(authUid);
+      if (p && useAuthStore.getState().user?.uid === authUid) setProfile(p);
+    } catch { /* still offline: the message stays */ }
+    finally { setRetrying(false); }
+  };
+
   if (!profile) {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.loader}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          {slow ? (
+            <View style={styles.retryBox}>
+              <Ionicons name="cloud-offline-outline" size={44} color={Colors.textSecondary} />
+              <Text style={styles.emptyTabText}>Could not load your profile</Text>
+              <Text variant="caption" center>Check your connection, then try again.</Text>
+              <Button label="Try again" onPress={retryProfile} loading={retrying} />
+            </View>
+          ) : (
+            <ActivityIndicator size="large" color={Colors.primary} />
+          )}
         </View>
       </SafeAreaView>
     );
@@ -140,8 +171,8 @@ export default function ProfileScreen() {
       <View style={styles.topBar}>
         <Text style={styles.topBarTitle}>{profile.name}</Text>
         <View style={styles.topBarActions}>
-          <TouchableOpacity onPress={() => router.push('/(app)/post/create' as never)} hitSlop={10}>
-            <Ionicons name="add-circle-outline" size={24} color={Colors.primary} />
+          <TouchableOpacity onPress={() => router.push('/(app)/post/create' as never)} hitSlop={10} style={styles.addPostBtn} accessibilityRole="button" accessibilityLabel="Create a post">
+            <Ionicons name="add" size={26} color={Colors.white} />
           </TouchableOpacity>
         </View>
       </View>
@@ -216,11 +247,13 @@ export default function ProfileScreen() {
               key={tab}
               style={[styles.tab, activeTab === tab && styles.tabActive]}
               onPress={() => setActiveTab(tab)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: activeTab === tab }}
             >
               <Ionicons
                 name={tab === 'posts' ? 'grid-outline' : tab === 'journals' ? 'book-outline' : 'map-outline'}
                 size={20}
-                color={activeTab === tab ? Colors.primary : Colors.textSecondary}
+                color={activeTab === tab ? Colors.primaryDark : Colors.textSecondary}
               />
               <Text style={[styles.tabLabel, activeTab === tab && styles.tabLabelActive]}>
                 {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -239,7 +272,7 @@ export default function ProfileScreen() {
             <PhotoGrid posts={posts} />
           ) : (
             <View style={styles.emptyTab}>
-              <Ionicons name="camera-outline" size={40} color={Colors.border} />
+              <Ionicons name="camera-outline" size={44} color={Colors.textSecondary} />
               <Text style={styles.emptyTabText}>No posts yet</Text>
               <TouchableOpacity
                 style={styles.emptyTabBtn}
@@ -259,7 +292,7 @@ export default function ProfileScreen() {
               journals.map((j) => <JournalCard key={j.journalId} journal={j} />)
             ) : (
               <View style={styles.emptyTab}>
-                <Ionicons name="book-outline" size={40} color={Colors.border} />
+                <Ionicons name="book-outline" size={44} color={Colors.textSecondary} />
                 <Text style={styles.emptyTabText}>No journals yet</Text>
                 <TouchableOpacity
                   style={styles.emptyTabBtn}
@@ -278,7 +311,7 @@ export default function ProfileScreen() {
               allTrips.map((t) => <TripCard key={t.id} trip={t} />)
             ) : (
               <View style={styles.emptyTab}>
-                <Ionicons name="airplane-outline" size={40} color={Colors.border} />
+                <Ionicons name="airplane-outline" size={44} color={Colors.textSecondary} />
                 <Text style={styles.emptyTabText}>No trips yet</Text>
                 <TouchableOpacity
                   style={styles.emptyTabBtn}
@@ -294,7 +327,7 @@ export default function ProfileScreen() {
         {/* ── Travel Preferences ── */}
         {(profile.travelStyles ?? []).length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>TRAVEL STYLE</Text>
+            <Text style={styles.sectionLabel}>Travel style</Text>
             <View style={styles.chips}>
               {(profile.travelStyles ?? []).map((s) => <Chip key={s} label={s} />)}
             </View>
@@ -303,7 +336,7 @@ export default function ProfileScreen() {
 
         {/* ── Library & Community Settings ── */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>LIBRARY</Text>
+          <Text style={styles.sectionLabel}>Library</Text>
           <View style={styles.settingsCard}>
             <SettingsRow
               icon="heart"
@@ -325,7 +358,7 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>COMMUNITY</Text>
+          <Text style={styles.sectionLabel}>Community</Text>
           <View style={styles.settingsCard}>
             <SettingsRow
               icon="people-outline"
@@ -372,7 +405,7 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>APP</Text>
+          <Text style={styles.sectionLabel}>App</Text>
           <View style={styles.settingsCard}>
             <SettingsRow
               icon="document-text-outline"
@@ -485,28 +518,28 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  retryBox: { alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing['2xl'] },
 
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing['2xl'],
-    paddingVertical: Spacing.md,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.background,
   },
-  topBarTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  topBarTitle: { flex: 1, fontFamily: Fonts.display, fontSize: FontSize.xl, color: Colors.textPrimary, marginRight: Spacing.md },
+  addPostBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.coral, alignItems: 'center', justifyContent: 'center', ...Shadow.md },
   topBarActions: { flexDirection: 'row', alignItems: 'center' },
 
   coverWrap: { position: 'relative', marginBottom: 44 },
-  cover: { width: '100%', height: 160 },
+  cover: { width: '100%', height: 170, borderBottomLeftRadius: Radius['2xl'], borderBottomRightRadius: Radius['2xl'] },
   avatarOverlap: {
     position: 'absolute',
     bottom: -44,
     left: Spacing['2xl'],
-    borderWidth: 3,
-    borderColor: Colors.surface,
+    borderWidth: 4,
+    borderColor: Colors.background,
     borderRadius: 999,
   },
 
@@ -514,12 +547,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing['2xl'],
     paddingTop: Spacing.md,
     paddingBottom: Spacing.lg,
-    backgroundColor: Colors.surface,
   },
-  name: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  name: { fontFamily: Fonts.displayHeavy, fontSize: 28, lineHeight: 36, color: Colors.textPrimary },
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
   location: { fontSize: FontSize.sm, color: Colors.textSecondary },
-  bio: { fontSize: FontSize.sm, color: Colors.textPrimary, lineHeight: 20, marginTop: 8 },
+  bio: { fontSize: FontSize.md, color: Colors.textPrimary, lineHeight: 22, marginTop: 8 },
   editProfileBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -527,19 +559,21 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     marginTop: Spacing.md,
     paddingHorizontal: Spacing.xl,
-    paddingVertical: 8,
+    minHeight: 44,
     borderRadius: Radius.full,
     borderWidth: 1.5,
-    borderColor: Colors.primary,
+    borderColor: Colors.primaryDark,
+    backgroundColor: Colors.surface,
   },
-  editProfileText: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: FontWeight.semibold },
+  editProfileText: { fontSize: FontSize.sm, color: Colors.primaryDark, fontWeight: FontWeight.bold },
 
   tabs: {
     flexDirection: 'row',
-    backgroundColor: Colors.surface,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: Colors.borderLight,
+    backgroundColor: Colors.chipBackground,
+    borderRadius: Radius.full,
+    padding: 4,
+    marginHorizontal: Spacing['2xl'],
+    marginVertical: Spacing.md,
   },
   tab: {
     flex: 1,
@@ -547,16 +581,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 5,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+    minHeight: 44,
+    borderRadius: Radius.full,
   },
-  tabActive: { borderBottomColor: Colors.primary },
+  tabActive: { backgroundColor: Colors.surface, ...Shadow.sm },
   tabLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
-  tabLabelActive: { color: Colors.primary, fontWeight: FontWeight.semibold },
+  tabLabelActive: { color: Colors.primaryDark, fontWeight: FontWeight.bold },
   tabLoader: { padding: Spacing['3xl'], alignItems: 'center' },
   emptyTab: { alignItems: 'center', padding: Spacing['4xl'], gap: Spacing.md },
-  emptyTabText: { fontSize: FontSize.md, color: Colors.textSecondary },
+  emptyTabText: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textSecondary },
   emptyTabBtn: {
     paddingHorizontal: Spacing['2xl'],
     paddingVertical: Spacing.md,
@@ -572,10 +605,9 @@ const styles = StyleSheet.create({
   // Preferences
   section: { paddingHorizontal: Spacing['2xl'], paddingVertical: Spacing.lg },
   sectionLabel: {
-    fontSize: FontSize.xs,
-    fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
-    letterSpacing: 0.8,
+    fontFamily: Fonts.display,
+    fontSize: FontSize.lg,
+    color: Colors.textPrimary,
     marginBottom: Spacing.sm,
   },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
@@ -591,18 +623,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.lg,
+    minHeight: 64,
     gap: Spacing.md,
   },
   settingsIconBox: {
-    width: 32,
-    height: 32,
-    borderRadius: Radius.sm,
+    width: 40,
+    height: 40,
+    borderRadius: Radius.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
   settingsLabel: { flex: 1, fontSize: FontSize.md, color: Colors.textPrimary },
   settingsRightLabel: { fontSize: FontSize.sm, color: Colors.textSecondary, marginRight: Spacing.sm },
-  rowDivider: { height: 1, backgroundColor: Colors.borderLight, marginLeft: 64 },
+  rowDivider: { height: 1, backgroundColor: Colors.borderLight, marginLeft: 72 },
 
   // Sign out / delete
   signOutBtn: {
@@ -618,20 +651,18 @@ const styles = StyleSheet.create({
   },
   signOutLabel: { fontSize: FontSize.md, color: Colors.error, fontWeight: FontWeight.medium },
   deleteAccountBtn: { alignItems: 'center', paddingVertical: Spacing.md, marginBottom: Spacing.lg },
-  deleteAccountLabel: { fontSize: FontSize.sm, color: Colors.placeholder },
+  deleteAccountLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
 
   // Delete modal
-  modalSafe: { flex: 1, backgroundColor: Colors.surface },
+  modalSafe: { flex: 1, backgroundColor: Colors.background },
   modalInner: { flex: 1 },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: Spacing['2xl'],
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
   },
-  modalTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold },
+  modalTitle: { fontFamily: Fonts.display, fontSize: FontSize.xl },
   modalBody: { padding: Spacing['2xl'], gap: Spacing.xl },
   warningBanner: {
     flexDirection: 'row',

@@ -331,7 +331,8 @@ test('layout and accessibility fixes: comments sheet clears the system bar; ever
     const src = read(rel);
     for (const m of src.matchAll(/<Switch\b[^>]*?(?:\/>|>)/gs)) assert.match(src.slice(m.index, m.index + 400), /accessibilityLabel=/, `${rel} switch at ${m.index}`);
   }
-  assert.match(read('apps/mobile/app/(auth)/login.tsx'), /logo: \{ fontSize: 56, lineHeight: 72 \}/);
+  // The sign-in heading lives in the shared auth frame; its line height must exceed the font size so the display face is not clipped.
+  assert.match(read('apps/mobile/components/auth/AuthShell.tsx'), /title: \{ fontSize: 32, lineHeight: 40 \}/);
   assert.match(read('apps/mobile/hooks/useMessages.ts'), /your account or the conversation is restricted/);
 });
 

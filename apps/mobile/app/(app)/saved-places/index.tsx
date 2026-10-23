@@ -15,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Text, EmptyState } from '@/components/ui';
+import { Text, EmptyState, BackButton } from '@/components/ui';
 import { AddToTripSheet } from '@/components/trips/AddToTripSheet';
 import { useSavedPlaces } from '@/hooks/useSavedPlaces';
 import { useHaptics } from '@/hooks/useHaptics';
@@ -171,12 +171,7 @@ export default function SavedPlacesScreen() {
 
       {/* ── Header ── */}
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-        >
-          <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <View style={styles.headerCenter}>
           <Text variant="h3">My Library</Text>
           {savedPlaces.length > 0 && (
@@ -513,8 +508,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
     gap: Spacing.md,
   },
   headerCenter: { flex: 1 },
@@ -534,7 +527,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.searchBackground,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.full,
     paddingHorizontal: Spacing.md,
     minHeight: 44,
     gap: Spacing.xs,

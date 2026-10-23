@@ -11,7 +11,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Avatar, EmptyState } from '@/components/ui';
+import { Text, Avatar, EmptyState, BackButton } from '@/components/ui';
 import { PostImageCarousel } from '@/components/posts/PostImageCarousel';
 import { LikeButton } from '@/components/posts/LikeButton';
 import { SaveButton } from '@/components/posts/SaveButton';
@@ -19,7 +19,7 @@ import { CommentsSheet } from '@/components/posts/CommentsSheet';
 import { useLikePost } from '@/hooks/usePosts';
 import { getPost } from '@solotravelsoul/firebase';
 import { getUserInitials } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import type { TravelPost } from '@solotravelsoul/shared';
 
 export default function PostDetailScreen() {
@@ -70,9 +70,7 @@ export default function PostDetailScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* ── Header ── */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <Text style={styles.headerTitle}>Post</Text>
         <View style={{ flexDirection: 'row', gap: 16 }}>
           <TouchableOpacity onPress={handleShare} hitSlop={12} accessibilityLabel="Share">
@@ -200,15 +198,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing['2xl'],
     paddingVertical: Spacing.md,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
+    backgroundColor: Colors.background,
   },
-  headerTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold },
+  headerTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg },
   authorRow: {
     paddingHorizontal: Spacing['2xl'],
     paddingVertical: Spacing.md,
-    backgroundColor: Colors.surface,
   },
   authorInner: { flexDirection: 'row', alignItems: 'center' },
   authorInfo: { marginLeft: Spacing.md, flex: 1 },
@@ -221,12 +216,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing['2xl'],
     paddingVertical: Spacing.md,
     gap: Spacing.xl,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
   },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionCount: { fontSize: FontSize.md, color: Colors.textSecondary, fontWeight: FontWeight.medium },
   shareBtn: { marginLeft: 'auto' },
-  captionWrap: { padding: Spacing['2xl'], backgroundColor: Colors.surface },
+  captionWrap: { padding: Spacing['2xl'], backgroundColor: Colors.background },
   caption: { fontSize: FontSize.md, color: Colors.textPrimary, lineHeight: 22 },
   captionAuthor: { fontWeight: FontWeight.semibold },
   tagRow: {
@@ -235,10 +230,10 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: Spacing['2xl'],
     paddingBottom: Spacing.md,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
   },
   hashtag: { fontSize: FontSize.sm, color: Colors.primary },
-  body: { padding: Spacing['2xl'], backgroundColor: Colors.surface, marginTop: Spacing.sm },
+  body: { padding: Spacing['2xl'], backgroundColor: Colors.background, marginTop: Spacing.sm },
   bodyText: { fontSize: FontSize.md, color: Colors.textPrimary, lineHeight: 24 },
   commentsBtn: {
     flexDirection: 'row',

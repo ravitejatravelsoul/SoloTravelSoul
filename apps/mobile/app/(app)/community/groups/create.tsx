@@ -14,7 +14,7 @@ import { Text, Input, Button, DatePicker } from '@/components/ui';
 import { TagInput } from '@/components/ui/TagInput';
 import { createTravelGroup, addFeedItem } from '@solotravelsoul/firebase';
 import { useAuthStore } from '@/stores/authStore';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
 
 export default function CreateGroupScreen() {
   const profile = useAuthStore((s) => s.profile);
@@ -90,7 +90,7 @@ export default function CreateGroupScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <Text style={styles.sectionLabel}>BASICS</Text>
+        <Text style={styles.sectionLabel}>Basics</Text>
         <View style={styles.card}>
           <Input label="Group name *" value={name} onChangeText={setName} placeholder="e.g. Tokyo Spring Wanderers" error={errors.name} maxLength={60} />
           <Input label="Destination *" value={destination} onChangeText={setDestination} autoCapitalize="words" placeholder="e.g. Tokyo, Japan" error={errors.destination} />
@@ -103,7 +103,7 @@ export default function CreateGroupScreen() {
           <DatePicker label="End date" value={endDate ?? new Date()} onChange={setEndDate} minimumDate={startDate ?? undefined} />
         </View>
 
-        <Text style={styles.sectionLabel}>ABOUT</Text>
+        <Text style={styles.sectionLabel}>About</Text>
         <View style={styles.card}>
           <Text style={styles.fieldLabel}>Description *</Text>
           <TextInput
@@ -150,21 +150,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
   },
-  navTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  navTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   content: { padding: Spacing.lg, paddingBottom: Spacing['3xl'] },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: FontWeight.bold,
-    color: Colors.textSecondary,
-    letterSpacing: 0.7,
-    marginBottom: Spacing.sm,
-    marginTop: Spacing.xl,
-    marginLeft: 2,
-  },
+  sectionLabel: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary, marginTop: Spacing.xl, marginBottom: Spacing.sm },
   card: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,

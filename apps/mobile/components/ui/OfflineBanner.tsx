@@ -21,7 +21,7 @@ export function OfflineBanner({ overlay = false }: { overlay?: boolean }) {
       accessibilityLabel="No internet connection — some features may be unavailable"
     >
       <Ionicons name="cloud-offline-outline" size={14} color={Colors.white} />
-      <Text style={overlay ? styles.overlayText : styles.text} numberOfLines={1}>
+      <Text style={overlay ? styles.overlayText : styles.text} numberOfLines={1} maxFontSizeMultiplier={overlay ? 1 : undefined}>
         {overlay ? 'No internet connection' : 'No internet connection — some features may be unavailable'}
       </Text>
     </View>

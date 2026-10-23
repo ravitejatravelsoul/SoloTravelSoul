@@ -6,17 +6,16 @@ import {
   TextInput,
   TouchableOpacity,
   Switch,
-  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Skeleton } from '@/components/ui';
+import { Text, Skeleton, BackButton } from '@/components/ui';
 import { TravelGroupCard } from '@/components/community/TravelGroupCard';
 import { subscribePublicTravelGroups } from '@solotravelsoul/firebase';
 import type { CommunityGroup } from '@solotravelsoul/shared';
 import { useBlockStore } from '@/stores/blockStore';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 export default function TravelGroupsScreen() {
   const [groups, setGroups] = useState<CommunityGroup[]>([]);
@@ -43,9 +42,7 @@ export default function TravelGroupsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.navBar}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <Text style={styles.navTitle}>Travel Groups</Text>
         <TouchableOpacity onPress={() => router.push('/(app)/community/groups/create' as never)} hitSlop={12}>
           <Ionicons name="add" size={26} color={Colors.primary} />
@@ -113,27 +110,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
   },
-  navTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  navTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   filterBar: {
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
     gap: Spacing.sm,
   },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.background,
-    borderRadius: Radius.lg,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.full,
     paddingHorizontal: Spacing.md,
     gap: Spacing.sm,
-    height: 40,
+    minHeight: 48,
     borderWidth: 1,
     borderColor: Colors.border,
   },

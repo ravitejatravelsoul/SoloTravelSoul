@@ -1,4 +1,5 @@
 import { useRef, useCallback, useEffect, useMemo } from 'react';
+import { BackButton } from '@/components/ui/BackButton';
 import { useModerationActions } from '@/hooks/useModerationActions';
 import {
   View,
@@ -7,6 +8,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   KeyboardAvoidingView,
+  Keyboard,
   ListRenderItemInfo,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -19,7 +21,7 @@ import { useNetworkState } from '@/hooks/useNetworkState';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { DateSeparator } from '@/components/chat/DateSeparator';
 import { ChatInput } from '@/components/chat/ChatInput';
-import { Colors, FontSize, FontWeight, Spacing } from '@/constants/theme';
+import { Colors, FontSize, FontWeight, Fonts, Spacing } from '@/constants/theme';
 import { isSameDay } from 'date-fns';
 import { DELETED_ACCOUNT_NAME } from '@solotravelsoul/shared';
 import type { DirectMessage } from '@solotravelsoul/shared';
@@ -65,6 +67,14 @@ export default function DirectChatScreen() {
     }
   }, [messages.length]);
 
+  // The keyboard shrinks the list from below; keep the newest message in view instead of hiding it behind the composer.
+  useEffect(() => {
+    const sub = Keyboard.addListener('keyboardDidShow', () => {
+      setTimeout(() => flatRef.current?.scrollToEnd({ animated: false }), 60);
+    });
+    return () => sub.remove();
+  }, []);
+
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<ListItem>) => {
       if (item.kind === 'separator') {
@@ -93,9 +103,7 @@ export default function DirectChatScreen() {
     >
       {/* Header */}
       <View style={[styles.header, { paddingTop: top + 10 }]}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="chevron-back" size={26} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <View style={styles.headerCenter}>
           <View style={styles.headerAvatar}>
             <Text style={styles.headerAvatarText}>{otherInfo?.initials ?? '?'}</Text>
@@ -156,9 +164,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingBottom: Spacing.sm,
     paddingHorizontal: Spacing.md,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    backgroundColor: Colors.background,
     gap: Spacing.sm,
   },
   headerCenter: {
@@ -168,9 +174,9 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   headerAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -181,8 +187,8 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.bold,
   },
   headerName: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.semibold,
+    fontFamily: Fonts.display,
+    fontSize: FontSize.lg,
     color: Colors.textPrimary,
     flex: 1,
   },

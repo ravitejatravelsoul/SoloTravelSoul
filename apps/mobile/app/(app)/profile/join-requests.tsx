@@ -10,12 +10,12 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text } from '@/components/ui';
+import { Text, BackButton } from '@/components/ui';
 import { SentRequestCard, ReceivedRequestCard } from '@/components/community/JoinRequestCard';
 import { useMyJoinRequests, useOwnerJoinRequests } from '@/hooks/useTripJoinRequest';
 import { useTripAvailability } from '@/hooks/useTripAvailability';
 import { useAuthStore } from '@/stores/authStore';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 type Tab = 'sent' | 'received';
 
@@ -56,11 +56,9 @@ export default function JoinRequestsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.navBar}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <Text style={styles.navTitle}>Join Requests</Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 44 }} />
       </View>
 
       {/* Tabs */}
@@ -148,11 +146,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
   },
-  navTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  navTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   tabBar: {
     flexDirection: 'row',
     backgroundColor: Colors.surface,

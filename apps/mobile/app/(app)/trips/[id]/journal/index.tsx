@@ -1,10 +1,10 @@
 import { useState, memo, useCallback } from 'react';
 import { useMediaSource } from '@/hooks/useMediaSource';
 import { View, FlatList, StyleSheet, TouchableOpacity, Alert, Image } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Screen, Text, EmptyState } from '@/components/ui';
+import { Screen, Text, EmptyState, BackButton } from '@/components/ui';
 import { JournalEntryModal, type JournalDraft } from '@/components/journal/JournalEntryModal';
 import { useTripStore } from '@/stores/tripStore';
 import { useJournal } from '@/hooks/useJournal';
@@ -53,9 +53,7 @@ export default function JournalScreen() {
     <Screen padded={false}>
       {/* ── Header ── */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}>
-          <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <View style={{ flex: 1, marginLeft: Spacing.md }}>
           <Text variant="h3" numberOfLines={1}>{trip?.destination ?? 'Journal'}</Text>
           {totalEntries > 0 && (
@@ -300,8 +298,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: Spacing.lg,
     paddingTop: Spacing['2xl'],
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
   },
   headerSub: { color: Colors.textSecondary, marginTop: 1 },
   journalBadge: {

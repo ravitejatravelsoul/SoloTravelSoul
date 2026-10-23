@@ -56,7 +56,7 @@ function buildMapHtml(pins: MapPin[]): string {
   .leaflet-control-zoom a{
     border-radius:8px!important;
     border:1px solid #e5e7eb!important;
-    color:#1270C2!important;
+    color:#00897B!important;
     font-size:16px!important;
     line-height:28px!important;
     width:28px!important;
@@ -128,7 +128,7 @@ if(typeof window.L==='undefined'&&typeof window.leaflet!=='undefined'){
     var userMarker=null;
 
     window.centerOnUser=function(lat,lng){
-      var dotHtml='<div style="width:14px;height:14px;border-radius:50%;background:#1270C2;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);"></div>';
+      var dotHtml='<div style="width:14px;height:14px;border-radius:50%;background:#00897B;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);"></div>';
       var icon=L.divIcon({html:dotHtml,className:'',iconSize:[14,14],iconAnchor:[7,7]});
       if(userMarker){
         userMarker.setLatLng([lat,lng]);

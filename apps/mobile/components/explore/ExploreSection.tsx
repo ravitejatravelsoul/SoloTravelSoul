@@ -2,7 +2,7 @@ import { memo } from 'react';
 import { View, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui';
-import { Colors, Spacing, FontSize, FontWeight } from '@/constants/theme';
+import { Colors, Spacing, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 interface Props {
   title: string;
@@ -57,7 +57,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  title: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  title: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   seeAll: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: FontWeight.medium },
   row: { paddingHorizontal: Spacing['2xl'], gap: Spacing.md },
   col: { paddingHorizontal: Spacing['2xl'], gap: Spacing.md },

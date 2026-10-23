@@ -10,14 +10,14 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text } from '@/components/ui';
+import { Text, BackButton } from '@/components/ui';
 import { useUIStore } from '@/stores/uiStore';
 import { useAuthStore } from '@/stores/authStore';
 import { updateProfileVisibility } from '@solotravelsoul/firebase';
 import type { UserProfile } from '@solotravelsoul/shared';
 import { useTripStore } from '@/stores/tripStore';
 import { applyDiscoverySettings, upcomingTrips } from '@/utils/discovery';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
 
 export default function PrivacySettingsScreen() {
   const profile = useAuthStore((s) => s.profile);
@@ -104,16 +104,14 @@ export default function PrivacySettingsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.navBar}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <Text style={styles.navTitle}>Privacy Settings</Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 44 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Profile Visibility */}
-        <Text style={styles.sectionLabel}>PROFILE VISIBILITY</Text>
+        <Text style={styles.sectionLabel}>Profile visibility</Text>
         <View style={styles.card}>
           <View style={styles.row}>
             <View style={styles.rowLeft}>
@@ -153,7 +151,7 @@ export default function PrivacySettingsScreen() {
         </View>
 
         {/* Traveler Discovery */}
-        <Text style={styles.sectionLabel}>TRAVELER DISCOVERY</Text>
+        <Text style={styles.sectionLabel}>Traveler discovery</Text>
         <View style={styles.card}>
           <View style={styles.row}>
             <View style={styles.rowLeft}>
@@ -191,7 +189,7 @@ export default function PrivacySettingsScreen() {
         </View>
 
         {/* Travel compatibility */}
-        <Text style={styles.sectionLabel}>TRAVEL COMPATIBILITY</Text>
+        <Text style={styles.sectionLabel}>Travel compatibility</Text>
         <View style={styles.card}>
           <View style={styles.row}>
             <View style={styles.rowLeft}>
@@ -234,7 +232,7 @@ export default function PrivacySettingsScreen() {
         </View>
 
         {/* Trip shown in discovery */}
-        <Text style={styles.sectionLabel}>TRIP SHOWN IN DISCOVERY</Text>
+        <Text style={styles.sectionLabel}>Trip shown in discovery</Text>
         <View style={styles.card}>
           {[{ id: null as string | null, label: "Don't show a trip", sub: 'Only your city is shown' },
             ...shareableTrips.map((t) => ({ id: t.id as string | null, label: t.destination, sub: `${t.startDate.toLocaleDateString()} – ${t.endDate.toLocaleDateString()}` }))]
@@ -265,7 +263,7 @@ export default function PrivacySettingsScreen() {
         </View>
 
         {/* Blocked Users */}
-        <Text style={styles.sectionLabel}>SAFETY</Text>
+        <Text style={styles.sectionLabel}>Safety</Text>
         <View style={styles.card}>
           <TouchableOpacity
             style={styles.row}
@@ -301,21 +299,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
   },
-  navTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  navTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   content: { padding: Spacing.lg, paddingBottom: Spacing['3xl'], gap: Spacing.sm },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: FontWeight.bold,
-    color: Colors.textSecondary,
-    letterSpacing: 0.7,
-    marginTop: Spacing.md,
-    marginBottom: Spacing.xs,
-    marginLeft: 2,
-  },
+  sectionLabel: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary, marginTop: Spacing.xl, marginBottom: Spacing.sm },
   card: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,

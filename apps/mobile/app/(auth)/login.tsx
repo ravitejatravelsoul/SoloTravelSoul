@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { StyleSheet, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
-import { Screen, Text, Input, Button, Divider } from '@/components/ui';
+import { Text, Input, Button, Divider } from '@/components/ui';
+import { AuthShell } from '@/components/auth/AuthShell';
 import { useAuth } from '@/hooks/useAuth';
 import { useBiometric } from '@/hooks/useBiometric';
 import { useAuthStore } from '@/stores/authStore';
@@ -47,75 +48,68 @@ export default function LoginScreen() {
   };
 
   return (
-    <Screen scroll padded>
-      <View style={styles.header}>
-        <Text style={styles.logo}>✈️</Text>
-        <Text variant="h1">Welcome back</Text>
-        <Text variant="caption">Sign in to continue your journey</Text>
-      </View>
+    <AuthShell
+      title="Welcome back"
+      subtitle="Sign in to continue your journey"
+      footer={
+        <>
+          <Text variant="caption">Don&apos;t have an account? </Text>
+          <TouchableOpacity onPress={() => router.push('/(auth)/signup')} hitSlop={8} accessibilityRole="link" accessibilityLabel="Create one">
+            <Text variant="caption" color={Colors.primaryDark} bold>Create one</Text>
+          </TouchableOpacity>
+        </>
+      }
+    >
+      <Input
+        label="Email"
+        value={email}
+        onChangeText={setEmail}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoComplete="email"
+        error={errors.email}
+        placeholder="you@example.com"
+      />
+      <Input
+        label="Password"
+        value={password}
+        onChangeText={setPassword}
+        secure
+        error={errors.password}
+        placeholder="••••••••"
+      />
 
-      <View style={styles.form}>
-        <Input
-          label="Email"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoComplete="email"
-          error={errors.email}
-          placeholder="you@example.com"
-        />
-        <Input
-          label="Password"
-          value={password}
-          onChangeText={setPassword}
-          secure
-          error={errors.password}
-          placeholder="••••••••"
-        />
+      <TouchableOpacity
+        onPress={() => router.push('/(auth)/forgot-password')}
+        style={styles.forgotRow}
+        hitSlop={8}
+      >
+        <Text variant="caption" color={Colors.primaryDark} bold>Forgot password?</Text>
+      </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={() => router.push('/(auth)/forgot-password')}
-          style={styles.forgotRow}
-        >
-          <Text variant="caption" color={Colors.primary}>Forgot password?</Text>
-        </TouchableOpacity>
+      <Button
+        label="Sign In"
+        onPress={handleLogin}
+        loading={loading}
+        fullWidth
+        size="lg"
+      />
 
-        <Button
-          label="Sign In"
-          onPress={handleLogin}
-          loading={loading}
-          fullWidth
-          size="lg"
-        />
-
-        {enrolled && hasSession && (
-          <>
-            <Divider />
-            <Button
-              label="Sign in with Face ID / Fingerprint"
-              variant="secondary"
-              onPress={handleBiometric}
-              fullWidth
-            />
-          </>
-        )}
-      </View>
-
-      <View style={styles.footer}>
-        <Text variant="caption">Don&apos;t have an account? </Text>
-        <TouchableOpacity onPress={() => router.push('/(auth)/signup')}>
-          <Text variant="caption" color={Colors.primary} bold>Create one</Text>
-        </TouchableOpacity>
-      </View>
-    </Screen>
+      {enrolled && hasSession && (
+        <>
+          <Divider />
+          <Button
+            label="Sign in with Face ID / Fingerprint"
+            variant="secondary"
+            onPress={handleBiometric}
+            fullWidth
+          />
+        </>
+      )}
+    </AuthShell>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { alignItems: 'center', gap: Spacing.sm, marginTop: Spacing['3xl'], marginBottom: Spacing['3xl'] },
-  logo: { fontSize: 56, lineHeight: 72 },
-  form: { gap: Spacing.lg },
   forgotRow: { alignSelf: 'flex-end', marginTop: -Spacing.sm },
-  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing['3xl'] },
 });

@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Text, ProgressBar, SyncStatusBar } from '@/components/ui';
+import { Text, ProgressBar, SyncStatusBar, PressableScale } from '@/components/ui';
 import { useTripStore } from '@/stores/tripStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useTrips } from '@/hooks/useTrips';
@@ -35,6 +35,8 @@ import {
   FontSize,
   FontWeight,
   Shadow,
+  Fonts,
+  TapTarget,
 } from '@/constants/theme';
 import { usePackingSuggestions } from '@/hooks/usePackingSuggestions';
 import { ExportPreviewModal } from '@/components/trips/ExportPreviewModal';
@@ -181,19 +183,23 @@ export default function TripDetailScreen() {
 
           {/* Nav */}
           <View style={styles.heroNav}>
-            <TouchableOpacity style={styles.navBtn} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.navBtn} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back">
               <Ionicons name="arrow-back" size={20} color={Colors.white} />
             </TouchableOpacity>
             <View style={styles.heroNavRight}>
               <TouchableOpacity
                 style={styles.navBtn}
                 onPress={() => setShowExportModal(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Share or export trip"
               >
                 <Ionicons name="share-outline" size={20} color={Colors.white} />
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.navBtn}
                 onPress={() => router.push(`/(app)/trips/${id}/edit`)}
+                accessibilityRole="button"
+                accessibilityLabel="Edit trip"
               >
                 <Ionicons name="create-outline" size={20} color={Colors.white} />
               </TouchableOpacity>
@@ -374,7 +380,7 @@ export default function TripDetailScreen() {
                   <View style={styles.suggestionsWrap}>
                     <View style={styles.suggestionHeader}>
                       <Ionicons name="sparkles" size={14} color={Colors.primary} />
-                      <Text style={styles.suggestionTitle}>SUGGESTED FOR THIS TRIP</Text>
+                      <Text style={styles.suggestionTitle}>Suggested for this trip</Text>
                       <TouchableOpacity
                         style={styles.addAllBtn}
                         onPress={handleAddAllSuggestions}
@@ -480,7 +486,7 @@ export default function TripDetailScreen() {
             <View style={styles.notesCard}>
               <View style={styles.notesHeader}>
                 <Ionicons name="document-text-outline" size={15} color={Colors.textSecondary} />
-                <Text style={styles.notesLabel}>NOTES</Text>
+                <Text style={styles.notesLabel}>Notes</Text>
               </View>
               <Text variant="body" style={styles.notesText}>{trip.notes}</Text>
             </View>
@@ -543,7 +549,7 @@ function ActionTile({
   onPress: () => void;
 }) {
   return (
-    <TouchableOpacity style={styles.tile} onPress={onPress} activeOpacity={0.85}>
+    <PressableScale style={styles.tile} onPress={onPress} guardMs={500} accessibilityRole="button" accessibilityLabel={`${label}. ${sub}`}>
       <LinearGradient
         colors={gradient}
         start={{ x: 0, y: 0 }}
@@ -556,7 +562,7 @@ function ActionTile({
         <Text style={styles.tileLabel}>{label}</Text>
         <Text style={styles.tileSub} numberOfLines={1}>{sub}</Text>
       </LinearGradient>
-    </TouchableOpacity>
+    </PressableScale>
   );
 }
 
@@ -578,8 +584,11 @@ function ChecklistRow({
       <TouchableOpacity
         style={[styles.checkbox, checked && styles.checkboxChecked]}
         onPress={onToggle}
-        hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+        hitSlop={{ top: 12, right: 12, bottom: 12, left: 12 }}
         activeOpacity={0.7}
+        accessibilityRole="checkbox"
+        accessibilityLabel={text}
+        accessibilityState={{ checked }}
       >
         {checked && <Ionicons name="checkmark" size={11} color={Colors.white} />}
       </TouchableOpacity>
@@ -593,10 +602,12 @@ function ChecklistRow({
       </TouchableOpacity>
       <TouchableOpacity
         onPress={onDelete}
-        hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+        hitSlop={{ top: 12, right: 12, bottom: 12, left: 12 }}
+        accessibilityRole="button"
+        accessibilityLabel={`Remove ${text}`}
         style={styles.checkDeleteBtn}
       >
-        <Ionicons name="close" size={14} color={Colors.placeholder} />
+        <Ionicons name="close" size={16} color={Colors.textSecondary} />
       </TouchableOpacity>
     </View>
   );
@@ -652,9 +663,9 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   navBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: TapTarget,
+    height: TapTarget,
+    borderRadius: TapTarget / 2,
     backgroundColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -676,9 +687,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   destination: {
-    fontSize: FontSize['4xl'],
+    fontFamily: Fonts.displayHeavy,
+    fontSize: 36,
     lineHeight: 42,
-    fontWeight: FontWeight.extrabold,
     color: Colors.white,
     marginTop: Spacing.xs,
   },
@@ -725,9 +736,9 @@ const styles = StyleSheet.create({
   // ── Body ──────────────────────────────────────────────────────────────
   body: {
     backgroundColor: Colors.background,
-    borderTopLeftRadius: Radius.xl,
-    borderTopRightRadius: Radius.xl,
-    marginTop: -Radius.xl,
+    borderTopLeftRadius: Radius['2xl'],
+    borderTopRightRadius: Radius['2xl'],
+    marginTop: -Radius['2xl'],
     paddingTop: Spacing['2xl'],
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing['4xl'],
@@ -778,14 +789,14 @@ const styles = StyleSheet.create({
   tile: {
     // Each tile takes exactly half the row minus half the gap
     width: '47.5%',
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     overflow: 'hidden',
     ...Shadow.md,
   },
   tileInner: {
     padding: Spacing.md,
     gap: 4,
-    minHeight: 96,
+    minHeight: 110,
     justifyContent: 'flex-end',
   },
   tileIconBox: {
@@ -798,8 +809,8 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
   },
   tileLabel: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
+    fontFamily: Fonts.display,
+    fontSize: FontSize.lg,
     color: Colors.white,
     lineHeight: 20,
   },
@@ -830,8 +841,8 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   sectionTitle: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
+    fontFamily: Fonts.display,
+    fontSize: FontSize.xl,
     color: Colors.textPrimary,
   },
   sectionMeta: {
@@ -875,10 +886,10 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xs,
   },
   checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 5,
-    borderWidth: 1.5,
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    borderWidth: 2,
     borderColor: Colors.border,
     alignItems: 'center',
     justifyContent: 'center',
@@ -969,10 +980,9 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   notesLabel: {
-    fontSize: 11,
+    fontSize: FontSize.sm,
     fontWeight: FontWeight.bold,
     color: Colors.textSecondary,
-    letterSpacing: 0.5,
   },
   notesText: {
     color: Colors.textPrimary,
@@ -994,10 +1004,9 @@ const styles = StyleSheet.create({
   },
   suggestionTitle: {
     flex: 1,
-    fontSize: 10,
+    fontSize: FontSize.sm,
     fontWeight: FontWeight.bold,
     color: Colors.textSecondary,
-    letterSpacing: 0.6,
   },
   addAllBtn: {
     backgroundColor: Colors.primary + '15',

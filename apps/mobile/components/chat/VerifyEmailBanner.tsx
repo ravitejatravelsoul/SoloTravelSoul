@@ -1,5 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, useWindowDimensions } from 'react-native';
-import { Colors, FontSize, FontWeight, Radius, Spacing } from '@/constants/theme';
+import { Colors, FontSize, FontWeight, Radius, Spacing, Fonts } from '@/constants/theme';
 
 interface Props {
   email: string;
@@ -35,7 +35,7 @@ export function VerifyEmailBanner({ email, sending, checking, message, onSend, o
 
 const styles = StyleSheet.create({
   card: { backgroundColor: Colors.surface, marginHorizontal: Spacing.lg, marginTop: Spacing.sm, padding: Spacing.md, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.border, gap: Spacing.sm },
-  title: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  title: { fontFamily: Fonts.display, fontSize: FontSize.md, color: Colors.textPrimary },
   body: { fontSize: FontSize.sm, color: Colors.textSecondary },
   // Wraps whenever the two buttons do not fit side by side, whatever the text scale the screen last measured (a live text-size change leaves the window scale stale).
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },

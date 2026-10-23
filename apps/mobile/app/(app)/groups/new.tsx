@@ -20,7 +20,7 @@ import {
 import { getUserInitials } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
-import { Colors, FontSize, FontWeight, Radius, Spacing } from '@/constants/theme';
+import { Colors, FontSize, FontWeight, Radius, Spacing, Fonts } from '@/constants/theme';
 
 function generateClientId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
@@ -182,11 +182,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingBottom: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    backgroundColor: Colors.background,
   },
-  title: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  title: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   createText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.primary },
   createTextDisabled: { color: Colors.placeholder },
   body: { padding: Spacing.lg, gap: Spacing.sm, paddingBottom: 40 },

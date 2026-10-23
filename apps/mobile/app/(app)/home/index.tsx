@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import {
   View,
   FlatList,
+  ScrollView,
   StyleSheet,
   TouchableOpacity,
   RefreshControl,
@@ -10,7 +11,7 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Avatar, OfflineBanner } from '@/components/ui';
+import { Text, Avatar, OfflineBanner, ExpandingMenu, PressableScale, Reveal } from '@/components/ui';
 import { PostCard } from '@/components/posts/PostCard';
 import { TripHeroCard } from '@/components/trips/TripHeroCard';
 import { useFeed } from '@/hooks/useFeed';
@@ -19,34 +20,69 @@ import { useAuthStore } from '@/stores/authStore';
 import { useNetworkState } from '@/hooks/useNetworkState';
 import { getUserInitials } from '@solotravelsoul/shared';
 import { tripStatus } from '@/utils/dateUtils';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import type { FeedItem } from '@/hooks/useFeed';
 
-function FeedHeader() {
+function firstName(name: string | undefined): string {
+  const first = (name ?? '').trim().split(/\s+/)[0];
+  return first || 'traveler';
+}
+
+const SHORTCUTS: { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; route: string; tint: string }[] = [
+  { key: 'explore', label: 'Explore trips', icon: 'compass', route: '/(app)/discover/trips', tint: Colors.tealSoft },
+  { key: 'companions', label: 'Find companions', icon: 'people', route: '/(app)/community/companions', tint: Colors.coralSoft },
+  { key: 'saved', label: 'Saved posts', icon: 'bookmark', route: '/(app)/saved-posts', tint: '#FFF1CC' },
+  { key: 'groups', label: 'Groups', icon: 'chatbubbles', route: '/(app)/community/groups', tint: '#E9E6FB' },
+];
+
+function FeedHeader({ subtitle }: { subtitle: string }) {
   const profile = useAuthStore((s) => s.profile);
   const initials = getUserInitials(profile?.name ?? '?');
 
   return (
-    <View style={styles.header}>
-      <View style={styles.logoRow}>
-        <Ionicons name="airplane" size={22} color={Colors.primary} />
-        <Text style={styles.logo}>SoloTravelSoul</Text>
+    <View>
+      <View style={styles.header}>
+        <View style={styles.greetingWrap}>
+          <Text style={styles.greeting} numberOfLines={2} accessibilityRole="header">
+            Hi, {firstName(profile?.name)} 👋
+          </Text>
+          <Text variant="caption" numberOfLines={2}>{subtitle}</Text>
+        </View>
+        <View style={styles.headerRight}>
+          <ExpandingMenu
+            label="Create"
+            actions={[
+              { key: 'post', label: 'Share a photo post', icon: 'camera', onPress: () => router.push('/(app)/post/create' as never) },
+              { key: 'journal', label: 'Write a journal entry', icon: 'book', onPress: () => router.push('/(app)/journal/create' as never) },
+              { key: 'trip', label: 'Plan a trip', icon: 'map', onPress: () => router.push('/(app)/trips/create' as never) },
+            ]}
+          />
+          <PressableScale
+            onPress={() => router.push('/(app)/profile')}
+            guardMs={500}
+            accessibilityRole="button"
+            accessibilityLabel="Your profile"
+            hitSlop={6}
+          >
+            <Avatar uri={profile?.photoURL} initials={initials} size={44} />
+          </PressableScale>
+        </View>
       </View>
-      <View style={styles.headerRight}>
-        <TouchableOpacity
-          onPress={() => router.push('/(app)/post/create' as never)}
-          hitSlop={10}
-          style={styles.headerBtn}
-        >
-          <Ionicons name="add-circle-outline" size={26} color={Colors.primary} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => router.push('/(app)/profile')}
-          hitSlop={6}
-        >
-          <Avatar uri={profile?.photoURL} initials={initials} size={32} />
-        </TouchableOpacity>
-      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shortcuts} keyboardShouldPersistTaps="handled">
+        {SHORTCUTS.map((c) => (
+          <PressableScale
+            key={c.key}
+            guardMs={500}
+            onPress={() => router.push(c.route as never)}
+            accessibilityRole="button"
+            accessibilityLabel={c.label}
+            style={[styles.shortcut, { backgroundColor: c.tint }]}
+          >
+            <Ionicons name={c.icon} size={18} color={Colors.textPrimary} />
+            <Text style={styles.shortcutText}>{c.label}</Text>
+          </PressableScale>
+        ))}
+      </ScrollView>
     </View>
   );
 }
@@ -95,6 +131,9 @@ export default function FeedScreen() {
   const activeTrip = upcoming.find((t) => tripStatus(t.startDate, t.endDate) === 'active');
   const nextTrip = activeTrip ?? upcoming.find((t) => tripStatus(t.startDate, t.endDate) === 'upcoming');
 
+  // Real data only: the next trip if there is one, otherwise a plain invitation.
+  const headerSubtitle = nextTrip ? `Next up: ${nextTrip.destination}` : 'Where to next?';
+
   const renderItem = useCallback(({ item }: { item: FeedItem }) => {
     return <PostCard post={item.data} />;
   }, []);
@@ -104,11 +143,11 @@ export default function FeedScreen() {
   const ListHeaderComponent = useCallback(() => (
     <>
       {!isConnected && <OfflineBanner />}
-      <FeedHeader />
+      <FeedHeader subtitle={headerSubtitle} />
       {nextTrip ? (
-        <View style={styles.tripBanner}>
+        <Reveal style={styles.tripBanner}>
           <TripHeroCard trip={nextTrip} />
-        </View>
+        </Reveal>
       ) : null}
       {loading && items.length === 0 ? (
         <View style={styles.centerLoader}>
@@ -116,7 +155,7 @@ export default function FeedScreen() {
         </View>
       ) : null}
     </>
-  ), [isConnected, nextTrip, loading, items.length]);
+  ), [isConnected, nextTrip, loading, items.length, headerSubtitle]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -150,37 +189,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: Spacing.md,
     paddingHorizontal: Spacing['2xl'],
-    paddingVertical: Spacing.md,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.md,
   },
-  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  logo: {
-    fontSize: FontSize.lg,
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
-  },
+  greetingWrap: { flex: 1, gap: 2 },
+  greeting: { fontFamily: Fonts.displayHeavy, fontSize: FontSize['3xl'], lineHeight: 36, color: Colors.textPrimary },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  headerBtn: { position: 'relative' },
-  notifBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    backgroundColor: Colors.error,
-    borderRadius: Radius.full,
-    minWidth: 16,
-    height: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
-  },
-  notifBadgeText: {
-    fontSize: 9,
-    color: Colors.white,
-    fontWeight: FontWeight.bold,
-  },
+  shortcuts: { paddingHorizontal: Spacing['2xl'], paddingBottom: Spacing.lg, gap: Spacing.sm },
+  shortcut: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, minHeight: 44, borderRadius: Radius.full },
+  shortcutText: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.textPrimary },
   tripBanner: {
     marginHorizontal: Spacing['2xl'],
     marginVertical: Spacing.lg,

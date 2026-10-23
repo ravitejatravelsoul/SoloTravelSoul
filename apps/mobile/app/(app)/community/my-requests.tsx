@@ -7,10 +7,10 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { router } from 'expo-router';
+
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Avatar } from '@/components/ui';
+import { Text, Avatar, BackButton } from '@/components/ui';
 import { RequesterAnswers } from '@/components/community/RequesterAnswers';
 import {
   subscribeTripJoinRequestsForOwner,
@@ -22,7 +22,7 @@ import {
 } from '@solotravelsoul/firebase';
 import type { TripJoinRequest, CommunityGroupJoinRequest } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import { formatDistanceToNowStrict } from 'date-fns';
 
 type SectionItem =
@@ -203,9 +203,7 @@ export default function MyRequestsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.navBar}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <View style={styles.navCenter}>
           <Text style={styles.navTitle}>My Requests</Text>
           {totalPending > 0 && (
@@ -214,7 +212,7 @@ export default function MyRequestsScreen() {
             </View>
           )}
         </View>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 44 }} />
       </View>
 
       {loading ? (
@@ -269,12 +267,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
   },
   navCenter: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  navTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  navTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   navBadge: {
     backgroundColor: Colors.error,
     borderRadius: Radius.full,

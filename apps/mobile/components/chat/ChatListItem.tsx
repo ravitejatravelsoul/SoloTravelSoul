@@ -1,5 +1,6 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { formatDistanceToNowStrict } from 'date-fns';
+import { PressableScale } from '@/components/ui/PressableScale';
 import { Colors, FontSize, FontWeight, Radius, Spacing } from '@/constants/theme';
 
 interface ChatListItemProps {
@@ -48,7 +49,14 @@ export function ChatListItem({
   const hasUnread = unreadCount > 0;
 
   return (
-    <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
+    <PressableScale
+      style={styles.row}
+      onPress={onPress}
+      guardMs={500}
+      scaleTo={0.985}
+      accessibilityRole="button"
+      accessibilityLabel={`${name}${hasUnread ? `, ${unreadCount} unread` : ''}, ${lastMessageText ?? (isGroup ? `${memberCount ?? 0} members` : 'No messages yet')}`}
+    >
       {/* Avatar */}
       <View style={[styles.avatar, isGroup && styles.avatarGroup]}>
         <Text style={styles.initials}>{initials}</Text>
@@ -78,7 +86,7 @@ export function ChatListItem({
           )}
         </View>
       </View>
-    </TouchableOpacity>
+    </PressableScale>
   );
 }
 
@@ -88,21 +96,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
     gap: Spacing.md,
+    minHeight: 72,
   },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
   avatarGroup: {
-    backgroundColor: Colors.accent,
-    borderRadius: Radius.md,
+    backgroundColor: Colors.coral,
+    borderRadius: Radius.lg,
   },
   initials: {
     color: Colors.white,
@@ -125,7 +134,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   name: {
-    fontSize: FontSize.sm,
+    fontSize: FontSize.md,
     color: Colors.textPrimary,
     fontWeight: FontWeight.medium,
     flex: 1,
@@ -139,11 +148,11 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   timeUnread: {
-    color: Colors.primary,
-    fontWeight: FontWeight.semibold,
+    color: Colors.primaryDark,
+    fontWeight: FontWeight.bold,
   },
   preview: {
-    fontSize: FontSize.xs,
+    fontSize: FontSize.sm,
     color: Colors.textSecondary,
     flex: 1,
     marginRight: Spacing.sm,
@@ -153,10 +162,10 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.medium,
   },
   badge: {
-    minWidth: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: Colors.primary,
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: Colors.coral,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 5,

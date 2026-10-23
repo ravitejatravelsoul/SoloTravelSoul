@@ -13,13 +13,13 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Avatar, EmptyState } from '@/components/ui';
+import { Text, Avatar, EmptyState, BackButton } from '@/components/ui';
 import { LikeButton } from '@/components/posts/LikeButton';
 import { CommentsSheet } from '@/components/posts/CommentsSheet';
 import { useLikeJournal } from '@/hooks/useJournals';
 import { getJournal } from '@solotravelsoul/firebase';
 import { getUserInitials } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import type { TravelJournal } from '@solotravelsoul/shared';
 
 export default function JournalDetailScreen() {
@@ -70,9 +70,7 @@ export default function JournalDetailScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <Text style={styles.headerTitle} numberOfLines={1}>Journal</Text>
         <View style={{ flexDirection: 'row', gap: 16 }}>
           <TouchableOpacity onPress={handleShare} hitSlop={12} accessibilityLabel="Share">
@@ -192,11 +190,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing['2xl'],
     paddingVertical: Spacing.md,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
+    backgroundColor: Colors.background,
   },
-  headerTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold, flex: 1, textAlign: 'center' },
+  headerTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, flex: 1, textAlign: 'center' },
   cover: { width: '100%', height: 240, backgroundColor: Colors.borderLight },
   article: { padding: Spacing['2xl'] },
   locationBadge: {
@@ -207,8 +203,8 @@ const styles = StyleSheet.create({
   },
   locationText: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: FontWeight.medium },
   title: {
+    fontFamily: Fonts.display,
     fontSize: FontSize['3xl'],
-    fontWeight: FontWeight.extrabold,
     color: Colors.textPrimary,
     lineHeight: 36,
     marginBottom: Spacing.sm,

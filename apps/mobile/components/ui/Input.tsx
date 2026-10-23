@@ -26,12 +26,13 @@ export function Input({
   ...props
 }: InputProps) {
   const [visible, setVisible] = useState(false);
+  const [focused, setFocused] = useState(false);
 
   return (
     <View style={styles.wrapper}>
       {label ? <Text variant="label" style={styles.label}>{label}</Text> : null}
 
-      <View style={[styles.inputRow, error ? styles.inputError : styles.inputDefault]}>
+      <View style={[styles.inputRow, error ? styles.inputError : focused ? styles.inputFocused : styles.inputDefault]}>
         <TextInput
           style={[styles.input, style]}
           placeholderTextColor={Colors.placeholder}
@@ -39,6 +40,8 @@ export function Input({
           autoCapitalize={secure ? 'none' : props.autoCapitalize}
           autoCorrect={secure ? false : props.autoCorrect}
           {...props}
+          onFocus={(e) => { setFocused(true); props.onFocus?.(e); }}
+          onBlur={(e) => { setFocused(false); props.onBlur?.(e); }}
         />
         {secure ? (
           <TouchableOpacity
@@ -70,13 +73,14 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: Radius.md,
+    borderWidth: 1.5,
+    borderRadius: Radius.lg,
     backgroundColor: Colors.white,
-    paddingHorizontal: Spacing.md,
-    minHeight: 48,
+    paddingHorizontal: Spacing.lg,
+    minHeight: 52,
   },
   inputDefault: { borderColor: Colors.border },
+  inputFocused: { borderColor: Colors.primary },
   inputError: { borderColor: Colors.error },
   input: {
     flex: 1,

@@ -8,9 +8,10 @@
     "scheme": "solotravelsoul",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/images/splash.png",
+      "image": "./assets/images/splash-icon.png",
+      "imageWidth": 220,
       "resizeMode": "contain",
-      "backgroundColor": "#1270C2"
+      "backgroundColor": "#FFF8EE"
     },
     "ios": {
       "supportsTablet": false,

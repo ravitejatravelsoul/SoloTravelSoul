@@ -12,8 +12,8 @@ import { useDirectChats } from '@/hooks/useDirectChats';
 import { useAuthStore } from '@/stores/authStore';
 import { useHaptics } from '@/hooks/useHaptics';
 import { ChatListItem } from '@/components/chat/ChatListItem';
-import { Text, Skeleton } from '@/components/ui';
-import { Colors, FontSize, FontWeight, Spacing, Radius } from '@/constants/theme';
+import { Text, Skeleton, BackButton } from '@/components/ui';
+import { Colors, FontSize, FontWeight, Spacing, Radius, Fonts } from '@/constants/theme';
 import type { TravelGroup } from '@solotravelsoul/shared';
 
 // ── Skeleton ──────────────────────────────────────────────────────────
@@ -89,9 +89,7 @@ export default function GroupsIndexScreen() {
   return (
     <View style={styles.root}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="chevron-back" size={26} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <Text variant="h3">Travel Groups</Text>
         <TouchableOpacity
           onPress={handleCreateGroup}
@@ -149,9 +147,7 @@ const styles = StyleSheet.create({
     paddingTop: 56,
     paddingBottom: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    backgroundColor: Colors.background,
   },
   list: { paddingBottom: 32 },
   sectionHeader: {
@@ -161,11 +157,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   sectionTitle: {
-    fontSize: FontSize.xs,
-    fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    fontFamily: Fonts.display,
+    fontSize: FontSize.lg,
+    color: Colors.textPrimary,
   },
   separator: { height: 1, backgroundColor: Colors.borderLight, marginLeft: 72 },
 

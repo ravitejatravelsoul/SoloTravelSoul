@@ -9,7 +9,7 @@ import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } fro
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Avatar, Button, Chip } from '@/components/ui';
+import { Text, Avatar, Button, Chip, ScreenHeader, PressableScale } from '@/components/ui';
 import { getCompanionTravelers, getCompanionTrips, getDiscoveryRecords } from '@solotravelsoul/firebase';
 import { preferencesOf, isDiscoverable, getUserInitials, LEVEL_LABELS, PREFERENCE_LABELS } from '@solotravelsoul/shared';
 import type { CompatibilityResult, NearbyTraveler, PlannedTrip } from '@solotravelsoul/shared';
@@ -19,7 +19,7 @@ import { useTripStore } from '@/stores/tripStore';
 import { upcomingTrips } from '@/utils/discovery';
 import { buildMatches, createMatchLoader, matchQueryKey, EMPTY_RAW } from '@/utils/companions';
 import type { LoadContext, LoadState, RawMatches } from '@/utils/companions';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
 
 const range = (a: Date, b: Date) => `${a.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – ${b.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`;
 
@@ -67,20 +67,19 @@ export default function CompanionsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.navBar}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12} accessibilityLabel="Back">
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.navTitle}>Find travel companions</Text>
-        <TouchableOpacity onPress={refresh} hitSlop={12} accessibilityLabel="Refresh" disabled={!selected || loading}>
-          <Ionicons name="refresh" size={22} color={Colors.primary} />
-        </TouchableOpacity>
-      </View>
+      <ScreenHeader
+        title="Find travel companions"
+        right={
+          <PressableScale onPress={refresh} disabled={!selected || loading} guardMs={600} style={styles.refreshBtn} accessibilityRole="button" accessibilityLabel="Refresh">
+            <Ionicons name="refresh" size={22} color={Colors.primaryDark} />
+          </PressableScale>
+        }
+      />
 
       <ScrollView contentContainerStyle={styles.content}>
         {myTrips.length === 0 ? (
           <View style={styles.empty}>
-            <Ionicons name="airplane-outline" size={48} color={Colors.placeholder} />
+            <Ionicons name="airplane-outline" size={48} color={Colors.textSecondary} />
             <Text style={styles.emptyTitle}>Plan a trip first</Text>
             <Text style={styles.emptyText}>Companion matching starts from one of your upcoming trips: its destination and dates.</Text>
             <Button label="Plan a trip" onPress={() => router.push('/(app)/trips/create' as never)} />
@@ -90,7 +89,7 @@ export default function CompanionsScreen() {
           </View>
         ) : (
           <>
-            <Text style={styles.sectionLabel}>MATCH FOR TRIP</Text>
+            <Text style={styles.sectionLabel}>Match for trip</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tripChips}>
               {myTrips.map((t) => (
                 <Chip key={t.id} label={`${t.destination} · ${t.startDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`} selected={selected?.id === t.id} onPress={() => setTripId(t.id)} />
@@ -99,7 +98,7 @@ export default function CompanionsScreen() {
 
             {me.travelStyles.length + me.interests.length === 0 || !me.travelPace ? (
               <TouchableOpacity style={styles.hintCard} onPress={() => router.push({ pathname: '/(app)/profile/preferences', params: { from: 'companions' } } as never)}>
-                <Ionicons name="sparkles-outline" size={18} color={Colors.primary} />
+                <Ionicons name="sparkles-outline" size={18} color={Colors.primaryDark} />
                 <Text style={styles.hintText}>Answer a few optional questions so matches can be explained. Unanswered questions are never counted against anyone.</Text>
               </TouchableOpacity>
             ) : null}
@@ -108,7 +107,7 @@ export default function CompanionsScreen() {
               <Text style={styles.emptyText}>Could not load matches. Check your connection and tap refresh.</Text>
             ) : (
               <>
-                <Text style={styles.sectionLabel}>TRAVELERS GOING TO {selected?.destination.toUpperCase()}</Text>
+                <Text style={styles.sectionLabel}>Travelers going to {selected?.destination}</Text>
                 {!discoverable ? (
                   <View style={styles.hintCard}>
                     <Ionicons name="lock-closed-outline" size={18} color={Colors.textSecondary} />
@@ -128,7 +127,7 @@ export default function CompanionsScreen() {
                   />
                 ))}
 
-                <Text style={styles.sectionLabel}>PUBLIC TRIPS TO {selected?.destination.toUpperCase()}</Text>
+                <Text style={styles.sectionLabel}>Public trips to {selected?.destination}</Text>
                 {publicTrips.length === 0 ? (
                   <Text style={styles.emptyText}>No public trips to {selected?.destination} yet.</Text>
                 ) : publicTrips.map((t) => (
@@ -160,7 +159,7 @@ export function MatchCard({ title, subtitle, photoURL, initialsFrom, result, act
   title: string; subtitle: string; photoURL: string | null; initialsFrom?: string; result: CompatibilityResult;
   actionLabel: string; onAction: () => void; ownerNote?: string | null;
 }) {
-  const levelColor = result.level === 'strong' ? Colors.success : result.level === 'good' ? Colors.primary : result.level === 'dates_differ' ? Colors.warning : Colors.textSecondary;
+  const levelColor = result.level === 'strong' ? Colors.success : result.level === 'good' ? Colors.primaryDark : result.level === 'dates_differ' ? Colors.warning : Colors.textSecondary;
   return (
     <View style={styles.card} accessible accessibilityLabel={`${title}. ${LEVEL_LABELS[result.level]}. ${result.dates.label ? `${result.dates.label}. ` : ''}Preferences: ${PREFERENCE_LABELS[result.preferences.level]}. ${result.reasons.join('. ')}`}>
       <View style={styles.cardHeader}>
@@ -196,29 +195,30 @@ export function MatchCard({ title, subtitle, photoURL, initialsFrom, result, act
 }
 
 const styles = StyleSheet.create({
+  refreshBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.tealSoft, alignItems: 'center', justifyContent: 'center' },
   safe: { flex: 1, backgroundColor: Colors.background },
   navBar: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border, backgroundColor: Colors.surface,
+    paddingVertical: Spacing.md, backgroundColor: Colors.background,
   },
-  navTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  navTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   content: { padding: Spacing.lg, gap: Spacing.md, paddingBottom: Spacing['3xl'] },
-  sectionLabel: { fontSize: 11, fontWeight: FontWeight.bold, color: Colors.textSecondary, letterSpacing: 0.7, marginTop: Spacing.md },
+  sectionLabel: { fontFamily: Fonts.display, fontSize: FontSize.xl, color: Colors.textPrimary, marginTop: Spacing.md },
   tripChips: { gap: Spacing.sm },
-  hintCard: { flexDirection: 'row', gap: Spacing.sm, padding: Spacing.md, borderRadius: Radius.md, backgroundColor: Colors.primary + '10', alignItems: 'flex-start' },
-  hintText: { flex: 1, fontSize: FontSize.sm, color: Colors.textSecondary, lineHeight: 20 },
+  hintCard: { flexDirection: 'row', gap: Spacing.sm, padding: Spacing.md, borderRadius: Radius.lg, backgroundColor: Colors.tealSoft, alignItems: 'flex-start' },
+  hintText: { flex: 1, fontSize: FontSize.sm, color: Colors.textPrimary, lineHeight: 20 },
   empty: { alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing['2xl'] },
-  emptyTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  emptyTitle: { fontFamily: Fonts.display, fontSize: FontSize.xl, color: Colors.textPrimary },
   emptyText: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
-  link: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: FontWeight.semibold },
+  link: { fontSize: FontSize.sm, color: Colors.primaryDark, fontWeight: FontWeight.semibold },
   browse: { alignItems: 'center', paddingVertical: Spacing.md },
-  card: { backgroundColor: Colors.surface, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.border, padding: Spacing.lg, gap: Spacing.sm, ...Shadow.sm },
+  card: { backgroundColor: Colors.surface, borderRadius: Radius.xl, borderWidth: 1, borderColor: Colors.borderLight, padding: Spacing.lg, gap: Spacing.sm, ...Shadow.sm },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  cardTitle: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  cardTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, lineHeight: 24, color: Colors.textPrimary },
   cardSubtitle: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
-  level: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, borderWidth: 1, borderRadius: Radius.full, paddingHorizontal: Spacing.sm, paddingVertical: 2 },
+  level: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, borderWidth: 1.5, borderRadius: Radius.full, paddingHorizontal: Spacing.sm, paddingVertical: 3, alignSelf: 'flex-start', overflow: 'hidden' },
   line: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.xs },
-  lineText: { flex: 1, fontSize: FontSize.sm, color: Colors.textPrimary, lineHeight: 19 },
-  notProvided: { fontSize: FontSize.xs, color: Colors.textSecondary, fontStyle: 'italic' },
+  lineText: { flex: 1, fontSize: FontSize.sm, color: Colors.textPrimary, lineHeight: 20 },
+  notProvided: { fontSize: FontSize.sm, color: Colors.textSecondary, fontStyle: 'italic' },
   strong: { fontWeight: FontWeight.semibold },
 });

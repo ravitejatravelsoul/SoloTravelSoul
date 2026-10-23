@@ -8,7 +8,7 @@ import type { BundledAttraction } from '@solotravelsoul/shared';
 const TYPE_COLOR: Record<string, string> = {
   Beach: '#F59E0B',
   Hiking: '#6366F1',
-  City: '#1270C2',
+  City: '#00897B',
   Food: '#EF4444',
   Adventure: '#10B981',
   Nightlife: '#8B5CF6',

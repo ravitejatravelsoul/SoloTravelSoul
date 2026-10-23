@@ -10,7 +10,7 @@ import {
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Avatar, Chip, Button } from '@/components/ui';
+import { Text, Avatar, Chip, Button, BackButton } from '@/components/ui';
 import { JoinRequestModal as GroupJoinModal } from '@/components/community/GroupJoinModal';
 import {
   getTravelGroup,
@@ -21,7 +21,7 @@ import {
 import type { CommunityGroup, CommunityGroupMember, RequestStatus } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { getUserInitials, isListed } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
 
 export default function GroupDetailScreen() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
@@ -102,9 +102,7 @@ export default function GroupDetailScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.navBar}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <Text style={styles.navTitle} numberOfLines={1}>{group.name}</Text>
         <TouchableOpacity onPress={() => Alert.alert('Report group', undefined, [
           { text: 'Report', onPress: () => router.push({ pathname: '/(app)/community/report', params: { targetType: 'group', targetId: groupId } } as never) },
@@ -244,11 +242,9 @@ export default function GroupDetailScreen() {
 function NavBar() {
   return (
     <View style={styles.navBar}>
-      <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-        <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-      </TouchableOpacity>
+      <BackButton />
       <Text style={styles.navTitle}>Group</Text>
-      <View style={{ width: 24 }} />
+      <View style={{ width: 44 }} />
     </View>
   );
 }
@@ -273,11 +269,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
   },
-  navTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary, flex: 1, textAlign: 'center' },
+  navTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary, flex: 1, textAlign: 'center' },
   content: { paddingBottom: Spacing['3xl'] },
   hero: {
     backgroundColor: Colors.accent,

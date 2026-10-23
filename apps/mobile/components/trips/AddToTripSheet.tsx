@@ -24,8 +24,7 @@ import {
   Radius,
   FontSize,
   FontWeight,
-  Shadow,
-} from '@/constants/theme';
+  Shadow, Fonts } from '@/constants/theme';
 import type { PlaceEntry, PlannedTrip } from '@solotravelsoul/shared';
 import { ToastContainer } from '@/components/ui/Toast';
 
@@ -45,8 +44,8 @@ const STATUS_CONFIG: Record<string, {
   upcoming: {
     gradient: Gradients.hero,
     label: 'Upcoming',
-    pillBg: 'rgba(18,112,194,0.12)',
-    pillText: '#1270C2',
+    pillBg: 'rgba(0,137,123,0.12)',
+    pillText: '#00695F',
   },
   past: {
     gradient: ['#6B7280', '#374151'] as const,
@@ -240,11 +239,9 @@ const styles = StyleSheet.create({
 
   // ── Header ──────────────────────────────────────────────────────────
   header: {
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
     ...Shadow.sm,
   },
   dragHandle: {
@@ -271,8 +268,8 @@ const styles = StyleSheet.create({
   },
   headerCenter: { flex: 1, alignItems: 'center' },
   headerTitle: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
+    fontFamily: Fonts.display,
+    fontSize: FontSize.lg,
     color: Colors.textPrimary,
   },
   headerSub: {
@@ -356,7 +353,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: Radius.md,
-    backgroundColor: 'rgba(18,112,194,0.10)',
+    backgroundColor: 'rgba(0,137,123,0.10)',
     alignItems: 'center',
     justifyContent: 'center',
   },

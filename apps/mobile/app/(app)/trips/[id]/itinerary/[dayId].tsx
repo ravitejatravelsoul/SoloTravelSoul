@@ -10,16 +10,16 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, Text, Button, Input, Chip, Divider } from '@/components/ui';
+import { Screen, Text, Button, Input, Chip, Divider, ScreenHeader } from '@/components/ui';
 import { JournalEntryModal, type JournalDraft } from '@/components/journal/JournalEntryModal';
 import { useTripStore } from '@/stores/tripStore';
 import { useItinerary } from '@/hooks/useItinerary';
 import { useJournal } from '@/hooks/useJournal';
 import { useSavedPlaces } from '@/hooks/useSavedPlaces';
 import { formatDayLabel } from '@/utils/dateUtils';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
 import type { PlaceCategory, BundledAttraction, JournalEntry } from '@solotravelsoul/shared';
 import { ToastContainer } from '@/components/ui/Toast';
 
@@ -188,18 +188,7 @@ export default function DayDetailScreen() {
   return (
     <Screen scroll padded={false}>
       {/* ── Header ── */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-        >
-          <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
-        <Text variant="h3" numberOfLines={1} style={{ flex: 1, textAlign: 'center' }}>
-          {formatDayLabel(day.date)}
-        </Text>
-        <View style={{ width: 24 }} />
-      </View>
+      <ScreenHeader title={formatDayLabel(day.date)} subtitle={`${day.places.length} place${day.places.length !== 1 ? 's' : ''} · ${day.journalEntries.length} entr${day.journalEntries.length !== 1 ? 'ies' : 'y'}`} />
 
       <View style={styles.content}>
 
@@ -208,15 +197,17 @@ export default function DayDetailScreen() {
           <Text variant="label">Places</Text>
           <TouchableOpacity
             onPress={openAddPlace}
-            hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+            style={styles.addCircle}
+            accessibilityRole="button"
+            accessibilityLabel="Add a place"
           >
-            <Ionicons name="add-circle-outline" size={22} color={Colors.primary} />
+            <Ionicons name="add" size={24} color={Colors.primaryDark} />
           </TouchableOpacity>
         </View>
 
         {day.places.length === 0 ? (
           <TouchableOpacity style={styles.emptyCard} onPress={openAddPlace} activeOpacity={0.7}>
-            <Ionicons name="location-outline" size={22} color={Colors.placeholder} />
+            <Ionicons name="location-outline" size={22} color={Colors.textSecondary} />
             <Text style={styles.emptyCardText}>No places yet — tap to add one</Text>
           </TouchableOpacity>
         ) : (
@@ -248,6 +239,8 @@ export default function DayDetailScreen() {
                 style={styles.placeDeleteBtn}
                 onPress={() => handleRemovePlace(p.id)}
                 hitSlop={{ top: 8, right: 4, bottom: 8, left: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove ${p.name}`}
               >
                 <Ionicons name="trash-outline" size={18} color={Colors.error} />
               </TouchableOpacity>
@@ -262,9 +255,11 @@ export default function DayDetailScreen() {
           <Text variant="label">Journal</Text>
           <TouchableOpacity
             onPress={() => setShowAddJournal(true)}
-            hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+            style={styles.addCircle}
+            accessibilityRole="button"
+            accessibilityLabel="Write a journal entry"
           >
-            <Ionicons name="add-circle-outline" size={22} color={Colors.primary} />
+            <Ionicons name="add" size={24} color={Colors.primaryDark} />
           </TouchableOpacity>
         </View>
 
@@ -274,7 +269,7 @@ export default function DayDetailScreen() {
             onPress={() => setShowAddJournal(true)}
             activeOpacity={0.7}
           >
-            <Ionicons name="pencil-outline" size={22} color={Colors.placeholder} />
+            <Ionicons name="pencil-outline" size={22} color={Colors.textSecondary} />
             <Text style={styles.emptyCardText}>No entries yet — tap to write</Text>
           </TouchableOpacity>
         ) : (
@@ -294,13 +289,17 @@ export default function DayDetailScreen() {
                 <View style={styles.journalActions}>
                   <TouchableOpacity
                     onPress={() => setEditingEntry(j)}
-                    hitSlop={{ top: 8, right: 4, bottom: 8, left: 8 }}
+                    hitSlop={{ top: 12, right: 8, bottom: 12, left: 12 }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Edit entry"
                   >
                     <Ionicons name="pencil-outline" size={15} color={Colors.textSecondary} />
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => handleDeleteJournal(j.id)}
-                    hitSlop={{ top: 8, right: 4, bottom: 8, left: 8 }}
+                    hitSlop={{ top: 12, right: 8, bottom: 12, left: 12 }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Delete entry"
                   >
                     <Ionicons name="trash-outline" size={15} color={Colors.error + 'AA'} />
                   </TouchableOpacity>
@@ -342,6 +341,8 @@ export default function DayDetailScreen() {
                 <TouchableOpacity
                   onPress={() => setShowAddPlace(false)}
                   style={styles.modalCloseBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close"
                 >
                   <Ionicons name="close" size={18} color={Colors.textSecondary} />
                 </TouchableOpacity>
@@ -503,7 +504,7 @@ export default function DayDetailScreen() {
                           onPress={() => handleAddBrowseAttraction(a)}
                           activeOpacity={0.7}
                         >
-                          <View style={[styles.browseItemIcon, { backgroundColor: 'rgba(18,112,194,0.08)' }]}>
+                          <View style={[styles.browseItemIcon, { backgroundColor: 'rgba(0,137,123,0.08)' }]}>
                             <Ionicons name="location-outline" size={14} color={Colors.primary} />
                           </View>
                           <View style={{ flex: 1 }}>
@@ -546,13 +547,12 @@ export default function DayDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  addCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.tealSoft, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.lg,
     paddingTop: Spacing['2xl'],
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
   },
   content: { padding: Spacing.lg, gap: Spacing.md, paddingBottom: Spacing['4xl'] },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -667,11 +667,9 @@ const styles = StyleSheet.create({
   modalSheet: { flex: 1, backgroundColor: Colors.background },
   fill: { flex: 1 },
   modalHeader: {
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
   },
   dragHandle: {
     width: 36,
@@ -689,8 +687,8 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   modalTitle: {
-    fontSize: FontSize.lg,
-    fontWeight: FontWeight.bold,
+    fontFamily: Fonts.display,
+    fontSize: FontSize.xl,
     color: Colors.textPrimary,
   },
   modalCloseBtn: {

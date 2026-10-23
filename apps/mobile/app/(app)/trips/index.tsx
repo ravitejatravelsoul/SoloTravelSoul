@@ -1,11 +1,11 @@
-import { useState, useCallback, memo } from 'react';
-import { View, FlatList, StyleSheet, TouchableOpacity, RefreshControl } from 'react-native';
+import { useState, useCallback } from 'react';
+import { View, FlatList, StyleSheet, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, Text, Chip, EmptyState, TripListSkeleton } from '@/components/ui';
+import { Screen, Text, Chip, EmptyState, TripListSkeleton, PressableScale } from '@/components/ui';
 import { TripCard } from '@/components/trips/TripCard';
 import { useTrips } from '@/hooks/useTrips';
-import { Colors, Spacing, Radius } from '@/constants/theme';
+import { Colors, Spacing, Radius, Shadow } from '@/constants/theme';
 import type { PlannedTrip } from '@solotravelsoul/shared';
 
 type Filter = 'upcoming' | 'past';
@@ -27,7 +27,7 @@ export default function TripsScreen() {
     return (
       <Screen padded={false}>
         <View style={styles.header}>
-          <Text variant="h2">My Trips</Text>
+          <Text variant="h2" accessibilityRole="header">My Trips</Text>
           <View style={styles.addBtnPlaceholder} />
         </View>
         <TripListSkeleton count={4} />
@@ -38,13 +38,16 @@ export default function TripsScreen() {
   return (
     <Screen padded={false}>
       <View style={styles.header}>
-        <Text variant="h2">My Trips</Text>
-        <TouchableOpacity
+        <Text variant="h2" accessibilityRole="header">My Trips</Text>
+        <PressableScale
           onPress={() => router.push('/(app)/trips/create')}
+          guardMs={500}
           style={styles.addBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Plan a new trip"
         >
-          <Ionicons name="add" size={24} color={Colors.white} />
-        </TouchableOpacity>
+          <Ionicons name="add" size={26} color={Colors.white} />
+        </PressableScale>
       </View>
 
       <View style={styles.filters}>
@@ -104,14 +107,15 @@ const styles = StyleSheet.create({
     paddingTop: Spacing['2xl'],
   },
   addBtn: {
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.coral,
     borderRadius: Radius.full,
-    width: 40,
-    height: 40,
+    width: 46,
+    height: 46,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Shadow.md,
   },
-  addBtnPlaceholder: { width: 40, height: 40 },
+  addBtnPlaceholder: { width: 46, height: 46 },
   filters: {
     flexDirection: 'row',
     gap: Spacing.sm,

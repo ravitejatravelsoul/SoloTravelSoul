@@ -1,7 +1,7 @@
 import { Switch, View, StyleSheet, TouchableOpacity, Linking, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
 import { REMINDER_META, isExpoGoiOS, isReminderSchedulable } from '@/services/notificationService';
 import { useTripReminders } from '@/hooks/useTripReminders';
 import type { PlannedTrip } from '@solotravelsoul/shared';
@@ -188,8 +188,8 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   title: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
+    fontFamily: Fonts.display,
+    fontSize: FontSize.lg,
     color: Colors.textPrimary,
   },
   activeBadge: {

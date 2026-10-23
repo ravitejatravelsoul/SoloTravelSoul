@@ -1,6 +1,9 @@
-import { TouchableOpacity, StyleSheet, type ViewStyle } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Animated, StyleSheet, type ViewStyle } from 'react-native';
 import { Text } from './Text';
-import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
+import { PressableScale } from './PressableScale';
+import { Colors, FontSize, FontWeight, Motion, Radius, Spacing } from '@/constants/theme';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 
 interface ChipProps {
   label: string;
@@ -10,49 +13,48 @@ interface ChipProps {
   disabled?: boolean;
 }
 
-export function Chip({
-  label,
-  selected = false,
-  onPress,
-  style,
-  disabled = false,
-}: ChipProps) {
-  const Component = onPress ? TouchableOpacity : (props: object) => <TouchableOpacity disabled {...props} />;
+/** Selection chip. Choosing one gives a short spring pop (transform only, so neighbours never shift). */
+export function Chip({ label, selected = false, onPress, style, disabled = false }: ChipProps) {
+  const pop = useRef(new Animated.Value(1)).current;
+  const first = useRef(true);
+  const reduced = useReducedMotion();
+
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    if (reduced || !selected) return;
+    pop.setValue(0.9);
+    Animated.spring(pop, { toValue: 1, useNativeDriver: true, damping: 8, stiffness: 260, mass: 0.7 }).start();
+  }, [selected, reduced, pop]);
 
   return (
-    <TouchableOpacity
+    <PressableScale
       onPress={onPress}
       disabled={disabled || !onPress}
-      activeOpacity={0.7}
+      scaleTo={0.95}
+      accessibilityRole={onPress ? 'button' : 'text'}
+      accessibilityLabel={label}
+      accessibilityState={{ selected, disabled: disabled || !onPress }}
       style={[styles.base, selected ? styles.selected : styles.unselected, style]}
     >
-      <Text
-        style={[
-          styles.label,
-          { color: selected ? Colors.chipSelectedText : Colors.textPrimary },
-        ]}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
+      <Animated.View style={{ transform: [{ scale: pop }] }}>
+        <Text style={[styles.label, { color: selected ? Colors.chipSelectedText : Colors.textPrimary }]}>{label}</Text>
+      </Animated.View>
+    </PressableScale>
   );
 }
 
 const styles = StyleSheet.create({
   base: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs + 2,
+    paddingHorizontal: Spacing.md + 2,
+    paddingVertical: Spacing.xs + 3,
     borderRadius: Radius.full,
     alignSelf: 'flex-start',
+    minHeight: 36,
+    justifyContent: 'center',
   },
-  unselected: {
-    backgroundColor: Colors.chipBackground,
-  },
-  selected: {
-    backgroundColor: Colors.chipSelected,
-  },
-  label: {
-    fontSize: FontSize.sm,
-    fontWeight: '500',
-  },
+  unselected: { backgroundColor: Colors.chipBackground },
+  selected: { backgroundColor: Colors.chipSelected },
+  label: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold },
 });
+
+export const CHIP_MOTION_MS = Motion.fast;

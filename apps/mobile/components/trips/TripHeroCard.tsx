@@ -1,10 +1,11 @@
 import { memo } from 'react';
-import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui/Text';
-import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Fonts, Shadow } from '@/constants/theme';
+import { PressableScale } from '@/components/ui/PressableScale';
 import { tripStatus, tripDurationDays, daysUntil, tripCurrentDay } from '@/utils/dateUtils';
 import type { PlannedTrip } from '@solotravelsoul/shared';
 
@@ -32,9 +33,12 @@ export const TripHeroCard = memo(function TripHeroCard({ trip }: TripHeroCardPro
     : `${daysLeft} days away`;
 
   return (
-    <TouchableOpacity
-      activeOpacity={0.9}
+    <PressableScale
+      scaleTo={0.98}
+      guardMs={500}
       onPress={() => router.push(`/(app)/trips/${trip.id}`)}
+      accessibilityRole="button"
+      accessibilityLabel={`${eyebrow}: ${trip.destination}. ${statusLine}`}
       style={styles.wrapper}
     >
       <LinearGradient
@@ -82,17 +86,17 @@ export const TripHeroCard = memo(function TripHeroCard({ trip }: TripHeroCardPro
             <Text style={styles.ctaBtnText}>
               {isActive ? 'Open itinerary' : 'View trip'}
             </Text>
-            <Ionicons name="arrow-forward" size={14} color={Colors.white} />
+            <Ionicons name="arrow-forward" size={14} color={Colors.primaryDark} />
           </View>
         </View>
       </LinearGradient>
-    </TouchableOpacity>
+    </PressableScale>
   );
 });
 
 const styles = StyleSheet.create({
   wrapper: {
-    borderRadius: Radius.xl,
+    borderRadius: Radius['2xl'],
     overflow: 'hidden',
     marginBottom: Spacing.xl,
     ...Shadow.hero,
@@ -108,7 +112,7 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     borderRadius: 100,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(255,107,87,0.28)',
     top: -60,
     right: -40,
   },
@@ -117,7 +121,7 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(255,200,87,0.22)',
     bottom: -30,
     left: -20,
   },
@@ -163,10 +167,10 @@ const styles = StyleSheet.create({
     color: Colors.white,
   },
   destination: {
+    fontFamily: Fonts.displayHeavy,
     fontSize: FontSize['4xl'],
-    fontWeight: FontWeight.extrabold,
     color: Colors.white,
-    lineHeight: 40,
+    lineHeight: 42,
     marginBottom: Spacing.xs,
   },
   statusLine: {
@@ -202,16 +206,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.xs,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.white,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm + 2,
     borderRadius: Radius.full,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
   },
   ctaBtnText: {
     fontSize: FontSize.sm,
-    fontWeight: FontWeight.semibold,
-    color: Colors.white,
+    fontWeight: FontWeight.bold,
+    color: Colors.primaryDark,
   },
 });

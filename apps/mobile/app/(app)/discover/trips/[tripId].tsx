@@ -7,17 +7,21 @@ import {
   ActivityIndicator,
   Share,
   Alert,
+  Image,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { PressableScale, Celebration, BackButton } from '@/components/ui';
+import { useMediaSource } from '@/hooks/useMediaSource';
 import { Text, Avatar, Chip, Button } from '@/components/ui';
 import { JoinRequestModal } from '@/components/community/JoinRequestModal';
 import { JoinSummary } from '@/components/community/JoinSummary';
-import { getPublicTrip, getPublicProfile, subscribePublicTripMembers, getTripJoinRequestStatus, cancelTripJoinRequest, getNearbyTraveler, leavePublicTrip, getOrCreateDirectChat } from '@solotravelsoul/firebase';
+import { getPublicTrip, subscribePublicTripMembers, getTripJoinRequestStatus, cancelTripJoinRequest, getNearbyTraveler, leavePublicTrip, getOrCreateDirectChat } from '@solotravelsoul/firebase';
 import type { PublicTrip, TripMember, RequestStatus, NearbyTraveler } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Fonts, Shadow, TapTarget } from '@/constants/theme';
 import { getUserInitials, preferencesOf, isListed } from '@solotravelsoul/shared';
 
 function formatDateRange(start: Date, end: Date): string {
@@ -41,6 +45,10 @@ export default function PublicTripDetailScreen() {
   const [showModal, setShowModal] = useState(false);
   const [organizer, setOrganizer] = useState<NearbyTraveler | null>(null);
   const [leaving, setLeaving] = useState(false);
+  const insets = useSafeAreaInsets();
+  const mediaSrc = useMediaSource();
+  const [coverFailed, setCoverFailed] = useState(false);
+  const [celebrate, setCelebrate] = useState(0);
 
   useEffect(() => {
     if (!tripId) return;
@@ -73,6 +81,7 @@ export default function PublicTripDetailScreen() {
   const onRequestSubmitted = () => {
     setRequestStatus('pending');
     setShowModal(false);
+    setCelebrate((n) => n + 1);
   };
 
   // Cancels on the server (previously only the screen state changed).
@@ -153,26 +162,87 @@ export default function PublicTripDetailScreen() {
   const unavailable = !isListed(trip);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.navBar}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.navTitle} numberOfLines={1}>{trip.destination}</Text>
-        <TouchableOpacity onPress={() => Alert.alert('Options', undefined, [
-          { text: 'Report', onPress: handleReport },
-          { text: 'Cancel', style: 'cancel' },
-        ])} hitSlop={12}>
-          <Ionicons name="ellipsis-horizontal" size={22} color={Colors.textPrimary} />
-        </TouchableOpacity>
-      </View>
-
+    <SafeAreaView style={styles.safe} edges={[]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Gradient hero */}
-        <View style={styles.hero}>
-          <Text style={styles.heroDestination}>{trip.destination}</Text>
-          <Text style={styles.heroTitle}>{trip.title || trip.destination}</Text>
+        {/* Hero: cover photo (or a warm gradient), floating round buttons, destination and title over a scrim */}
+        <View style={[styles.hero, { paddingTop: insets.top + Spacing.sm }]}>
+          {trip.coverPhotoURL && !coverFailed ? (
+            <Image source={mediaSrc(trip.coverPhotoURL)} style={StyleSheet.absoluteFill} resizeMode="cover" onError={() => setCoverFailed(true)} accessibilityIgnoresInvertColors />
+          ) : (
+            <LinearGradient colors={Gradients.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill}>
+              <Ionicons name="airplane" size={120} color="rgba(255,255,255,0.14)" style={styles.heroArt} />
+            </LinearGradient>
+          )}
+          <LinearGradient colors={Gradients.scrim} style={styles.heroScrim} />
+          <View style={styles.heroBar}>
+            <PressableScale onPress={() => router.back()} guardMs={400} style={styles.roundBtn} accessibilityRole="button" accessibilityLabel="Go back" hitSlop={6}>
+              <Ionicons name="chevron-back" size={22} color={Colors.textPrimary} />
+            </PressableScale>
+            <PressableScale
+              onPress={() => Alert.alert('Options', undefined, [
+                { text: 'Report', onPress: handleReport },
+                { text: 'Cancel', style: 'cancel' },
+              ])}
+              guardMs={400}
+              style={styles.roundBtn}
+              accessibilityRole="button"
+              accessibilityLabel="More options"
+              hitSlop={6}
+            >
+              <Ionicons name="ellipsis-horizontal" size={22} color={Colors.textPrimary} />
+            </PressableScale>
+          </View>
+          <View style={styles.heroText}>
+            <View style={styles.heroChip}>
+              <Ionicons name="location" size={13} color={Colors.primaryDark} />
+              <Text style={styles.heroChipText} numberOfLines={1}>{trip.destination}</Text>
+            </View>
+            <Text style={styles.heroTitle} accessibilityRole="header">{trip.title || trip.destination}</Text>
+            <Text style={styles.heroDates}>{formatDateRange(trip.startDate, trip.endDate)} · {durationDays(trip.startDate, trip.endDate)} days</Text>
+          </View>
         </View>
+
+        {/* The join action sits right under the hero, where the decision is made */}
+        <View style={styles.actionsCard}>
+          {isOwner && unavailable ? (
+            <Text style={styles.memberNote}>Requests are paused while this trip is hidden.</Text>
+          ) : isOwner ? (
+            <Button
+              label="Manage Requests"
+              onPress={() => router.push(`/(app)/trips/${tripId}/requests` as never)}
+              fullWidth
+            />
+          ) : isMember ? (
+            <View style={{ gap: Spacing.sm }}>
+              <Text style={styles.memberNote}>You are a member of this trip.</Text>
+              <Button label="Message organizer" onPress={messageOrganizer} fullWidth />
+              <Button label="Leave trip" variant="secondary" onPress={confirmLeave} loading={leaving} fullWidth />
+            </View>
+          ) : isPending ? (
+            <Button
+              label="Request Pending — Cancel?"
+              variant="secondary"
+              onPress={() => Alert.alert('Cancel request?', undefined, [
+                { text: 'Keep it', style: 'cancel' },
+                { text: 'Cancel request', style: 'destructive', onPress: onRequestCancelled },
+              ])}
+              fullWidth
+            />
+          ) : unavailable ? (
+            <Button label="Not available" variant="secondary" onPress={() => {}} disabled fullWidth />
+          ) : isFull ? (
+            <Button label="Trip is Full" variant="secondary" onPress={() => {}} disabled fullWidth />
+          ) : !trip.isAcceptingMembers ? (
+            <Button label="Not accepting requests" variant="secondary" onPress={() => {}} disabled fullWidth />
+          ) : (
+            <Button
+              label="Request to Join"
+              onPress={() => setShowModal(true)}
+              fullWidth
+            />
+          )}
+        </View>
+
 
         {unavailable && (
           <View style={styles.noticeBox} accessibilityRole="alert">
@@ -250,47 +320,6 @@ export default function PublicTripDetailScreen() {
           </Section>
         )}
 
-        {/* Actions */}
-        <View style={styles.actionsCard}>
-          {isOwner && unavailable ? (
-            <Text style={styles.memberNote}>Requests are paused while this trip is hidden.</Text>
-          ) : isOwner ? (
-            <Button
-              label="Manage Requests"
-              onPress={() => router.push(`/(app)/trips/${tripId}/requests` as never)}
-              fullWidth
-            />
-          ) : isMember ? (
-            <View style={{ gap: Spacing.sm }}>
-              <Text style={styles.memberNote}>You are a member of this trip.</Text>
-              <Button label="Message organizer" onPress={messageOrganizer} fullWidth />
-              <Button label="Leave trip" variant="secondary" onPress={confirmLeave} loading={leaving} fullWidth />
-            </View>
-          ) : isPending ? (
-            <Button
-              label="Request Pending — Cancel?"
-              variant="secondary"
-              onPress={() => Alert.alert('Cancel request?', undefined, [
-                { text: 'Keep it', style: 'cancel' },
-                { text: 'Cancel request', style: 'destructive', onPress: onRequestCancelled },
-              ])}
-              fullWidth
-            />
-          ) : unavailable ? (
-            <Button label="Not available" variant="secondary" onPress={() => {}} disabled fullWidth />
-          ) : isFull ? (
-            <Button label="Trip is Full" variant="secondary" onPress={() => {}} disabled fullWidth />
-          ) : !trip.isAcceptingMembers ? (
-            <Button label="Not accepting requests" variant="secondary" onPress={() => {}} disabled fullWidth />
-          ) : (
-            <Button
-              label="Request to Join"
-              onPress={() => setShowModal(true)}
-              fullWidth
-            />
-          )}
-        </View>
-
         <View style={styles.secondaryActions}>
           <TouchableOpacity style={styles.secondaryBtn} onPress={handleShare} activeOpacity={0.7}>
             <Ionicons name="share-outline" size={18} color={Colors.textSecondary} />
@@ -302,6 +331,8 @@ export default function PublicTripDetailScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <Celebration trigger={celebrate} />
 
       {showModal && profile && (
         <JoinRequestModal
@@ -318,11 +349,9 @@ export default function PublicTripDetailScreen() {
 function NavBar() {
   return (
     <View style={styles.navBar}>
-      <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-        <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-      </TouchableOpacity>
+      <BackButton />
       <Text style={styles.navTitle}>Trip Details</Text>
-      <View style={{ width: 24 }} />
+      <View style={{ width: 44 }} />
     </View>
   );
 }
@@ -330,7 +359,7 @@ function NavBar() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionLabel}>{title}</Text>
+      <Text style={styles.sectionLabel} accessibilityRole="header">{title.charAt(0) + title.slice(1).toLowerCase()}</Text>
       <View style={styles.sectionCard}>{children}</View>
     </View>
   );
@@ -359,39 +388,52 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
   },
-  navTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary, flex: 1, textAlign: 'center' },
+  navTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary, flex: 1, textAlign: 'center' },
   content: { paddingBottom: Spacing['3xl'] },
   hero: {
-    backgroundColor: Colors.primary,
-    padding: Spacing['2xl'],
-    paddingTop: Spacing['3xl'],
-    gap: Spacing.sm,
+    minHeight: 300,
+    justifyContent: 'space-between',
+    backgroundColor: Colors.primaryDark,
+    borderBottomLeftRadius: Radius['2xl'],
+    borderBottomRightRadius: Radius['2xl'],
+    overflow: 'hidden',
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing['2xl'],
   },
-  heroDestination: { fontSize: FontSize.sm, color: 'rgba(255,255,255,0.75)', fontWeight: FontWeight.semibold },
-  heroTitle: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: Colors.white, lineHeight: 32 },
+  heroArt: { position: 'absolute', right: -10, top: 90 },
+  heroScrim: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 190 },
+  heroBar: { flexDirection: 'row', justifyContent: 'space-between' },
+  roundBtn: { width: TapTarget, height: TapTarget, borderRadius: TapTarget / 2, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center', ...Shadow.md },
+  heroText: { gap: Spacing.sm, marginTop: Spacing['3xl'] },
+  heroChip: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', backgroundColor: Colors.surface, borderRadius: Radius.full, paddingHorizontal: Spacing.md, paddingVertical: 5, maxWidth: '100%' },
+  heroChipText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.primaryDark, flexShrink: 1 },
+  heroTitle: { fontFamily: Fonts.displayHeavy, fontSize: 32, lineHeight: 38, color: Colors.white },
+  heroDates: { fontSize: FontSize.md, color: 'rgba(255,255,255,0.92)', fontWeight: FontWeight.medium },
   ownerCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.surface,
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.lg,
     padding: Spacing.lg,
     gap: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderRadius: Radius.xl,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    ...Shadow.sm,
   },
   ownerInfo: { flex: 1 },
   ownerName: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
   ownerLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
   section: { marginHorizontal: Spacing.lg, marginTop: Spacing.xl },
-  sectionLabel: { fontSize: 11, fontWeight: FontWeight.bold, color: Colors.textSecondary, letterSpacing: 0.7, marginBottom: Spacing.sm },
+  sectionLabel: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary, marginBottom: Spacing.sm },
   sectionCard: {
     backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.borderLight,
     padding: Spacing.lg,
     gap: Spacing.md,
     ...Shadow.sm,

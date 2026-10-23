@@ -34,9 +34,9 @@ export function Card({
 const styles = StyleSheet.create({
   base: {
     backgroundColor: Colors.surface,
-    borderRadius: Radius.md,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.borderLight,
   },
 });
 

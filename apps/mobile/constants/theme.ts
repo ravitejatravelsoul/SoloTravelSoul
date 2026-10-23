@@ -1,71 +1,79 @@
-// ── Ported from AppTheme.swift ────────────────────────────────────────
-// primary  = rgb(0.07, 0.44, 0.76) → #1270C2
-// accent   = rgb(0.20, 0.60, 0.86) → #3399DB
+// ── "Playful Explorer" design tokens ───────────────────────────────────
+// Warm ivory surfaces, deep ink text, electric teal as the one primary accent and coral as a selective highlight.
+// Every screen reads these tokens, so changing a value here re-skins the app. Contrast notes (WCAG, on the surface
+// they are used on): ink on ivory 15:1, secondary text on ivory 6.4:1, white on primary 4.6:1, primaryDark on ivory
+// 7.1:1 (links and small teal text), ink on coral 5.7:1 (coral carries ink text or icons, never white text).
 
 export const Colors = {
   // Brand
-  primary: '#1270C2',
-  primaryDark: '#0A4F8F',
-  accent: '#3399DB',
+  primary: '#00897B', // electric teal: buttons, selected states, active tab
+  primaryDark: '#005F56', // teal for small text and links on ivory; pressed state
+  accent: '#19C3B1', // bright teal: highlights, progress, decorative fills (carries ink text)
+  coral: '#FF6B57', // selective highlight: badges, likes, celebration (carries ink text)
+  coralSoft: '#FFE3DD',
+  tealSoft: '#DDF5F1',
+  sun: '#FFC857', // small celebratory / star accents
 
   // Backgrounds
-  background: '#F8F9FB',
+  background: '#FFF8EE', // warm ivory
   surface: '#FFFFFF',
-  card: '#F2F2F7',
+  card: '#FBF0E0',
 
   // Text
-  textPrimary: '#0D0D0D',
-  textSecondary: '#6B7280',
+  textPrimary: '#1B1A2E', // deep ink
+  textSecondary: '#5C566B',
 
   // UI
-  chipBackground: '#E8EAED',
-  chipSelected: '#1270C2',
+  chipBackground: '#F6E8D3',
+  chipSelected: '#00897B',
   chipSelectedText: '#FFFFFF',
-  searchBackground: '#EDEEF0',
-  tabBar: '#FFFFFF',
-  border: '#E5E7EB',
-  borderLight: '#F0F1F3',
+  searchBackground: '#F4E9D8',
+  tabBar: '#FFFDF8',
+  border: '#E9DCC8',
+  borderLight: '#F3E9D9',
 
   // Semantic
-  error: '#EF4444',
-  success: '#10B981',
-  successDark: '#059669',
-  warning: '#F59E0B',
+  error: '#D93636',
+  success: '#0F9D6B',
+  successDark: '#0A7A53',
+  warning: '#E58A0B',
   white: '#FFFFFF',
   black: '#000000',
-  overlay: 'rgba(0,0,0,0.45)',
-  placeholder: '#9CA3AF',
-  shadow: 'rgba(0,0,0,0.08)',
+  overlay: 'rgba(27,26,46,0.45)',
+  placeholder: '#8A8396',
+  shadow: 'rgba(42,30,10,0.10)',
 
-  // Category palette
-  catBeach: '#F59E0B',
-  catMountain: '#6366F1',
-  catCity: '#1270C2',
-  catFood: '#EF4444',
-  catAdventure: '#10B981',
-  catNightlife: '#8B5CF6',
-  catHidden: '#F97316',
-  catSolo: '#06B6D4',
+  // Category palette (warm, friendly, all readable with ink or white labels at 14px bold)
+  catBeach: '#F5A524',
+  catMountain: '#6C63D9',
+  catCity: '#00897B',
+  catFood: '#E5533D',
+  catAdventure: '#2FA866',
+  catNightlife: '#8E54E0',
+  catHidden: '#F07D2A',
+  catSolo: '#14A5B8',
 } as const;
 
 // Named gradient stops — pair with expo-linear-gradient
 export const Gradients = {
-  primary: ['#1A7FD4', '#0A4F8F'] as const,
-  primarySoft: ['#2389E0', '#1270C2'] as const,
-  success: ['#10B981', '#059669'] as const,
-  sunset: ['#F59E0B', '#EF4444'] as const,
-  ocean: ['#38BDF8', '#1270C2'] as const,
-  hero: ['#1A7FD4', '#083F72'] as const,
-  heroActive: ['#10B981', '#047857'] as const,
+  primary: ['#12A596', '#00695F'] as const,
+  primarySoft: ['#19B3A3', '#00897B'] as const,
+  success: ['#2FBF86', '#0A7A53'] as const,
+  sunset: ['#FFB454', '#FF6B57'] as const,
+  ocean: ['#5FD3C8', '#00897B'] as const,
+  hero: ['#12A596', '#00483F'] as const,
+  heroActive: ['#2FBF86', '#0A7A53'] as const,
+  ivory: ['#FFF8EE', '#FFEFD6'] as const,
+  scrim: ['rgba(27,26,46,0)', 'rgba(27,26,46,0.72)'] as const,
   // Categories
-  beach: ['#FCD34D', '#F59E0B'] as const,
-  mountain: ['#818CF8', '#4F46E5'] as const,
-  city: ['#60A5FA', '#1D4ED8'] as const,
-  food: ['#FCA5A5', '#EF4444'] as const,
-  adventure: ['#34D399', '#059669'] as const,
-  nightlife: ['#C4B5FD', '#7C3AED'] as const,
-  hidden: ['#FDBA74', '#EA580C'] as const,
-  solo: ['#67E8F9', '#0891B2'] as const,
+  beach: ['#FFD97A', '#F5A524'] as const,
+  mountain: ['#A39CF2', '#6C63D9'] as const,
+  city: ['#5FD3C8', '#00897B'] as const,
+  food: ['#FF9A8A', '#E5533D'] as const,
+  adventure: ['#6ED79F', '#2FA866'] as const,
+  nightlife: ['#C6A0F5', '#8E54E0'] as const,
+  hidden: ['#FFB27A', '#F07D2A'] as const,
+  solo: ['#6FD9E6', '#14A5B8'] as const,
 } as const;
 
 export const Spacing = {
@@ -79,24 +87,24 @@ export const Spacing = {
   '4xl': 48,
 } as const;
 
-// cardCornerRadius from AppTheme = 12
+// Rounder surfaces than before: cards 20, sheets 28, pills fully round.
 export const Radius = {
-  sm: 6,
-  md: 12,
-  lg: 16,
-  xl: 24,
-  '2xl': 32,
+  sm: 8,
+  md: 14,
+  lg: 20,
+  xl: 28,
+  '2xl': 36,
   full: 999,
 } as const;
 
 export const FontSize = {
   xs: 12,
   sm: 14,
-  md: 16,   // bodyFont from AppTheme
+  md: 16,
   lg: 18,
   xl: 20,
   '2xl': 24,
-  '3xl': 28, // headingFont from AppTheme
+  '3xl': 28,
   '4xl': 34,
   '5xl': 42,
 } as const;
@@ -109,34 +117,57 @@ export const FontWeight = {
   extrabold: '800' as const,
 };
 
-// cardShadow from AppTheme = 4
+/**
+ * Display typeface for headings (Baloo 2, SIL Open Font License, bundled with the app: no network). Body text stays the
+ * system font for readability and for the enlarged-text behaviour the app already handles. The fonts are loaded before
+ * the splash screen is dismissed; until then (or if loading ever fails) text simply falls back to the system font.
+ */
+export const Fonts = {
+  display: 'Baloo2_700Bold',
+  displayHeavy: 'Baloo2_800ExtraBold',
+} as const;
+
+/** Warm, restrained depth: a brown-tinted shadow rather than pure black. */
 export const Shadow = {
   sm: {
-    shadowColor: '#000',
+    shadowColor: '#2A1E0A',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 2,
+    shadowOpacity: 0.07,
+    shadowRadius: 3,
     elevation: 2,
   },
   md: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
+    shadowColor: '#2A1E0A',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
     elevation: 4,
   },
   lg: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.10,
-    shadowRadius: 8,
+    shadowColor: '#2A1E0A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
     elevation: 8,
   },
   hero: {
-    shadowColor: '#1270C2',
-    shadowOffset: { width: 0, height: 6 },
+    shadowColor: '#00695F',
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.28,
-    shadowRadius: 16,
+    shadowRadius: 18,
     elevation: 12,
   },
 } as const;
+
+/** Motion: springs for selection and press feedback, short timings for fades. All of it is skipped under reduced motion. */
+export const Motion = {
+  pressScale: 0.96,
+  spring: { damping: 14, stiffness: 220, mass: 0.8 },
+  springSoft: { damping: 18, stiffness: 140, mass: 0.9 },
+  fast: 140,
+  base: 240,
+  slow: 380,
+} as const;
+
+/** Minimum comfortable touch target (dp). */
+export const TapTarget = 44;

@@ -1,9 +1,9 @@
 // The travel-preference questions, shared by the optional setup (one step at a time)
 // and Edit Profile (all at once). Values are validated by sanitizePreferences() on save
 // and by firestore.rules on write.
-import { View, StyleSheet, TouchableOpacity, Switch } from 'react-native';
+import { View, StyleSheet, Switch } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Text } from '@/components/ui';
+import { Text, PressableScale } from '@/components/ui';
 import { MultiSelectChips } from '@/components/ui/MultiSelectChips';
 import {
   TRAVEL_STYLE_OPTIONS, TRAVEL_STYLE_LABELS, INTEREST_OPTIONS, INTEREST_LABELS, LANGUAGE_OPTIONS,
@@ -34,21 +34,21 @@ function SingleSelect<T extends string>({ options, value, onChange }: {
       {options.map((o) => {
         const selected = value === o.value;
         return (
-          <TouchableOpacity
+          <PressableScale
             key={o.value}
             style={[styles.option, selected && styles.optionSelected]}
             onPress={() => onChange(selected ? null : o.value)}
+            scaleTo={0.98}
             accessibilityRole="radio"
             accessibilityState={{ selected }}
             accessibilityLabel={`${o.label}. ${o.description}`}
-            activeOpacity={0.8}
           >
-            <Ionicons name={selected ? 'radio-button-on' : 'radio-button-off'} size={20} color={selected ? Colors.primary : Colors.placeholder} />
+            <Ionicons name={selected ? 'radio-button-on' : 'radio-button-off'} size={24} color={selected ? Colors.primaryDark : Colors.textSecondary} />
             <View style={styles.optionText}>
               <Text style={[styles.optionLabel, selected && styles.optionLabelSelected]}>{o.label}</Text>
               <Text style={styles.optionDescription}>{o.description}</Text>
             </View>
-          </TouchableOpacity>
+          </PressableScale>
         );
       })}
     </View>
@@ -103,13 +103,13 @@ export function PreferenceField({ step, value, onChange, discoverable }: {
 const styles = StyleSheet.create({
   options: { gap: Spacing.sm },
   option: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md,
-    borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface,
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg, minHeight: 64,
+    borderRadius: Radius.lg, borderWidth: 2, borderColor: Colors.border, backgroundColor: Colors.surface,
   },
-  optionSelected: { borderColor: Colors.primary, backgroundColor: Colors.primary + '10' },
+  optionSelected: { borderColor: Colors.primary, backgroundColor: Colors.tealSoft },
   optionText: { flex: 1 },
   optionLabel: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
-  optionLabelSelected: { color: Colors.primary },
+  optionLabelSelected: { color: Colors.primaryDark },
   optionDescription: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
   sharing: { gap: Spacing.md },
   sharingRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },

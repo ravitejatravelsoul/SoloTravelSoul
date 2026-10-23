@@ -17,7 +17,7 @@ import { useTripStore } from '@/stores/tripStore';
 import { useTrips } from '@/hooks/useTrips';
 import { useAuthStore } from '@/stores/authStore';
 import { setTripVisibility, addFeedItem } from '@solotravelsoul/firebase';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
 
 export default function EditTripScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -138,8 +138,8 @@ export default function EditTripScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.sectionLabel}>TRIP DETAILS</Text>
-        <View style={styles.card}>
+        <Text style={styles.sectionLabel}>Trip details</Text>
+        <View style={[styles.card, styles.cardPadded]}>
           <Input
             label="Destination"
             value={destination}
@@ -169,7 +169,7 @@ export default function EditTripScreen() {
           />
         </View>
 
-        <Text style={styles.sectionLabel}>VISIBILITY</Text>
+        <Text style={styles.sectionLabel}>Visibility</Text>
         <View style={styles.card}>
           <View style={styles.visibilityRow}>
             <View style={styles.rowLeft}>
@@ -260,7 +260,7 @@ export default function EditTripScreen() {
         {/* Manage join requests shortcut */}
         {trip.visibility === 'public' && (
           <>
-            <Text style={styles.sectionLabel}>JOIN REQUESTS</Text>
+            <Text style={styles.sectionLabel}>Join requests</Text>
             <TouchableOpacity
               style={styles.card}
               onPress={() => router.push(`/(app)/trips/${trip.id}/requests` as never)}
@@ -295,29 +295,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
   },
-  navTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  navTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   content: { padding: Spacing.lg, paddingBottom: Spacing['3xl'] },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: FontWeight.bold,
-    color: Colors.textSecondary,
-    letterSpacing: 0.7,
-    marginBottom: Spacing.sm,
-    marginTop: Spacing.xl,
-    marginLeft: 2,
-  },
+  sectionLabel: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary, marginTop: Spacing.xl, marginBottom: Spacing.sm },
   card: {
     backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.borderLight,
     overflow: 'hidden',
     ...Shadow.sm,
   },
+  cardPadded: { padding: Spacing.lg, gap: Spacing.md },
   visibilityRow: {
     flexDirection: 'row',
     alignItems: 'center',

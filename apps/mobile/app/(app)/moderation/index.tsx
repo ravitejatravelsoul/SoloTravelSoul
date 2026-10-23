@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useMediaSource } from '@/hooks/useMediaSource';
 import { View, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator, Image, ScrollView, Modal } from 'react-native';
-import { router } from 'expo-router';
+
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -21,11 +21,11 @@ import {
   type ModerationReport,
   type ReportTargetPreview,
 } from '@solotravelsoul/firebase';
-import { Text } from '@/components/ui';
+import { Text, BackButton } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { requestMediaRemoval } from '@/utils/moderation';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 /** One reported photo: loading spinner, error fallback, tap to view full size. */
 function ReviewImage({ uri, onOpen }: { uri: string; onOpen: (uri: string) => void }) {
@@ -240,11 +240,9 @@ export default function ModerationScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.navBar}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <Text style={styles.navTitle}>Moderation queue</Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 44 }} />
       </View>
       {allowed === null ? <ActivityIndicator style={{ marginTop: 40 }} /> : !allowed ? (
         <Text style={styles.empty}>This area is only available to moderators.</Text>
@@ -322,7 +320,7 @@ export default function ModerationScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   navBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
-  navTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  navTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   card: { backgroundColor: Colors.surface, borderRadius: Radius.md, padding: Spacing.md, gap: 6 },
   cardTitle: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary, textTransform: 'capitalize' },
   meta: { fontSize: FontSize.xs, color: Colors.textSecondary },

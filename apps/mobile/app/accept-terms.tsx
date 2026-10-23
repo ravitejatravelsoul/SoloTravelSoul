@@ -9,7 +9,7 @@ import { TERMS_VERSION, COMPATIBILITY_NOTICE, SAFETY_TIPS, NOT_EMERGENCY_SERVICE
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useAuth } from '@/hooks/useAuth';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 /**
  * Terms acceptance before anything user-generated can be created. The (app) layout sends a signed-in account here
@@ -43,14 +43,14 @@ export default function AcceptTermsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Ionicons name="shield-checkmark" size={40} color={Colors.primary} />
-        <Text style={styles.title}>Before you continue</Text>
+        <View style={styles.badge}><Ionicons name="shield-checkmark" size={40} color={Colors.primaryDark} /></View>
+        <Text style={styles.title} accessibilityRole="header">Before you continue</Text>
         <Text style={styles.body}>
           Please review and accept our Terms of Service and Privacy Policy. You need to accept them before you post, send messages or ask to join a trip.
         </Text>
         <View style={styles.links}>
-          <TouchableOpacity onPress={() => router.push('/terms')} accessibilityRole="link" hitSlop={8}><Text style={styles.link}>Read the Terms of Service</Text></TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/privacy')} accessibilityRole="link" hitSlop={8}><Text style={styles.link}>Read the Privacy Policy</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.linkRow} onPress={() => router.push('/terms')} accessibilityRole="link"><Text style={styles.link}>Read the Terms of Service</Text><Ionicons name="chevron-forward" size={18} color={Colors.primaryDark} /></TouchableOpacity>
+          <TouchableOpacity style={styles.linkRow} onPress={() => router.push('/privacy')} accessibilityRole="link"><Text style={styles.link}>Read the Privacy Policy</Text><Ionicons name="chevron-forward" size={18} color={Colors.primaryDark} /></TouchableOpacity>
         </View>
         <Text style={styles.sub}>In short</Text>
         <Text style={styles.body}>Be respectful: harassment, hate, threats and explicit content are not allowed and can lead to removal. You can report and block anyone, and leave groups and trips you joined.</Text>
@@ -73,13 +73,15 @@ export default function AcceptTermsScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   content: { padding: Spacing['2xl'], gap: Spacing.md, alignItems: 'flex-start' },
-  title: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: Colors.textPrimary },
-  sub: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary, marginTop: Spacing.md },
+  badge: { width: 76, height: 76, borderRadius: 38, backgroundColor: Colors.tealSoft, alignItems: 'center', justifyContent: 'center' },
+  title: { fontFamily: Fonts.displayHeavy, fontSize: 30, lineHeight: 38, color: Colors.textPrimary },
+  sub: { fontFamily: Fonts.display, fontSize: FontSize.xl, color: Colors.textPrimary, marginTop: Spacing.md },
   body: { fontSize: FontSize.md, color: Colors.textSecondary, lineHeight: 22 },
-  links: { gap: Spacing.md, paddingVertical: Spacing.sm },
-  link: { fontSize: FontSize.md, color: Colors.primary, fontWeight: FontWeight.semibold },
+  links: { gap: Spacing.sm, paddingVertical: Spacing.sm, alignSelf: 'stretch' },
+  linkRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md, minHeight: 52, paddingHorizontal: Spacing.lg, borderRadius: Radius.lg, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.borderLight },
+  link: { flex: 1, fontSize: FontSize.md, color: Colors.primaryDark, fontWeight: FontWeight.bold },
   footer: { padding: Spacing['2xl'], gap: Spacing.md },
-  primary: { backgroundColor: Colors.primary, borderRadius: Radius.xl, minHeight: 52, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.lg },
+  primary: { backgroundColor: Colors.primaryDark, borderRadius: Radius.full, minHeight: 54, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.lg },
   primaryLabel: { color: Colors.white, fontSize: FontSize.md, fontWeight: FontWeight.bold },
   secondary: { alignItems: 'center', justifyContent: 'center', minHeight: 44 },
   secondaryLabel: { color: Colors.textSecondary, fontSize: FontSize.md },

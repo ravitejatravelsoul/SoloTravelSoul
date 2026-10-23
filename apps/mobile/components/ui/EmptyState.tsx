@@ -2,7 +2,7 @@ import { View, StyleSheet, ActivityIndicator, type ViewStyle } from 'react-nativ
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from './Text';
 import { Button } from './Button';
-import { Colors, Spacing, FontSize } from '@/constants/theme';
+import { Colors, Spacing } from '@/constants/theme';
 
 type EmptyVariant = 'empty' | 'error' | 'offline' | 'loading';
 
@@ -41,9 +41,11 @@ export function EmptyState({
       {variant === 'loading' ? (
         <ActivityIndicator size="large" color={Colors.primary} style={styles.loader} />
       ) : icon ? (
-        <Ionicons name={icon as never} size={56} color={iconColor} />
+        <View style={[styles.badge, { backgroundColor: variant === 'error' ? Colors.coralSoft : Colors.chipBackground }]}>
+          <Ionicons name={icon as never} size={44} color={iconColor} />
+        </View>
       ) : (
-        <Text style={styles.emoji}>{emoji ?? defaultEmoji}</Text>
+        <View style={styles.badge}><Text style={styles.emoji}>{emoji ?? defaultEmoji}</Text></View>
       )}
 
       <Text variant="h3" center style={variant === 'error' ? styles.errorTitle : undefined}>
@@ -77,7 +79,8 @@ const styles = StyleSheet.create({
     padding: Spacing['3xl'],
   },
   loader: { marginBottom: Spacing.sm },
-  emoji: { fontSize: 56, lineHeight: 72 },
+  badge: { width: 104, height: 104, borderRadius: 52, backgroundColor: Colors.chipBackground, alignItems: 'center', justifyContent: 'center' },
+  emoji: { fontSize: 48, lineHeight: 60 },
   errorTitle: { color: Colors.error },
   subtitle: { lineHeight: 20, maxWidth: 280, textAlign: 'center' },
   action: { marginTop: Spacing.sm, minWidth: 160 },

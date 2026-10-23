@@ -1,4 +1,5 @@
 import { useRef, useCallback, useEffect } from 'react';
+import { BackButton } from '@/components/ui/BackButton';
 import {
   View,
   FlatList,
@@ -6,11 +7,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   KeyboardAvoidingView,
+  Keyboard,
   ListRenderItemInfo,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+
 import { useChatStore } from '@/stores/chatStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useGroupChat } from '@/hooks/useGroupChat';
@@ -59,6 +61,14 @@ export default function GroupChatScreen() {
     }
   }, [messages.length]);
 
+  // Keep the newest message in view when the keyboard opens.
+  useEffect(() => {
+    const sub = Keyboard.addListener('keyboardDidShow', () => {
+      setTimeout(() => flatRef.current?.scrollToEnd({ animated: false }), 60);
+    });
+    return () => sub.remove();
+  }, []);
+
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<ListItem>) => {
       if (item.kind === 'separator') {
@@ -91,9 +101,7 @@ export default function GroupChatScreen() {
     >
       {/* Header */}
       <View style={[styles.header, { paddingTop: top + 10 }]}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="chevron-back" size={26} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <TouchableOpacity
           style={styles.headerCenter}
           onPress={() => router.push(`/groups/${groupId}`)}
@@ -145,9 +153,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingBottom: Spacing.sm,
     paddingHorizontal: Spacing.md,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    backgroundColor: Colors.background,
     gap: Spacing.sm,
   },
   headerCenter: {

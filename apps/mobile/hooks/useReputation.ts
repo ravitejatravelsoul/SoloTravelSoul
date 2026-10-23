@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from 'react';
-import { getReputation, upsertReputation } from '@solotravelsoul/firebase';
+import { upsertReputation } from '@solotravelsoul/firebase';
 import { calculateBadges, calculateScore, profileCompletePct } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useTrips } from '@/hooks/useTrips';

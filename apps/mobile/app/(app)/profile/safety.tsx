@@ -5,8 +5,8 @@ import { useAuthStore } from '@/stores/authStore';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text } from '@/components/ui';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Text, BackButton } from '@/components/ui';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
 import { CONTACT_EMAIL } from '@/constants/contact';
 import { SAFETY_TIPS, PLATFORM_ROLE, COMPATIBILITY_NOTICE, NOT_EMERGENCY_SERVICE, REPORT_BLOCK_LEAVE } from '@solotravelsoul/shared';
 
@@ -45,11 +45,9 @@ export default function SafetyScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.navBar}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <BackButton />
         <Text style={styles.navTitle}>Community Guidelines</Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 44 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -65,7 +63,7 @@ export default function SafetyScreen() {
         </View>
 
         {/* Guidelines */}
-        <Text style={styles.sectionLabel}>COMMUNITY GUIDELINES</Text>
+        <Text style={styles.sectionLabel}>Community guidelines</Text>
         <View style={styles.card}>
           {GUIDELINES.map((g, idx) => (
             <View key={g.title}>
@@ -84,7 +82,7 @@ export default function SafetyScreen() {
         </View>
 
         {/* Meeting people safely */}
-        <Text style={styles.sectionLabel}>MEETING PEOPLE SAFELY</Text>
+        <Text style={styles.sectionLabel}>Meeting people safely</Text>
         <View style={styles.card}>
           {SAFETY_TIPS.map((t, idx) => (
             <View key={t.title}>
@@ -111,7 +109,7 @@ export default function SafetyScreen() {
         </View>
 
         {/* How to Report */}
-        <Text style={styles.sectionLabel}>HOW TO REPORT</Text>
+        <Text style={styles.sectionLabel}>How to report</Text>
         <View style={styles.card}>
           {['Tap the 3-dot menu on any profile, trip, or group', 'Select "Report"', 'Choose the issue type and add details', 'Submit. Reports are reviewed by our moderators, who act when the Community Guidelines or Terms are broken'].map((step, idx) => (
             <View key={idx} style={styles.stepRow}>
@@ -124,7 +122,7 @@ export default function SafetyScreen() {
         </View>
 
         {/* How to Block */}
-        <Text style={styles.sectionLabel}>HOW TO BLOCK OR LEAVE</Text>
+        <Text style={styles.sectionLabel}>How to block or leave</Text>
         <View style={styles.card}>
           <Text style={styles.bodyText}>
             {REPORT_BLOCK_LEAVE}{'\n\n'}Tap the 3-dot menu on a profile or chat and choose &quot;Block&quot;. Blocked people cannot message you, ask to join your trips, follow you, comment on your posts or open your profile, and blocking is private and reversible. You may still appear in shared lists such as Nearby Travelers. To leave a group chat, open the group and choose &quot;Leave group&quot;; to leave a trip you joined, open the trip and choose &quot;Leave trip&quot;.
@@ -132,7 +130,7 @@ export default function SafetyScreen() {
         </View>
 
         {/* Links */}
-        <Text style={styles.sectionLabel}>LEGAL & SUPPORT</Text>
+        <Text style={styles.sectionLabel}>Legal & support</Text>
         <View style={styles.card}>
           {moderator && (
             <TouchableOpacity style={styles.linkRow} onPress={() => router.push('/(app)/moderation' as never)} accessibilityLabel="Moderation queue">
@@ -190,11 +188,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
   },
-  navTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  navTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   content: { padding: Spacing.lg, paddingBottom: Spacing['3xl'] },
   hero: {
     alignItems: 'center',
@@ -212,15 +208,7 @@ const styles = StyleSheet.create({
   },
   heroTitle: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.textPrimary, textAlign: 'center' },
   heroSubtitle: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: FontWeight.bold,
-    color: Colors.textSecondary,
-    letterSpacing: 0.7,
-    marginBottom: Spacing.sm,
-    marginTop: Spacing.xl,
-    marginLeft: 2,
-  },
+  sectionLabel: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary, marginTop: Spacing.xl, marginBottom: Spacing.sm },
   card: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,

@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, Text, Input, Button } from '@/components/ui';
+import { Text, Input, Button } from '@/components/ui';
+import { AuthShell } from '@/components/auth/AuthShell';
 import { useAuth } from '@/hooks/useAuth';
 import { Colors, Spacing } from '@/constants/theme';
 import { isValidEmail, isValidPassword, isNonEmpty } from '@/utils/validations';
@@ -34,14 +35,19 @@ export default function SignupScreen() {
   };
 
   return (
-    <Screen scroll padded>
-      <View style={styles.header}>
-        <Text style={styles.logo}>🌍</Text>
-        <Text variant="h1">Create account</Text>
-        <Text variant="caption">Start planning your next adventure</Text>
-      </View>
-
-      <View style={styles.form}>
+    <AuthShell
+      compact
+      title="Create account"
+      subtitle="Start planning your next adventure"
+      footer={
+        <>
+          <Text variant="caption">Already have an account? </Text>
+          <TouchableOpacity onPress={() => router.back()} hitSlop={8} accessibilityRole="link" accessibilityLabel="Sign in">
+            <Text variant="caption" color={Colors.primaryDark} bold>Sign in</Text>
+          </TouchableOpacity>
+        </>
+      }
+    >
         <Input
           label="Full name"
           value={name}
@@ -94,11 +100,11 @@ export default function SignupScreen() {
         {errors.agree ? <Text variant="caption" color={Colors.error}>{errors.agree}</Text> : null}
         <View style={styles.legalRow}>
           <TouchableOpacity onPress={() => router.push('/terms')} accessibilityRole="link" hitSlop={8}>
-            <Text variant="caption" color={Colors.primary}>Read the Terms</Text>
+            <Text variant="caption" color={Colors.primaryDark}>Read the Terms</Text>
           </TouchableOpacity>
           <Text variant="caption" style={styles.legalText}>  ·  </Text>
           <TouchableOpacity onPress={() => router.push('/privacy')} accessibilityRole="link" hitSlop={8}>
-            <Text variant="caption" color={Colors.primary}>Read the Privacy Policy</Text>
+            <Text variant="caption" color={Colors.primaryDark}>Read the Privacy Policy</Text>
           </TouchableOpacity>
         </View>
 
@@ -110,22 +116,11 @@ export default function SignupScreen() {
           size="lg"
         />
 
-      </View>
-
-      <View style={styles.footer}>
-        <Text variant="caption">Already have an account? </Text>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text variant="caption" color={Colors.primary} bold>Sign in</Text>
-        </TouchableOpacity>
-      </View>
-    </Screen>
+    </AuthShell>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { alignItems: 'center', gap: Spacing.sm, marginTop: Spacing['2xl'], marginBottom: Spacing['2xl'] },
-  logo: { fontSize: 56, lineHeight: 72 },
-  form: { gap: Spacing.lg },
   legalRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -135,5 +130,4 @@ const styles = StyleSheet.create({
   legalText: { color: Colors.textSecondary },
   agreeRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, minHeight: 44 },
   agreeText: { flex: 1, color: Colors.textPrimary },
-  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing['2xl'] },
 });

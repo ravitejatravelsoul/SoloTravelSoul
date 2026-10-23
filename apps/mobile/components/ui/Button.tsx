@@ -1,13 +1,9 @@
-import {
-  TouchableOpacity,
-  ActivityIndicator,
-  StyleSheet,
-  type ViewStyle,
-} from 'react-native';
+import { ActivityIndicator, StyleSheet, type ViewStyle } from 'react-native';
 import { Text } from './Text';
-import { Colors, FontSize, FontWeight, Radius, Spacing } from '@/constants/theme';
+import { PressableScale } from './PressableScale';
+import { Colors, FontSize, FontWeight, Radius, Shadow, Spacing } from '@/constants/theme';
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'coral';
 type Size = 'sm' | 'md' | 'lg';
 
 interface ButtonProps {
@@ -21,6 +17,10 @@ interface ButtonProps {
   style?: ViewStyle;
 }
 
+/**
+ * Pill button. Teal is the primary action, white-with-teal-outline the secondary, coral a selective highlight (ink label).
+ * Press feedback is a transform only, and presses within 350 ms of each other are ignored so a double tap cannot repeat an action.
+ */
 export function Button({
   onPress,
   label,
@@ -32,16 +32,16 @@ export function Button({
   style,
 }: ButtonProps) {
   const inactive = disabled || loading;
-  const loaderColor =
-    variant === 'primary' || variant === 'danger'
-      ? Colors.white
-      : Colors.primary;
+  const loaderColor = variant === 'primary' || variant === 'danger' ? Colors.white : variant === 'coral' ? Colors.textPrimary : Colors.primary;
 
   return (
-    <TouchableOpacity
+    <PressableScale
       onPress={onPress}
       disabled={inactive}
-      activeOpacity={0.75}
+      guardMs={350}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: inactive, busy: loading }}
       style={[
         styles.base,
         styles[variant],
@@ -65,42 +65,44 @@ export function Button({
           {label}
         </Text>
       )}
-    </TouchableOpacity>
+    </PressableScale>
   );
 }
 
 const styles = StyleSheet.create({
   base: {
-    borderRadius: Radius.md,
+    borderRadius: Radius.full,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
   },
-  primary: { backgroundColor: Colors.primary },
+  primary: { backgroundColor: Colors.primary, ...Shadow.sm },
   secondary: {
-    backgroundColor: Colors.card,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
   },
   ghost: { backgroundColor: 'transparent' },
   danger: { backgroundColor: Colors.error },
+  coral: { backgroundColor: Colors.coral, ...Shadow.sm },
   fullWidth: { width: '100%' },
   disabled: { opacity: 0.45 },
   label: {
     fontSize: FontSize.md,
-    fontWeight: FontWeight.semibold,
+    fontWeight: FontWeight.bold,
   },
 });
 
 const sizeStyle = StyleSheet.create({
-  sm: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs + 2, minHeight: 36 },
-  md: { paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm + 2, minHeight: 46 },
-  lg: { paddingHorizontal: Spacing['2xl'], paddingVertical: Spacing.md, minHeight: 54 },
+  sm: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs + 2, minHeight: 40 },
+  md: { paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm + 2, minHeight: 48 },
+  lg: { paddingHorizontal: Spacing['2xl'], paddingVertical: Spacing.md, minHeight: 56 },
 });
 
 const labelColor = StyleSheet.create({
   primary: { color: Colors.white },
-  secondary: { color: Colors.textPrimary },
-  ghost: { color: Colors.primary },
+  secondary: { color: Colors.primaryDark },
+  ghost: { color: Colors.primaryDark },
   danger: { color: Colors.white },
+  coral: { color: Colors.textPrimary },
 });

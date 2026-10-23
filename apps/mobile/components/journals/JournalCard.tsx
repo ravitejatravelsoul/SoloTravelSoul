@@ -7,7 +7,7 @@ import { Text, Avatar } from '@/components/ui';
 import { LikeButton } from '@/components/posts/LikeButton';
 import { useLikeJournal } from '@/hooks/useJournals';
 import { getUserInitials } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
 import type { TravelJournal } from '@solotravelsoul/shared';
 
 interface Props {
@@ -104,8 +104,8 @@ const styles = StyleSheet.create({
   },
   locationText: { fontSize: FontSize.xs, color: Colors.primary, fontWeight: FontWeight.medium },
   title: {
+    fontFamily: Fonts.display,
     fontSize: FontSize.xl,
-    fontWeight: FontWeight.bold,
     color: Colors.textPrimary,
     lineHeight: 26,
     marginBottom: Spacing.xs,
