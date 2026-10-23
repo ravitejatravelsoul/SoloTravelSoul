@@ -3,7 +3,7 @@ const root=require('path').resolve(__dirname,'../..');
 const ts=require(root+'/node_modules/typescript');
 function load(file,deps,source){
 const m={exports:{}};source=source||ts.transpileModule(fs.readFileSync(root+'/'+file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-vm.runInNewContext(source,{module:m,exports:m.exports,require:n=>{if(n in deps)return deps[n];throw Error('Unexpected '+n)},console:{error(){}},process:{env:{}},Date,Math,URL},{filename:file});return m.exports;
+vm.runInNewContext(source,{module:m,exports:m.exports,require:n=>{if(n in deps)return deps[n];throw Error('Unexpected '+n)},console:{error(){}},process:{env:{}},Date,Math,URL,Promise,setTimeout,clearTimeout},{filename:file});return m.exports;
 }
 (async()=>{
 const out=[];

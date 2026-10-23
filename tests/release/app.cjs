@@ -758,6 +758,11 @@ test('redesign: launch hand-off (one native splash, an identical JS overlay, no 
   assert.equal(app.splash.imageWidth, 220);
   assert.match(overlay, /Math\.round\(220 \* 0\.62\)/);
   assert.equal(app.splash.image, './assets/images/splash-icon.png');
+  // The launcher icon's adaptive background is the same ivory (it was the old blue); package and logo are unchanged.
+  assert.equal(app.android.adaptiveIcon.backgroundColor.toLowerCase(), '#fff8ee');
+  assert.equal(app.android.adaptiveIcon.foregroundImage, './assets/images/adaptive-icon.png');
+  assert.equal(app.android.package, 'com.solotravelsoul.app');
+  assert.equal(app.ios.bundleIdentifier, 'com.solotravelsoul.app');
   assert.ok(fs.existsSync(path.join(root, 'apps/mobile/assets/images/splash-icon.png')));
   assert.ok(fs.statSync(path.join(root, 'apps/mobile/assets/images/brand-mark.png')).size < 300 * 1024, 'the overlay logo is a small asset');
   // The navigators' default scene colour is light grey; it showed for a frame between the overlay and the first screen
@@ -796,6 +801,20 @@ test('redesign: motion respects the system setting and never blocks input', () =
   assert.match(read('components/ui/Button.tsx'), /guardMs=\{350\}/);
   assert.match(read('components/ui/ScreenHeader.tsx'), /guardMs=\{400\}/);
   assert.match(read('components/ui/BackButton.tsx'), /guardMs=\{400\}/);
+});
+
+test('trip requests screen: the organizer query is constrained to the organizer (the rules refuse a query on the trip alone) and a failure is shown', () => {
+  const fb = fs.readFileSync(path.join(root, 'packages/firebase/src/firestore.ts'), 'utf8');
+  const fn = fb.slice(fb.indexOf('export function subscribeRequestsForTrip('), fb.indexOf('export async function getTripJoinRequestStatus('));
+  assert.match(fn, /where\('ownerUid', '==', ownerUid\),\s*where\('tripId', '==', tripId\)/);
+  assert.doesNotMatch(fn, /orderBy\(/, 'equality filters only: no composite index needed');
+  assert.match(fn, /onError\?\.\(err\)/, 'an error reaches the screen instead of leaving a spinner');
+  const rules = fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8');
+  assert.match(rules, /match \/tripJoinRequests\/\{requestId\}[\s\S]{0,1200}resource\.data\.ownerUid == request\.auth\.uid/, 'the read rule depends on ownerUid, so the query must carry it');
+  const screen = fs.readFileSync(path.join(root, 'apps/mobile/app/(app)/trips/[id]/requests.tsx'), 'utf8');
+  assert.match(screen, /subscribeRequestsForTrip\(id, uid,/);
+  assert.match(screen, /Could not load requests/);
+  assert.match(screen, /Try again/);
 });
 
 (async () => {

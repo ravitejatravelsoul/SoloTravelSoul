@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui';
 import {
@@ -109,6 +110,7 @@ export function JournalEntryModal({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
+      <SafeAreaView edges={['top']} style={styles.flex}>
       <KeyboardAvoidingView
         behavior="padding"
         style={styles.flex}
@@ -246,6 +248,7 @@ export function JournalEntryModal({
 
         </ScrollView>
       </KeyboardAvoidingView>
+      </SafeAreaView>
       <ToastContainer />
     </Modal>
   );

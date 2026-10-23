@@ -29,7 +29,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#1270C2"
+        "backgroundColor": "#FFF8EE"
       },
       "package": "com.solotravelsoul.app",
       "permissions": [
@@ -59,7 +59,7 @@
         "expo-notifications",
         {
           "icon": "./assets/images/icon.png",
-          "color": "#1270C2",
+          "color": "#00897B",
           "iosDisplayInForeground": true
         }
       ],

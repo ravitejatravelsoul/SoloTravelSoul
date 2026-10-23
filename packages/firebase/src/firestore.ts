@@ -1030,19 +1030,32 @@ export function subscribeTripJoinRequestsForOwner(
   });
 }
 
+/**
+ * Every request for one trip, for its organizer. The query is limited to the organizer's own requests as well as the
+ * trip: the rules only accept a list query that proves the caller is the organizer, and a query on the trip alone is
+ * refused (the screen would never leave its spinner). Equality filters only, so no composite index is needed; newest
+ * first is applied here.
+ */
 export function subscribeRequestsForTrip(
   tripId: string,
-  callback: (requests: TripJoinRequest[]) => void
+  ownerUid: string,
+  callback: (requests: TripJoinRequest[]) => void,
+  onError?: (err: { code?: string }) => void
 ): () => void {
   const q = query(
     collection(db, 'tripJoinRequests'),
+    where('ownerUid', '==', ownerUid),
     where('tripId', '==', tripId),
-    orderBy('createdAt', 'desc'),
     limit(100)
   );
   return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => joinRequestFromDoc(d.data())));
+    callback(
+      snap.docs
+        .map((d) => joinRequestFromDoc(d.data()))
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    );
   }, (err) => {
+    onError?.(err);
     if (err.code !== 'permission-denied' && err.code !== 'failed-precondition') {
       console.error('[Firestore] subscribeRequestsForTrip error:', err.code, err.message);
     }

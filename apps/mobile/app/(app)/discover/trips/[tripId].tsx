@@ -49,6 +49,8 @@ export default function PublicTripDetailScreen() {
   const mediaSrc = useMediaSource();
   const [coverFailed, setCoverFailed] = useState(false);
   const [celebrate, setCelebrate] = useState(0);
+  // Once the hero has scrolled away the status bar gets a solid ivory strip, so content never runs under the clock.
+  const [pastHero, setPastHero] = useState(false);
 
   useEffect(() => {
     if (!tripId) return;
@@ -163,7 +165,12 @@ export default function PublicTripDetailScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={64}
+        onScroll={(e) => { const past = e.nativeEvent.contentOffset.y > 240; setPastHero((p) => (p === past ? p : past)); }}
+      >
         {/* Hero: cover photo (or a warm gradient), floating round buttons, destination and title over a scrim */}
         <View style={[styles.hero, { paddingTop: insets.top + Spacing.sm }]}>
           {trip.coverPhotoURL && !coverFailed ? (
@@ -332,6 +339,7 @@ export default function PublicTripDetailScreen() {
         </View>
       </ScrollView>
 
+      {pastHero ? <View pointerEvents="none" style={[styles.statusScrim, { height: insets.top }]} /> : null}
       <Celebration trigger={celebrate} />
 
       {showModal && profile && (
@@ -381,6 +389,7 @@ const styles = StyleSheet.create({
   noticeBox: { marginHorizontal: Spacing.lg, marginTop: Spacing.md, padding: Spacing.md, borderRadius: Radius.md, backgroundColor: Colors.warning + '22', borderWidth: 1, borderColor: Colors.warning + '66' },
   noticeText: { fontSize: FontSize.sm, color: Colors.textPrimary },
   safe: { flex: 1, backgroundColor: Colors.background },
+  statusScrim: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: Colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   navBar: {
     flexDirection: 'row',

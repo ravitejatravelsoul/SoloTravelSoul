@@ -56,7 +56,7 @@ export function JoinRequestModal({ group, requestor, onClose, onSubmitted }: Pro
 
           <View style={styles.content}>
             <View style={styles.groupInfo}>
-              <Ionicons name="people" size={20} color={Colors.accent} />
+              <Ionicons name="people" size={20} color={Colors.primaryDark} />
               <View>
                 <Text style={styles.groupName}>{group.name}</Text>
                 <Text style={styles.groupDest}>{group.destination}</Text>
@@ -150,9 +150,9 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.border,
     backgroundColor: Colors.surface,
   },
-  cancelBtn: { flex: 1, paddingVertical: Spacing.md, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.border, alignItems: 'center' },
+  cancelBtn: { flex: 1, paddingVertical: Spacing.md, minHeight: 48, justifyContent: 'center', borderRadius: Radius.full, borderWidth: 1.5, borderColor: Colors.border, alignItems: 'center' },
   cancelLabel: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textSecondary },
-  submitBtn: { flex: 2, paddingVertical: Spacing.md, borderRadius: Radius.lg, backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center', minHeight: 48 },
+  submitBtn: { flex: 2, paddingVertical: Spacing.md, borderRadius: Radius.full, backgroundColor: Colors.primaryDark, alignItems: 'center', justifyContent: 'center', minHeight: 48 },
   submitBtnDisabled: { opacity: 0.5 },
   submitLabel: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.white },
 });

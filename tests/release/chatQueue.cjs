@@ -9,10 +9,10 @@ const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '../..');
 const ts = require(path.join(root, 'node_modules/typescript'));
 
-function load(file, deps) {
+function load(file, deps, extra = {}) {
   const m = { exports: {} };
   const src = ts.transpileModule(fs.readFileSync(path.join(root, file), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(src, { module: m, exports: m.exports, console: { error() {}, log() {}, warn() {} }, process: { env: {} }, Date, Math,
+  vm.runInNewContext(src, { module: m, exports: m.exports, console: { error() {}, log() {}, warn() {} }, process: { env: {} }, Date, Math, Promise, setTimeout, clearTimeout, ...extra,
     require: (n) => { if (n in deps) return deps[n]; throw Error('Unexpected ' + n); } }, { filename: file });
   return m.exports;
 }
@@ -234,6 +234,218 @@ test('sync engine: rejected queued sends are reported to the user', async () => 
   await engine.useSyncEngine('u').sync();
   deepEqual(toasts.map((t) => t[0]), ['error']);
   assert.match(toasts[0][1], /2 queued messages were not sent/);
+});
+
+// ── Message-anomaly regressions (completion pass, 2026-10-23) ──────────────────────────────────────────────────────
+// Observed on the emulator: a message sent while the connection was flapping neither appeared on the server nor
+// stayed visible, and a queued message stayed pending until the app was relaunched. Causes found in the code:
+//  1. the online path only queued a send AFTER the attempt failed; a send still in flight when the app was closed
+//     existed only in memory and was lost;
+//  2. one queued send that never answered blocked the whole drain, and with it every later sync;
+//  3. a reopened chat did not show queued sends, so they looked lost until delivered.
+
+/** Backend whose answers the test controls: delivery is idempotent per client id, like the real transaction. */
+function controlledBackend() {
+  const b = { hang: false, held: [], store: new Map(), writes: 0, offline: false, denied: false };
+  const write = (kind) => (...a) => {
+    const id = a[kind === 'dm' ? 3 : 4];
+    b.writes++;
+    const commit = () => { if (b.denied) throw denied(); if (!b.store.has(id)) b.store.set(id, `${kind}:${id}`); };
+    if (b.offline) return Promise.reject(err('unavailable'));
+    if (b.hang) return new Promise((resolve, reject) => b.held.push({ id, finish: () => { try { commit(); resolve(); } catch (e) { reject(e); } } }));
+    try { commit(); return Promise.resolve(); } catch (e) { return Promise.reject(e); }
+  };
+  b.sendDirectMessage = write('dm');
+  b.sendGroupMessage = write('group');
+  return b;
+}
+
+/** A queue module over storage that survives a "restart" (a second module instance on the same data) and fake timers. */
+function durableModule(be, data = new Map(), timers = fakeTimers()) {
+  const storage = { getItem: async (k) => data.get(k) ?? null, setItem: async (k, v) => { data.set(k, v); } };
+  const lock = load('apps/mobile/utils/queueLock.ts', {});
+  const draft = load('apps/mobile/utils/draftRestore.ts', {});
+  const mod = load('apps/mobile/utils/chatQueue.ts', { './queueLock': lock, './draftRestore': draft, '@react-native-async-storage/async-storage': { default: storage },
+    '@solotravelsoul/firebase': { sendDirectMessage: (...a) => be.sendDirectMessage(...a), sendGroupMessage: (...a) => be.sendGroupMessage(...a) } }, timers);
+  mod.draft = draft; mod.data = data; mod.timers = timers;
+  return mod;
+}
+function fakeTimers() {
+  const t = { now: 0, list: [] };
+  t.setTimeout = (fn, ms) => { const h = { fn, at: t.now + ms, off: false }; t.list.push(h); return h; };
+  t.clearTimeout = (h) => { if (h) h.off = true; };
+  t.advance = async (ms) => { t.now += ms; for (const h of t.list.filter((x) => !x.off && x.at <= t.now)) { h.off = true; h.fn(); } for (let i = 0; i < 20; i++) await Promise.resolve(); };
+  return t;
+}
+const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
+
+for (const kind of ['dm', 'group']) {
+  test(`${kind} anomaly 1: a send still in flight when the app is closed is on disk, and a relaunch delivers it exactly once`, async () => {
+    const be = controlledBackend();
+    const cq = durableModule(be);
+    be.hang = true; // the connection dropped mid-send: the server never answers
+    const net = { offline: false };
+    const h = chatHook(kind, be, cq, net);
+    const sending = h.render().sendMessage('in flight');
+    await flush();
+    assert.equal(h.render().messages.length, 1, 'shown as pending');
+    assert.equal(await cq.getChatQueueSize('u'), 1, 'already saved on the device before the server answered');
+    void sending; // the app is closed here: nothing more happens in this process
+    // Relaunch: a new module instance over the same storage, connection back.
+    be.hang = false;
+    const relaunched = durableModule(be, cq.data);
+    const r = await relaunched.processChatQueue('u');
+    assert.equal(r.succeeded, 1);
+    assert.equal(be.store.size, 1, 'delivered once');
+    assert.equal(await relaunched.getChatQueueSize('u'), 0);
+    await relaunched.processChatQueue('u');
+    assert.equal(be.store.size, 1, 'a second drain adds nothing');
+  });
+
+  test(`${kind} anomaly 2: a send that never answers stops blocking after the time limit, stays queued, and the next drain delivers it once`, async () => {
+    const be = controlledBackend();
+    const timers = fakeTimers();
+    const cq = durableModule(be, new Map(), timers);
+    await cq.enqueueChatOp('u', kind === 'dm' ? dm('s1') : group('s1'));
+    await cq.enqueueChatOp('u', kind === 'dm' ? dm('s2') : group('s2'));
+    be.hang = true;
+    const first = cq.processChatQueue('u');
+    await flush();
+    let settled = false; first.then(() => { settled = true; });
+    await flush();
+    assert.equal(settled, false, 'still waiting inside the limit');
+    await timers.advance(cq.SEND_TIMEOUT_MS + 1);
+    const r = await first;
+    assert.equal(r.succeeded, 0);
+    assert.equal(await cq.getChatQueueSize('u'), 2, 'nothing lost: both stay queued');
+    be.hang = false; be.held.length = 0;
+    const again = await cq.processChatQueue('u');
+    assert.equal(again.succeeded, 2);
+    assert.equal(be.store.size, 2, 'each delivered once');
+  });
+
+  test(`${kind} anomaly 3: a live send that times out stays queued; the late success and the retry together never duplicate it`, async () => {
+    const be = controlledBackend();
+    const timers = fakeTimers();
+    const cq = durableModule(be, new Map(), timers);
+    const op = kind === 'dm' ? dm('late') : group('late');
+    be.hang = true;
+    const live = cq.sendChatOp('u', op, true);
+    await flush();
+    await timers.advance(cq.SEND_TIMEOUT_MS + 1);
+    assert.equal(await live, 'queued', 'neither sent nor lost');
+    be.hang = false;
+    await cq.processChatQueue('u'); // the retry delivers
+    be.held.forEach((x) => x.finish()); // and the first attempt finally reaches the server as well
+    await flush();
+    assert.equal(be.store.size, 1, 'one message');
+    assert.equal(await cq.getChatQueueSize('u'), 0);
+  });
+
+  test(`${kind} anomaly 4: queued sends are shown as pending when the chat is reopened (not hidden until delivered)`, async () => {
+    const be = controlledBackend();
+    const cq = durableModule(be);
+    be.offline = true;
+    await cq.enqueueChatOp('u', kind === 'dm' ? dm('q1') : group('q1'));
+    const h = chatHook(kind, be, cq, { offline: true });
+    await flush();
+    const m = h.render().messages;
+    assert.equal(m.length, 1, 'the queued message is visible');
+    assert.equal(m[0].status, 'pending');
+    assert.equal(m[0].text, 'hi');
+  });
+
+  test(`${kind} anomaly 5: a send that cannot be saved or delivered is handed back to the composer, never dropped silently`, async () => {
+    const be = controlledBackend();
+    const cq = durableModule(be);
+    be.offline = true; // the attempt fails with a network error ...
+    cq.data.set = () => { throw new Error('disk full'); }; // ... and storage is unusable
+    const broken = { getItem: async () => null, setItem: async () => { throw new Error('disk full'); } };
+    const lock = load('apps/mobile/utils/queueLock.ts', {});
+    const draft = load('apps/mobile/utils/draftRestore.ts', {});
+    const q2 = load('apps/mobile/utils/chatQueue.ts', { './queueLock': lock, './draftRestore': draft, '@react-native-async-storage/async-storage': { default: broken },
+      '@solotravelsoul/firebase': { sendDirectMessage: (...a) => be.sendDirectMessage(...a), sendGroupMessage: (...a) => be.sendGroupMessage(...a) } }, fakeTimers());
+    const result = await q2.sendChatOp('u', kind === 'dm' ? dm('x1') : group('x1'), true);
+    assert.equal(result, 'failed');
+  });
+
+  test(`${kind} hook: when the send fails outright the bubble goes, the text returns to the composer once, with a message`, async () => {
+    const be = controlledBackend();
+    const cq = durableModule(be);
+    const broken = { getItem: async () => null, setItem: async () => { throw new Error('disk full'); } };
+    const lock = load('apps/mobile/utils/queueLock.ts', {});
+    const q2 = load('apps/mobile/utils/chatQueue.ts', { './queueLock': lock, './draftRestore': cq.draft, '@react-native-async-storage/async-storage': { default: broken },
+      '@solotravelsoul/firebase': { sendDirectMessage: (...a) => be.sendDirectMessage(...a), sendGroupMessage: (...a) => be.sendGroupMessage(...a) } }, fakeTimers());
+    q2.draft = cq.draft;
+    be.offline = true;
+    const h = chatHook(kind, be, q2, { offline: false });
+    await h.render().sendMessage('keep me');
+    assert.equal(h.render().messages.length, 0);
+    assert.equal(h.render().restored.text, 'keep me');
+    assert.equal(h.toasts.length, 1);
+  });
+
+  test(`${kind} hook: rapid disconnect/reconnect with a send in flight: delivered exactly once, no duplicate bubble, draft untouched`, async () => {
+    const be = controlledBackend();
+    const timers = fakeTimers();
+    const cq = durableModule(be, new Map(), timers);
+    const net = { offline: false };
+    const h = chatHook(kind, be, cq, net);
+    be.hang = true;
+    const sending = h.render().sendMessage('flap');
+    await flush();
+    net.offline = true; be.offline = true; // disconnect while in flight
+    await timers.advance(1000);
+    net.offline = false; be.offline = false; // reconnect
+    await timers.advance(1000);
+    be.hang = false;
+    be.held.splice(0).forEach((x) => x.finish()); // the original attempt completes after the reconnect
+    await sending;
+    await cq.processChatQueue('u'); // the reconnect drain
+    assert.equal(be.store.size, 1, 'exactly one message on the server');
+    assert.equal(await cq.getChatQueueSize('u'), 0);
+    assert.equal(h.render().messages.filter((m) => m.text === 'flap').length, 1, 'one bubble');
+    assert.equal(h.render().restored, null, 'no draft was handed back');
+  });
+
+  test(`${kind} hook: permission-denied while another send is queued still follows the existing rule (dropped, text back once)`, async () => {
+    const be = controlledBackend();
+    const cq = durableModule(be);
+    const h = chatHook(kind, be, cq, { offline: false });
+    be.denied = true;
+    await h.render().sendMessage('nope');
+    assert.equal(h.render().restored.text, 'nope');
+    assert.equal(h.toasts.length, 1);
+    assert.equal(await cq.getChatQueueSize('u'), 0);
+    be.denied = false;
+    await cq.processChatQueue('u');
+    assert.equal(be.store.size, 0, 'never delivered later');
+  });
+}
+
+test('sync engine: queued sends are retried on a timer while connected, even with no new network event', async () => {
+  const timers = [];
+  let connected = true;
+  const state = { pendingOpsCount: 1, syncStatus: { syncing: false }, setSyncStatus() {}, setPendingOpsCount() {} };
+  let syncs = 0;
+  const effects = [];
+  const engine = load('apps/mobile/hooks/useSyncEngine.ts', {
+    react: { useEffect: (fn, deps) => { effects.push({ fn, deps }); }, useRef: (v) => ({ current: v }), useCallback: (f) => f },
+    'react-native': { AppState: { addEventListener: () => ({ remove() {} }) } }, 'zustand/react/shallow': { useShallow: (f) => f },
+    './useNetworkState': { useNetworkState: () => ({ isConnected: connected }) },
+    '@/stores/tripStore': { useTripStore: (f) => f(state) },
+    '@/utils/syncQueue': { getQueueSize: async () => 0, processQueue: async () => ({ succeeded: 0, failed: 0 }) },
+    '@/stores/authStore': { useAuthStore: { getState: () => ({ user: { uid: 'u' } }) } },
+    '@/stores/uiStore': { useUIStore: { getState: () => ({ addToast() {} }) } },
+    '@/utils/chatQueue': { getChatQueueSize: async () => 1, processChatQueue: async () => { syncs++; return { succeeded: 0, failed: 0, rejected: [] }; } },
+    '@/utils/offlineCache': { getLatestSyncTime: async () => null, setLastSync: async () => {} },
+  }, { setInterval: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearInterval() {} });
+  engine.useSyncEngine('u');
+  for (const e of effects) { const cleanup = e.fn(); void cleanup; }
+  assert.ok(timers.some((t) => t.ms >= 10000 && t.ms <= 60000), 'a retry is scheduled while sends are pending and the connection is up');
+  await timers.find((t) => t.ms >= 10000).fn();
+  await flush();
+  assert.equal(syncs, 1, 'the retry drains the queue');
 });
 
 (async () => {

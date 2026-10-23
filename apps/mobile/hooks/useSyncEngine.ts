@@ -18,6 +18,8 @@ export interface SyncEngineState {
 
 // Module-level so multiple mounted instances (app layout + trip detail) never
 // process the queue concurrently — that would double-send queued DMs.
+/** How often queued work is retried while connected. */
+const PENDING_RETRY_MS = 30000;
 const syncingUsers = new Set<string>();
 // Paused while the account is being deleted server-side, so queued offline
 // edits cannot recreate data the server has just removed.
@@ -105,6 +107,15 @@ export function useSyncEngine(uid: string | undefined): SyncEngineState & {
     }
     prevConnected.current = isConnected;
   }, [isConnected, uid, sync]);
+
+  // Queued sends are also retried on a timer while the connection is up: a reconnect or a foreground event is not
+  // always followed by a working connection (the network layer can take a while to recover), and a queued message must
+  // not wait for the next such event, or for the app to be reopened.
+  useEffect(() => {
+    if (!uid || !isConnected || pendingOpsCount === 0) return;
+    const timer = setInterval(() => { void sync(); }, PENDING_RETRY_MS);
+    return () => clearInterval(timer);
+  }, [uid, isConnected, pendingOpsCount, sync]);
 
   // Sync when app returns to foreground and has pending ops
   useEffect(() => {

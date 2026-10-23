@@ -151,7 +151,7 @@ function app(net) {
   const firebase = { subscribeToDirectMessages: (_c, cb) => { be.snapshot = cb; return () => {}; }, sendDirectMessage: write, markDirectChatRead: async () => {} };
   const lock = load('apps/mobile/utils/queueLock.ts', {});
   const draft = load('apps/mobile/utils/draftRestore.ts', {});
-  const cq = load('apps/mobile/utils/chatQueue.ts', { './queueLock': lock, './draftRestore': draft, '@react-native-async-storage/async-storage': { default: storage }, '@solotravelsoul/firebase': { sendDirectMessage: write, sendGroupMessage: async () => {} } });
+  const cq = load('apps/mobile/utils/chatQueue.ts', { './queueLock': lock, './draftRestore': draft, '@react-native-async-storage/async-storage': { default: storage }, '@solotravelsoul/firebase': { sendDirectMessage: write, sendGroupMessage: async () => {} } }, { Promise, setTimeout, clearTimeout });
   const netMod = load('apps/mobile/hooks/useNetworkState.ts', { react: rt.react, 'react-native': { AppState: net.AppState }, 'expo-network': net.expoNetwork }, net.clock);
   const user = { uid: 'u' };
   const auth = (sel) => sel({ user }); auth.getState = () => ({ user });
@@ -164,7 +164,7 @@ function app(net) {
     '@/utils/syncQueue': { processQueue: async () => ({ succeeded: 0, failed: 0 }), getQueueSize: async () => 0 },
     '@/utils/chatQueue': cq, '@/stores/authStore': { useAuthStore: auth }, '@/stores/uiStore': ui,
     '@/utils/offlineCache': { getLatestSyncTime: async () => null, setLastSync: async () => {} },
-  });
+  }, { setInterval: () => 0, clearInterval() {} }); // the 30 s retry timer is covered in chatQueue.cjs
   const chat = load('apps/mobile/hooks/useMessages.ts', {
     react: rt.react, '@solotravelsoul/firebase': firebase, '@/utils/chatQueue': cq, '@/utils/draftRestore': draft, '@/stores/authStore': { useAuthStore: auth },
     '@/hooks/useNetworkState': netMod, '@/stores/uiStore': ui, '@/hooks/useSyncEngine': sync,

@@ -15,7 +15,7 @@ import { SentRequestCard, ReceivedRequestCard } from '@/components/community/Joi
 import { useMyJoinRequests, useOwnerJoinRequests } from '@/hooks/useTripJoinRequest';
 import { useTripAvailability } from '@/hooks/useTripAvailability';
 import { useAuthStore } from '@/stores/authStore';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts, Shadow } from '@/constants/theme';
 
 type Tab = 'sent' | 'received';
 
@@ -151,20 +151,24 @@ const styles = StyleSheet.create({
   navTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    backgroundColor: Colors.chipBackground,
+    borderRadius: Radius.full,
+    padding: 4,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   tab: {
     flex: 1,
-    paddingVertical: Spacing.md,
+    minHeight: 44,
+    borderRadius: Radius.full,
     alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
   },
-  tabActive: { borderBottomColor: Colors.primary },
+  tabActive: { backgroundColor: Colors.surface, ...Shadow.sm },
   tabLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.textSecondary },
-  tabLabelActive: { color: Colors.primary },
+  tabLabelActive: { color: Colors.primaryDark, fontWeight: FontWeight.bold },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing['2xl'], gap: Spacing.md },
   emptyTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold, color: Colors.textPrimary, textAlign: 'center' },
   emptySubtitle: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },

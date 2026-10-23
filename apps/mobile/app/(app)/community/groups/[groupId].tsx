@@ -10,6 +10,7 @@ import {
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Text, Avatar, Chip, Button, BackButton } from '@/components/ui';
 import { JoinRequestModal as GroupJoinModal } from '@/components/community/GroupJoinModal';
 import {
@@ -21,7 +22,7 @@ import {
 import type { CommunityGroup, CommunityGroupMember, RequestStatus } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { getUserInitials, isListed } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
+import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts, TapTarget } from '@/constants/theme';
 
 export default function GroupDetailScreen() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
@@ -114,13 +115,48 @@ export default function GroupDetailScreen() {
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Hero */}
-        <View style={styles.hero}>
+        <LinearGradient colors={Gradients.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
+          <Ionicons name="people" size={120} color="rgba(255,255,255,0.14)" style={styles.heroArt} />
           <View style={styles.destBadge}>
-            <Ionicons name="location" size={14} color={Colors.white} />
-            <Text style={styles.destText}>{group.destination}</Text>
+            <Ionicons name="location" size={14} color={Colors.primaryDark} />
+            <Text style={styles.destText} numberOfLines={1}>{group.destination}</Text>
           </View>
-          <Text style={styles.heroName}>{group.name}</Text>
+          <Text style={styles.heroName} accessibilityRole="header">{group.name}</Text>
           <Text style={styles.heroMeta}>{group.memberCount}/{group.capacity} members</Text>
+        </LinearGradient>
+
+        {/* Join / Action button */}
+        <View style={styles.actionsCard}>
+          {isOwner && unavailable ? (
+            <Text style={styles.noticeText}>Requests are paused while this group is hidden.</Text>
+          ) : isOwner ? (
+            <Button
+              label="Manage Requests"
+              onPress={() => router.push(`/(app)/community/groups/${groupId}/requests` as never)}
+              fullWidth
+            />
+          ) : isMember ? (
+            <View style={{ gap: Spacing.sm }}>
+              {group.chatGroupId ? (
+                <Button
+                  label="Open Chat"
+                  onPress={() => router.push(`/(app)/groups/${group.chatGroupId}/chat` as never)}
+                  fullWidth
+                />
+              ) : (
+                <Text style={styles.noticeText}>You are a member of this group.</Text>
+              )}
+              <Button label="Leave group" variant="secondary" onPress={confirmLeave} loading={leaving} fullWidth />
+            </View>
+          ) : unavailable ? (
+            <Button label="Not available" variant="secondary" disabled fullWidth onPress={() => {}} />
+          ) : isPending ? (
+            <Button label="Request Pending" variant="secondary" disabled fullWidth onPress={() => {}} />
+          ) : isFull ? (
+            <Button label="Group is Full" variant="secondary" disabled fullWidth onPress={() => {}} />
+          ) : (
+            <Button label="Request to Join" onPress={() => setShowModal(true)} fullWidth />
+          )}
         </View>
 
         {unavailable && (
@@ -144,7 +180,7 @@ export default function GroupDetailScreen() {
             <Text style={styles.ownerName}>{group.ownerName}</Text>
             <Text style={styles.ownerLabel}>Group organizer</Text>
           </View>
-          <Ionicons name="chevron-forward" size={16} color={Colors.placeholder} />
+          <Ionicons name="chevron-forward" size={16} color={Colors.textSecondary} />
         </TouchableOpacity>
 
         {/* About */}
@@ -192,39 +228,6 @@ export default function GroupDetailScreen() {
           </Section>
         )}
 
-        {/* Join / Action button */}
-        <View style={styles.actionsCard}>
-          {isOwner && unavailable ? (
-            <Text style={styles.noticeText}>Requests are paused while this group is hidden.</Text>
-          ) : isOwner ? (
-            <Button
-              label="Manage Requests"
-              onPress={() => router.push(`/(app)/community/groups/${groupId}/requests` as never)}
-              fullWidth
-            />
-          ) : isMember ? (
-            <View style={{ gap: Spacing.sm }}>
-              {group.chatGroupId ? (
-                <Button
-                  label="Open Chat"
-                  onPress={() => router.push(`/(app)/groups/${group.chatGroupId}/chat` as never)}
-                  fullWidth
-                />
-              ) : (
-                <Text style={styles.noticeText}>You are a member of this group.</Text>
-              )}
-              <Button label="Leave group" variant="secondary" onPress={confirmLeave} loading={leaving} fullWidth />
-            </View>
-          ) : unavailable ? (
-            <Button label="Not available" variant="secondary" disabled fullWidth onPress={() => {}} />
-          ) : isPending ? (
-            <Button label="Request Pending" variant="secondary" disabled fullWidth onPress={() => {}} />
-          ) : isFull ? (
-            <Button label="Group is Full" variant="secondary" disabled fullWidth onPress={() => {}} />
-          ) : (
-            <Button label="Request to Join" onPress={() => setShowModal(true)} fullWidth />
-          )}
-        </View>
       </ScrollView>
 
       {showModal && profile && (
@@ -252,7 +255,7 @@ function NavBar() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionLabel}>{title}</Text>
+      <Text style={styles.sectionLabel} accessibilityRole="header">{title.charAt(0) + title.slice(1).toLowerCase()}</Text>
       <View style={styles.sectionCard}>{children}</View>
     </View>
   );
@@ -274,53 +277,63 @@ const styles = StyleSheet.create({
   navTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary, flex: 1, textAlign: 'center' },
   content: { paddingBottom: Spacing['3xl'] },
   hero: {
-    backgroundColor: Colors.accent,
+    marginHorizontal: Spacing.lg,
+    borderRadius: Radius['2xl'],
+    overflow: 'hidden',
     padding: Spacing['2xl'],
     paddingTop: Spacing['3xl'],
     gap: Spacing.sm,
+    minHeight: 190,
+    justifyContent: 'flex-end',
   },
+  heroArt: { position: 'absolute', right: -6, top: 12 },
   destBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: Colors.surface,
     borderRadius: Radius.full,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 3,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 5,
     alignSelf: 'flex-start',
+    maxWidth: '100%',
   },
-  destText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.white },
-  heroName: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: Colors.white, lineHeight: 32 },
-  heroMeta: { fontSize: FontSize.sm, color: 'rgba(255,255,255,0.8)' },
+  destText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.primaryDark, flexShrink: 1 },
+  heroName: { fontFamily: Fonts.displayHeavy, fontSize: 30, color: Colors.white, lineHeight: 36 },
+  heroMeta: { fontSize: FontSize.md, color: 'rgba(255,255,255,0.92)', fontWeight: FontWeight.medium },
   ownerCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.surface,
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.lg,
     padding: Spacing.lg,
     gap: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderRadius: Radius.xl,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    ...Shadow.sm,
   },
   ownerInfo: { flex: 1 },
-  ownerName: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  ownerName: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   ownerLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
   section: { marginHorizontal: Spacing.lg, marginTop: Spacing.xl },
-  sectionLabel: { fontSize: 11, fontWeight: FontWeight.bold, color: Colors.textSecondary, letterSpacing: 0.7, marginBottom: Spacing.sm },
+  sectionLabel: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary, marginBottom: Spacing.sm },
   sectionCard: {
     backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.borderLight,
     padding: Spacing.lg,
     gap: Spacing.md,
     ...Shadow.sm,
   },
-  bodyText: { fontSize: FontSize.md, color: Colors.textSecondary, lineHeight: 22 },
+  bodyText: { fontSize: FontSize.md, color: Colors.textPrimary, lineHeight: 22 },
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },
   membersGrid: { gap: Spacing.sm },
   memberItem: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  memberName: { flex: 1, fontSize: FontSize.sm, color: Colors.textPrimary, fontWeight: FontWeight.medium },
-  ownerBadge: { fontSize: FontSize.xs, color: Colors.primary, fontWeight: FontWeight.semibold },
-  actionsCard: { marginHorizontal: Spacing.lg, marginTop: Spacing.xl },
-  emptyTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  memberName: { flex: 1, fontSize: FontSize.md, color: Colors.textPrimary, fontWeight: FontWeight.medium },
+  ownerBadge: { fontSize: FontSize.sm, color: Colors.primaryDark, fontWeight: FontWeight.bold },
+  actionsCard: { marginHorizontal: Spacing.lg, marginTop: Spacing.lg },
+  emptyTitle: { fontFamily: Fonts.display, fontSize: FontSize.xl, color: Colors.textPrimary },
 });

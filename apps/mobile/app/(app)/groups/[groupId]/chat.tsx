@@ -21,7 +21,7 @@ import { MessageBubble } from '@/components/chat/MessageBubble';
 import { DateSeparator } from '@/components/chat/DateSeparator';
 import { SystemMessage } from '@/components/chat/SystemMessage';
 import { ChatInput } from '@/components/chat/ChatInput';
-import { Colors, FontSize, FontWeight, Radius, Spacing } from '@/constants/theme';
+import { Colors, FontSize, FontWeight, Radius, Spacing, Fonts } from '@/constants/theme';
 import { isSameDay } from 'date-fns';
 import type { TravelGroupMessage } from '@solotravelsoul/shared';
 
@@ -163,16 +163,16 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   headerAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.accent,
+    width: 40,
+    height: 40,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerAvatarText: { color: Colors.white, fontSize: FontSize.sm, fontWeight: FontWeight.bold },
-  headerName: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
-  headerMeta: { fontSize: FontSize.xs, color: Colors.textSecondary },
+  headerName: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
+  headerMeta: { fontSize: FontSize.sm, color: Colors.textSecondary },
   offlineBanner: {
     backgroundColor: '#F59E0B22',
     borderBottomWidth: 1,

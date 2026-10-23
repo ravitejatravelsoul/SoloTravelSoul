@@ -17,6 +17,7 @@ import { useTripStore } from '@/stores/tripStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useTrips } from '@/hooks/useTrips';
 import { useChecklist } from '@/hooks/useChecklist';
+import { useItinerary } from '@/hooks/useItinerary';
 import { useAuthStore } from '@/stores/authStore';
 import { useNetworkState } from '@/hooks/useNetworkState';
 import { useSyncEngine } from '@/hooks/useSyncEngine';
@@ -86,6 +87,16 @@ export default function TripDetailScreen() {
   useEffect(() => {
     loadChecklist();
   }, [id]);
+
+  // Load this trip's itinerary here too, so the place count and the export show this trip's days (not nothing, and never
+  // another trip's days left in the store from an earlier visit).
+  const { load: loadItinerary } = useItinerary(id);
+  const tripStart = trip?.startDate;
+  const tripEnd = trip?.endDate;
+  useEffect(() => {
+    if (tripStart && tripEnd) void loadItinerary(tripStart, tripEnd);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, tripStart?.getTime(), tripEnd?.getTime()]);
 
   const itineraryLoaded = currentItineraryTripId === id;
   const totalPlaces = itineraryLoaded
@@ -513,7 +524,7 @@ export default function TripDetailScreen() {
           visible={showExportModal}
           onClose={() => setShowExportModal(false)}
           trip={trip}
-          itinerary={itinerary}
+          itinerary={itineraryLoaded ? itinerary : []}
           checklist={checklist}
         />
       )}

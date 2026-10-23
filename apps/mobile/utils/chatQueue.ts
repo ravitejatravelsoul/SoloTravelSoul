@@ -52,6 +52,24 @@ export function isPermanentRejection(err: unknown): boolean {
 }
 
 const drains = new Map<string, Promise<ChatSyncResult>>();
+/** Sends the live path is attempting right now; a drain leaves these alone so one send is never handled twice. */
+const inflight = new Set<string>();
+
+/**
+ * How long one send may stay unanswered. While the connection is flapping a Firestore transaction can wait a long
+ * time; past this limit the send counts as "not delivered yet" (it stays queued and is retried), never as lost.
+ */
+export const SEND_TIMEOUT_MS = 20000;
+
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(Object.assign(new Error('send timed out'), { code: 'unavailable' })), ms);
+    work.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
 const queueKey = (uid: string) => `@sts:chatqueue:${uid}`;
 const entryKey = (op: ChatQueuedOp) => `${op.type}:${op.type === 'dm.send' ? op.chatId : op.groupId}:${op.clientId}`;
 
@@ -83,6 +101,58 @@ export async function enqueueChatOp(uid: string, op: ChatQueuedOp): Promise<void
   });
 }
 
+export async function removeChatOp(uid: string, op: ChatQueuedOp): Promise<void> {
+  await withQueueLock(queueKey(uid), async () => {
+    const current = await load(uid);
+    await save(uid, current.filter((e) => entryKey(e.op) !== entryKey(op)));
+  });
+}
+
+/** Queued sends for one conversation, oldest first, so a reopened chat shows them as pending instead of hiding them. */
+export async function getQueuedChatOps(uid: string, targetId: string): Promise<{ op: ChatQueuedOp; createdAt: number }[]> {
+  const queue = await load(uid).catch(() => [] as ChatQueueEntry[]);
+  return queue
+    .filter((e) => (e.op.type === 'dm.send' ? e.op.chatId : e.op.groupId) === targetId)
+    .map((e) => ({ op: e.op, createdAt: e.createdAt }));
+}
+
+export type ChatSendResult =
+  /** Delivered to the server. */
+  | 'sent'
+  /** Saved on the device, not yet delivered; the drain delivers it (reconnect, foreground, retry timer). */
+  | 'queued'
+  /** The server refused it for good (rules): not kept, the caller gives the text back. */
+  | 'rejected'
+  /** Could neither be saved nor delivered: the caller gives the text back. */
+  | 'failed';
+
+/**
+ * Send with the message on disk first. The send is written to the queue before anything leaves the device, so closing
+ * the app, losing the connection mid-send or a send that never answers cannot make it disappear: it stays queued until
+ * the server has it. Delivery is idempotent (the message id is the client id), so a retry after a send that actually
+ * reached the server adds nothing twice.
+ */
+export async function sendChatOp(uid: string, op: ChatQueuedOp, tryNow: boolean): Promise<ChatSendResult> {
+  let saved = true;
+  try { await enqueueChatOp(uid, op); } catch { saved = false; }
+  if (!tryNow && saved) return 'queued';
+  const key = entryKey(op);
+  inflight.add(key);
+  try {
+    await withTimeout(applyChatOp(op), SEND_TIMEOUT_MS);
+    if (saved) await removeChatOp(uid, op).catch(() => {});
+    return 'sent';
+  } catch (err) {
+    if (isPermanentRejection(err)) {
+      if (saved) await removeChatOp(uid, op).catch(() => {});
+      return 'rejected';
+    }
+    return saved ? 'queued' : 'failed';
+  } finally {
+    inflight.delete(key);
+  }
+}
+
 export async function processChatQueue(uid: string): Promise<ChatSyncResult> {
   const existing = drains.get(uid);
   if (existing) return existing;
@@ -105,8 +175,9 @@ async function drainQueue(uid: string): Promise<ChatSyncResult> {
   });
 
   for (const entry of queue) {
+    if (inflight.has(entryKey(entry.op))) continue; // the live send is still being attempted
     try {
-      await applyChatOp(entry.op);
+      await withTimeout(applyChatOp(entry.op), SEND_TIMEOUT_MS);
       await remove(entry);
       succeeded++;
     } catch (err) {

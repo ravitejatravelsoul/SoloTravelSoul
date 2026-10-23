@@ -164,11 +164,12 @@ export function MatchCard({ title, subtitle, photoURL, initialsFrom, result, act
     <View style={styles.card} accessible accessibilityLabel={`${title}. ${LEVEL_LABELS[result.level]}. ${result.dates.label ? `${result.dates.label}. ` : ''}Preferences: ${PREFERENCE_LABELS[result.preferences.level]}. ${result.reasons.join('. ')}`}>
       <View style={styles.cardHeader}>
         <Avatar uri={photoURL} initials={getUserInitials(initialsFrom ?? title)} size={44} />
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.cardTitle}>{title}</Text>
           {subtitle ? <Text style={styles.cardSubtitle}>{subtitle}</Text> : null}
+          {/* Under the name, not beside it: beside it the name was squeezed into a few letters per line at large text. */}
+          <Text style={[styles.level, { color: levelColor, borderColor: levelColor, marginTop: Spacing.xs }]}>{LEVEL_LABELS[result.level]}</Text>
         </View>
-        <Text style={[styles.level, { color: levelColor, borderColor: levelColor }]}>{LEVEL_LABELS[result.level]}</Text>
       </View>
       {result.dates.label ? (
         <View style={styles.line}>
@@ -213,7 +214,7 @@ const styles = StyleSheet.create({
   link: { fontSize: FontSize.sm, color: Colors.primaryDark, fontWeight: FontWeight.semibold },
   browse: { alignItems: 'center', paddingVertical: Spacing.md },
   card: { backgroundColor: Colors.surface, borderRadius: Radius.xl, borderWidth: 1, borderColor: Colors.borderLight, padding: Spacing.lg, gap: Spacing.sm, ...Shadow.sm },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  cardHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md },
   cardTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, lineHeight: 24, color: Colors.textPrimary },
   cardSubtitle: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
   level: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, borderWidth: 1.5, borderRadius: Radius.full, paddingHorizontal: Spacing.sm, paddingVertical: 3, alignSelf: 'flex-start', overflow: 'hidden' },

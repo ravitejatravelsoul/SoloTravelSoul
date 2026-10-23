@@ -7,7 +7,9 @@ import { Colors, FontSize, Spacing } from '@/constants/theme';
 import type { TravelPost } from '@solotravelsoul/shared';
 
 const SCREEN_W = Dimensions.get('window').width;
-const CELL_SIZE = Math.floor((SCREEN_W - 2) / 3); // 2px total gap
+const GAP = 6;
+const SIDE = Spacing.lg;
+const CELL_SIZE = Math.floor((SCREEN_W - SIDE * 2 - GAP * 2) / 3);
 
 interface Props {
   posts: TravelPost[];
@@ -24,7 +26,9 @@ export const PhotoGrid = memo(function PhotoGrid({ posts, includeTextOnly = fals
       {withImages.map((post, i) => (
         <TouchableOpacity
           key={post.postId}
-          style={[styles.cell, { marginRight: (i + 1) % 3 === 0 ? 0 : 1, marginBottom: 1 }]}
+          style={[styles.cell, { marginRight: (i + 1) % 3 === 0 ? 0 : GAP, marginBottom: GAP }]}
+          accessibilityRole="button"
+          accessibilityLabel={post.caption ? `Post: ${post.caption}` : 'Post'}
           onPress={() => router.push(`/(app)/post/${post.postId}` as never)}
           activeOpacity={0.85}
         >
@@ -57,19 +61,23 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    paddingHorizontal: SIDE,
+    paddingTop: Spacing.xs,
   },
   cell: {
     width: CELL_SIZE,
     height: CELL_SIZE,
     backgroundColor: Colors.borderLight,
     position: 'relative',
+    borderRadius: 14,
+    overflow: 'hidden',
   },
   image: {
     width: '100%',
     height: '100%',
   },
   textTile: { flex: 1, padding: Spacing.sm, justifyContent: 'center', backgroundColor: Colors.surface },
-  textTileText: { fontSize: FontSize.xs, color: Colors.textPrimary },
+  textTileText: { fontSize: FontSize.sm, color: Colors.textPrimary },
   multiIcon: {
     position: 'absolute',
     top: 6,

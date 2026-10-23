@@ -282,5 +282,5 @@ const styles = StyleSheet.create({
   memberInitials: { color: Colors.white, fontWeight: FontWeight.bold, fontSize: FontSize.sm },
   memberInfo: { flex: 1 },
   memberName: { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: Colors.textPrimary },
-  memberRole: { fontSize: FontSize.xs, color: Colors.accent, fontWeight: FontWeight.semibold, marginTop: 2 },
+  memberRole: { fontSize: FontSize.xs, color: Colors.primaryDark, fontWeight: FontWeight.semibold, marginTop: 2 },
 });

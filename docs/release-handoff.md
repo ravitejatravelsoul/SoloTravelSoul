@@ -1123,8 +1123,52 @@ I = implemented. E = inspected on the rendered emulator build (Android 15, gestu
 - iOS gets the same styling and splash configuration and both exports build, but nothing was run on an iPhone.
 - Offline cold start: the profile cannot load, so Home says "Hi, traveler" and Profile offers "Try again" until the connection is back (the sign-in itself persists).
 - One online message sent in the first seconds after toggling airplane mode on the emulator never reached the server (the app was restarted before Firestore recovered); a later offline-then-online send delivered normally. The send code was not changed in this phase; worth a look on the phone.
-- The launcher icon still uses the old blue adaptive-icon background colour in `app.json`; the launcher artwork was not part of this brief.
-- Group screens, report sheets, day screen, trip journal, accept-terms, populated match cards and the second-level profile lists were restyled through shared components but not individually inspected after the change.
+- ~~The launcher icon still uses the old blue adaptive-icon background colour~~ Fixed in §13.3.
+- ~~Group screens, report sheets, day screen, trip journal, accept-terms, populated match cards and the second-level profile lists were not individually inspected~~ All opened with populated data in §13.1.
 - Demo content is staging-only; no sample traveler ships as a real user.
 
 Screenshots (420 px wide, fictional staging data): `docs/screenshots/2026-10-redesign/before/` (the previous build, same fixtures) and `.../after/`: onboarding, login, home, trips, trips-with-trip, explore, discover-trips, trip-detail-public, trip-detail-private, itinerary, chats, community, profile, preferences.
+
+## 13. Redesign completion pass (2026-10-23): coverage, message anomaly, launcher icon
+
+Base was `f23e3b8` (§12). Same design system; no new redesign. No production operation, deployment, EAS build or merge.
+
+**Tested source:** the commit that carries this section. **QA package:** local Gradle debug build `com.solotravelsoul.app.staging.qa`, staging only, APK SHA-256 `26694e3da5e7770ece878a94aa619d3a0157efe4488a092a8b0f5eb82f5ff936`. The installed preview app was never touched.
+
+### 13.1 Screen coverage with populated data
+
+Every row of the §12.2 checklist that was "token" was opened on the emulator with disposable staging fixtures (organizer with a public Lisbon trip, three itinerary days with places and a journal entry, a community group, a chat group with messages and an invitation, a DM, two travelers who share discovery with a Lisbon trip, a pending trip request and a pending group request, follows, a photo post with comments and a reply, a text post, a long-title journal, saved places, activity feed items, a moderator and a report, an account that never accepted the Terms). **Verified on the rendered screen now:** group detail, group info, group chat, chats list and invitation card, day itinerary (places and entry), journal entry sheet, add-place sheet (custom and browse), trip journal, trip requests, my requests, join requests (sent), followers, following, other travelers' profiles, post detail, comments sheet (with a reply), block/report menu and all three report steps, saved posts, saved places, place detail, add-to-trip sheet, export preview, activity feed, nearby travelers and companion matching cards (with reasons and a difference), public trip as organizer and as viewer (shared-answer comparison), group join sheet, new message with a result, new group, create group, edit trip, edit profile, blocked users, moderation queue (read only, as a moderator), Terms gate and its accept path, Terms and Privacy pages. Also at 2.0x text (Home, trips, itinerary, requests, group, companions, chats, travelers, public trip, profile edit, privacy), in both navigation modes (gesture and three-button) and with reduced motion on.
+
+Screens still not individually inspected after the redesign: none, except the sign-up/sign-in/reset screens' keyboard-open states (checked for sign-in and the composers only) and the empty states of lists that the fixtures filled.
+
+**Fixes made because the populated screens showed problems**
+
+- **Trip requests screen never loaded** (spinner forever): its query asked for the trip's requests only, and the Firestore rules accept a list query only if it proves the caller is the organizer. The query now carries the organizer's uid as well (equality filters only, no new index, no rules change), and a failure shows "Could not load requests" with "Try again" instead of a spinner. Regression test added.
+- Companion matching card: the name was squeezed to a few letters per line at large text; the match badge now sits under the name.
+- Trip detail: the place count showed "—" and the export preview said "No itinerary planned yet" until the itinerary had been opened; export could also show another trip's days left in memory. The trip's itinerary now loads with the screen and the export only ever receives this trip's days.
+- Saved places: the filter chips stretched into tall pills; fixed (one line high, 44 dp).
+- Saved posts / profile photo grid: flush, unrounded tiles; now padded, rounded, spaced, labelled.
+- Status-bar collisions: the journal entry sheet and place detail sheet drew under the clock; public trip detail let text run under it after the hero scrolled away (a solid strip appears). Add-to-trip sheet had a stray empty circle in its header.
+- Group detail now matches trip detail (gradient hero, join action under it, readable cards, sentence-case headings); group chat header contrast; light-teal buttons with white text replaced by the dark teal (group join sheet, requests); follow button no longer clips "Following"; request cards, moderation queue, join-request tabs restyled (44 dp controls, 14 sp+ text).
+
+### 13.2 The missing-message anomaly: conclusion
+
+**Reproduced and explained; one real defect, two contributing ones; fixed.** What happened on the emulator: a message sent online while the connection was being toggled, and then the app was stopped, never reached the server and had no trace afterwards. Code cause: the online path attempted the send first and queued it only if the attempt *failed*. A send still in flight when the app was closed (or whose transaction never answered while the network layer recovered) existed only in memory: it was neither delivered nor queued, so it **was lost** (pending bubble in memory only). Second cause: a queued send that never answered blocked the whole drain, and with it every later sync (single-flight), so a queued message stayed pending until the app was relaunched (observed: 60+ s, delivered on relaunch). Third: a reopened conversation did not show queued sends, so they looked lost.
+
+Fix (`utils/chatQueue.ts`, both chat hooks, sync engine): the message is written to the on-device queue **before** anything is sent and removed only once the server has it (`sendChatOp`); every attempt is bounded to 20 s and a timeout counts as "not delivered yet", never as lost; queued sends are retried every 30 s while connected as well as on reconnect and foreground; queued sends are shown as pending when a chat is opened; the live send and the drain never handle the same message at once and delivery is idempotent per client id, so nothing is duplicated; a send that cannot be saved or delivered at all is handed back to the composer with a message; a rules refusal keeps the existing behaviour (dropped, text back once, never delivered later). Behavioural regressions added: 17 checks in `tests/release/chatQueue.cjs` (in flight when the app is closed, relaunch delivers once; a send that never answers stops blocking, stays queued, delivers once; late success plus retry cannot duplicate; queued sends visible on reopen; unsaveable send handed back; rapid disconnect/reconnect with a send in flight; permission-denied unchanged; retry timer). The first of them failed on the old code and passes now.
+
+Real emulator reproduction after the fix: send then two disconnect/reconnect cycles within about six seconds: delivered once, one bubble; send, drop the connection and kill the app in the same instant, relaunch: delivered exactly once and shown once; send offline, reconnect without restarting: delivered 12 s after reconnecting, once. Not reproduced on the phone (see 13.4).
+
+### 13.3 Launcher icon
+
+`app.json`: Android adaptive-icon background changed from the old blue `#1270C2` to the ivory `#FFF8EE` (the logo, the foreground file, `com.solotravelsoul.app` and signing are untouched; the notification accent colour moved from the old blue to the brand teal). Verified on the emulator launcher (circular mask): the logo sits on ivory with no blue; splash hand-off re-checked in the same build (native splash, overlay, first screen share the ivory, no grey frame). Test added for the colour and for the unchanged identifiers.
+
+### 13.4 Phone (SM-S711U): BLOCKED
+
+The phone was not attached to the computer at any point in this pass (no USB device visible to Windows or adb after restarting adb; checked at the start, mid-pass and at the end). **No phone evidence exists for this pass and none is claimed.** Not substituted: launch, populated primary screens, scrolling, navigation, keyboard, both navigation modes, normal and 2.0x text, reduced motion, network-transition message cases, screenshots and short motion recordings on the phone. The same steps were run on the emulator (labelled as such above); the message cases in particular depend on the phone's own network stack and still need the phone. To finish: attach the phone, install the QA APK from a local Gradle build of this commit, repeat 13.2 (send, flap Wi-Fi, kill the app, relaunch) and the §12.3 list.
+
+### 13.5 Results
+
+`npm run test:release` all green (app 25, chat queue 30, network 12, queues, account deletion 77, media 15, edge 6, compatibility 24, safety 26, staging 6+5); `tsc` clean; lint 0 errors; Android and iOS `expo export` succeed. Harnesses that load the chat queue gained timer globals (the queue now uses a timeout); the network harness's in-flight test passes unchanged in meaning (one delivery, nothing left queued). Backend suites (rules, Worker) were not re-run: no backend code changed.
+
+Screenshots: `docs/screenshots/2026-10-redesign/after/populated/` (fictional staging data, 420 px wide).

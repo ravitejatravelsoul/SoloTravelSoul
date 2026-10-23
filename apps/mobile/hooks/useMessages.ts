@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   subscribeToDirectMessages,
-  sendDirectMessage as fbSendDM,
   markDirectChatRead,
 } from '@solotravelsoul/firebase';
-import { enqueueChatOp, isPermanentRejection, onChatOpsRejected } from '@/utils/chatQueue';
+import { sendChatOp, getQueuedChatOps, onChatOpsRejected } from '@/utils/chatQueue';
 import { nextRestore, takeUndelivered, type DraftRestore } from '@/utils/draftRestore';
 import { useAuthStore } from '@/stores/authStore';
 import { useNetworkState } from '@/hooks/useNetworkState';
@@ -59,6 +58,17 @@ export function useMessages(chatId: string, otherUids: string[]) {
     setPending([]);
     if (!chatId || !uid) return;
 
+    // Sends saved on the device but not delivered yet are shown as pending, so they never look lost.
+    let live = true;
+    getQueuedChatOps(uid, chatId).then((queued) => {
+      if (!live || useAuthStore.getState().user?.uid !== uid) return;
+      setPending((prev) => {
+        const have = new Set(prev.map((m) => m.clientId));
+        const add = queued.filter((q) => q.op.type === 'dm.send' && !have.has(q.op.clientId)).map((q) => ({ id: q.op.clientId, senderId: uid, text: q.op.text, sentAt: new Date(q.createdAt), clientId: q.op.clientId, status: 'pending' as const }));
+        return add.length ? [...prev, ...add] : prev;
+      });
+    }).catch(() => {});
+
     markDirectChatRead(chatId, uid).catch(() => {});
 
     const unsub = subscribeToDirectMessages(chatId, (msgs) => {
@@ -70,6 +80,7 @@ export function useMessages(chatId: string, otherUids: string[]) {
     });
 
     return () => {
+      live = false;
       unsub();
       setPending([]);
     };
@@ -77,7 +88,8 @@ export function useMessages(chatId: string, otherUids: string[]) {
 
   // Merged display list: confirmed + remaining pending, sorted by sentAt
   const messages = useMemo<DirectMessage[]>(() => {
-    return [...confirmed, ...pending].sort((a, b) => a.sentAt.getTime() - b.sentAt.getTime());
+    const confirmedIds = new Set(confirmed.map((m) => m.clientId));
+    return [...confirmed, ...pending.filter((m) => !confirmedIds.has(m.clientId))].sort((a, b) => a.sentAt.getTime() - b.sentAt.getTime());
   }, [confirmed, pending]);
 
   const sendMessage = useCallback(
@@ -96,40 +108,31 @@ export function useMessages(chatId: string, otherUids: string[]) {
 
       setPending((prev) => [...prev, optimistic]);
 
-      if (!isConnected) {
-        await enqueueChatOp(uid, {
+      // The message is saved on the device before anything is sent (see sendChatOp), so it cannot vanish if the
+      // connection drops mid-send or the app is closed; it stays visible as pending until the server has it.
+      const result = await sendChatOp(uid, {
           type: 'dm.send',
           chatId,
           senderId: uid,
           text: text.trim(),
           clientId,
           otherUids,
-        });
-        notifyEnqueued();
+        }, isConnected);
+      if (result === 'rejected') {
+        // Refused by the rules (e.g. suspended account): retrying cannot succeed.
+        setPending((prev) => prev.filter((m) => m.clientId !== clientId));
+        setRestored(nextRestore(text.trim()));
+        useUIStore.getState().addToast('Message not sent. You cannot send to this chat right now (your account or the conversation is restricted). Your text is still in the message box.', 'error');
         return;
       }
-
-      try {
-        await fbSendDM(chatId, uid, text.trim(), clientId, otherUids);
-      } catch (e) {
-        // Refused by the rules (e.g. suspended account): retrying cannot succeed.
-        if (isPermanentRejection(e)) {
-          setPending((prev) => prev.filter((m) => m.clientId !== clientId));
-          setRestored(nextRestore(text.trim()));
-          useUIStore.getState().addToast('Message not sent. You cannot send to this chat right now (your account or the conversation is restricted). Your text is still in the message box.', 'error');
-          return;
-        }
-        // Snapshot didn't arrive in time or send failed — queue for retry
-        await enqueueChatOp(uid, {
-          type: 'dm.send',
-          chatId,
-          senderId: uid,
-          text: text.trim(),
-          clientId,
-          otherUids,
-        });
-        notifyEnqueued();
+      if (result === 'failed') {
+        // Could be neither saved nor delivered: the text goes back to the message box instead of disappearing.
+        setPending((prev) => prev.filter((m) => m.clientId !== clientId));
+        setRestored(nextRestore(text.trim()));
+        useUIStore.getState().addToast('Message not sent. Check your connection and try again. Your text is still in the message box.', 'error');
+        return;
       }
+      notifyEnqueued();
     },
     [uid, chatId, isConnected, otherUids, notifyEnqueued],
   );

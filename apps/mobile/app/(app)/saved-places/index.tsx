@@ -26,8 +26,7 @@ import {
   Radius,
   FontSize,
   FontWeight,
-  Shadow,
-} from '@/constants/theme';
+  Shadow, Fonts } from '@/constants/theme';
 import type { SavedPlace, PlaceEntry, PlaceCategory } from '@solotravelsoul/shared';
 import { ToastContainer } from '@/components/ui/Toast';
 
@@ -212,6 +211,7 @@ export default function SavedPlacesScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          style={styles.chipScroll}
           contentContainerStyle={styles.chipRow}
         >
           {categories.map((cat) => {
@@ -406,6 +406,8 @@ function PlaceDetailModal({
           end={{ x: 1, y: 1 }}
           style={styles.detailHero}
         >
+          {/* The sheet is edge to edge on Android, so the native SafeAreaView keeps the title clear of the status bar. */}
+          <SafeAreaView edges={['top']} style={styles.detailHeroInner}>
           <View style={styles.detailHeroDecCircle} />
           <Text style={styles.detailHeroEmoji}>{emoji}</Text>
           <Text style={styles.detailHeroName} numberOfLines={2}>{place.name}</Text>
@@ -415,9 +417,12 @@ function PlaceDetailModal({
               <Text style={styles.detailLocationText}>{location}</Text>
             </View>
           ) : null}
-          <TouchableOpacity style={styles.detailCloseBtn} onPress={onClose}>
-            <Ionicons name="close" size={16} color={Colors.white} />
-          </TouchableOpacity>
+          </SafeAreaView>
+          <SafeAreaView edges={['top']} style={styles.detailCloseWrap} pointerEvents="box-none">
+            <TouchableOpacity style={styles.detailCloseBtn} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" hitSlop={10}>
+              <Ionicons name="close" size={18} color={Colors.white} />
+            </TouchableOpacity>
+          </SafeAreaView>
         </LinearGradient>
 
         <ScrollView
@@ -438,7 +443,7 @@ function PlaceDetailModal({
           {/* Description */}
           {place.description ? (
             <View style={styles.detailSection}>
-              <Text style={styles.detailSectionLabel}>ABOUT</Text>
+              <Text style={styles.detailSectionLabel}>About</Text>
               <Text style={styles.detailDescription}>{place.description}</Text>
             </View>
           ) : null}
@@ -446,7 +451,7 @@ function PlaceDetailModal({
           {/* Notes */}
           {place.notes ? (
             <View style={styles.detailSection}>
-              <Text style={styles.detailSectionLabel}>NOTES</Text>
+              <Text style={styles.detailSectionLabel}>Notes</Text>
               <Text style={styles.detailDescription}>{place.notes}</Text>
             </View>
           ) : null}
@@ -540,10 +545,13 @@ const styles = StyleSheet.create({
   },
 
   // ── Category chips ────────────────────────────────────────────────
+  // A horizontal scroller in a column must not grow to fill the screen: its chips stay one line tall.
+  chipScroll: { flexGrow: 0, flexShrink: 0 },
   chipRow: {
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.md,
     gap: Spacing.sm,
+    alignItems: 'center',
   },
   filterChip: {
     flexDirection: 'row',
@@ -551,6 +559,7 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
+    minHeight: 44,
     borderRadius: Radius.full,
     backgroundColor: Colors.surface,
     borderWidth: 1,
@@ -558,8 +567,8 @@ const styles = StyleSheet.create({
     ...Shadow.sm,
   },
   filterChipActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: Colors.primaryDark,
+    borderColor: Colors.primaryDark,
   },
   filterChipEmoji: { fontSize: 13 },
   filterChipText: {
@@ -697,14 +706,13 @@ const styles = StyleSheet.create({
     top: -60,
     right: -40,
   },
+  detailHeroInner: { gap: Spacing.xs },
+  detailCloseWrap: { position: 'absolute', top: 0, left: 0, right: 0, alignItems: 'flex-end', paddingRight: Spacing.md, paddingTop: Spacing.md },
   detailCloseBtn: {
-    position: 'absolute',
-    top: Spacing.md,
-    right: Spacing.md,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(0,0,0,0.2)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.25)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -754,10 +762,9 @@ const styles = StyleSheet.create({
 
   detailSection: { gap: Spacing.xs },
   detailSectionLabel: {
-    fontSize: 11,
-    fontWeight: FontWeight.bold,
-    color: Colors.textSecondary,
-    letterSpacing: 0.7,
+    fontFamily: Fonts.display,
+    fontSize: FontSize.lg,
+    color: Colors.textPrimary,
   },
   detailDescription: {
     fontSize: FontSize.md,

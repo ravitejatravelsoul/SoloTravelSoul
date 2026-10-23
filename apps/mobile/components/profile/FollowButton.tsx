@@ -42,7 +42,7 @@ export function FollowButton({ following, loading, toggling, onToggle, size = 'm
           style={[
             styles.label,
             isSmall && styles.labelSm,
-            { color: following ? Colors.primary : Colors.white },
+            { color: following ? Colors.primaryDark : Colors.white },
           ]}
         >
           {following ? 'Following' : 'Follow'}
@@ -61,39 +61,40 @@ const styles = StyleSheet.create({
   md: {
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.sm,
-    minWidth: 100,
-    height: 38,
+    minWidth: 112,
+    minHeight: 44,
   },
   sm: {
     paddingHorizontal: Spacing.lg,
     paddingVertical: 6,
-    minWidth: 80,
-    height: 30,
+    minWidth: 100,
+    minHeight: 40,
   },
   follow: {
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.primaryDark,
   },
   following: {
     backgroundColor: 'transparent',
     borderWidth: 1.5,
-    borderColor: Colors.primary,
+    borderColor: Colors.primaryDark,
   },
   disabled: {
     opacity: 0.6,
   },
   label: {
     fontSize: FontSize.sm,
-    fontWeight: FontWeight.semibold,
+    fontWeight: FontWeight.bold,
+    flexShrink: 0,
   },
   labelSm: {
-    fontSize: FontSize.xs,
+    fontSize: FontSize.sm,
   },
   spinner: {
-    width: 100,
-    height: 38,
+    width: 112,
+    height: 44,
   },
   spinnerSm: {
-    width: 80,
-    height: 30,
+    width: 100,
+    height: 40,
   },
 });

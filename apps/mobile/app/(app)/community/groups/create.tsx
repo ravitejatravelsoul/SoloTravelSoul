@@ -97,7 +97,7 @@ export default function CreateGroupScreen() {
           <Input label="Capacity *" value={capacity} onChangeText={setCapacity} keyboardType="numeric" placeholder="10" error={errors.capacity} />
         </View>
 
-        <Text style={styles.sectionLabel}>DATES (optional)</Text>
+        <Text style={styles.sectionLabel}>Dates (optional)</Text>
         <View style={styles.card}>
           <DatePicker label="Start date" value={startDate ?? new Date()} onChange={setStartDate} />
           <DatePicker label="End date" value={endDate ?? new Date()} onChange={setEndDate} minimumDate={startDate ?? undefined} />

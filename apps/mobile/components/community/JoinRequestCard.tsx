@@ -4,13 +4,13 @@ import { Text, Avatar } from '@/components/ui';
 import { RequesterAnswers } from './RequesterAnswers';
 import type { TripJoinRequest, RequestStatus } from '@solotravelsoul/shared';
 import type { TripAvailability } from '@solotravelsoul/firebase';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts, Shadow } from '@/constants/theme';
 
 const STATUS_CONFIG: Record<RequestStatus, { label: string; color: string; icon: string }> = {
   pending: { label: 'Pending', color: Colors.warning, icon: 'time-outline' },
   approved: { label: 'Approved', color: Colors.success, icon: 'checkmark-circle' },
   rejected: { label: 'Rejected', color: Colors.error, icon: 'close-circle' },
-  cancelled: { label: 'Cancelled', color: Colors.placeholder, icon: 'ban-outline' },
+  cancelled: { label: 'Cancelled', color: Colors.textSecondary, icon: 'ban-outline' },
 };
 
 function timeAgo(date: Date): string {
@@ -119,15 +119,16 @@ export function ReceivedRequestCard({ request, availability, onApprove, onReject
 const styles = StyleSheet.create({
   card: {
     backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.borderLight,
     padding: Spacing.lg,
     gap: Spacing.sm,
+    ...Shadow.sm,
   },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
   headerLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-  tripTitle: { flex: 1, fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  tripTitle: { flex: 1, fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -139,26 +140,27 @@ const styles = StyleSheet.create({
   statusLabel: { fontSize: FontSize.xs, fontWeight: FontWeight.semibold },
   destination: { fontSize: FontSize.sm, color: Colors.textSecondary },
   unavailable: { fontSize: FontSize.sm, color: Colors.textSecondary, backgroundColor: Colors.background, padding: Spacing.sm, borderRadius: Radius.sm },
-  timeAgo: { fontSize: FontSize.xs, color: Colors.placeholder },
+  timeAgo: { fontSize: FontSize.sm, color: Colors.textSecondary },
   actionBtn: {
-    paddingVertical: Spacing.sm,
+    minHeight: 46,
     paddingHorizontal: Spacing.md,
-    borderRadius: Radius.md,
-    borderWidth: 1,
+    borderRadius: Radius.full,
+    borderWidth: 1.5,
     borderColor: Colors.border,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  actionBtnLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.textSecondary },
-  actionBtnPrimary: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  actionBtnLabel: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textSecondary },
+  actionBtnPrimary: { backgroundColor: Colors.primaryDark, borderColor: Colors.primaryDark },
   actionBtnPrimaryLabel: { color: Colors.white },
   requesterRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md },
   requesterInfo: { flex: 1 },
-  requesterName: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  requesterName: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   requesterTrip: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 1 },
-  message: { fontSize: FontSize.sm, color: Colors.textSecondary, lineHeight: 20, fontStyle: 'italic' },
+  message: { fontSize: FontSize.md, color: Colors.textPrimary, lineHeight: 22, fontStyle: 'italic' },
   actionsRow: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.sm },
-  rejectBtn: { flex: 1, borderColor: Colors.error + '40' },
-  rejectLabel: { color: Colors.error },
-  approveBtn: { flex: 1, backgroundColor: Colors.success, borderColor: Colors.success },
+  rejectBtn: { flex: 1, borderColor: Colors.coral },
+  rejectLabel: { color: '#B3261E' },
+  approveBtn: { flex: 1, backgroundColor: Colors.primaryDark, borderColor: Colors.primaryDark },
   approveLabel: { color: Colors.white },
 });

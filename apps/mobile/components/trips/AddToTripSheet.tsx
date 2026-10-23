@@ -104,11 +104,11 @@ export function AddToTripSheet({ visible, place, onClose }: Props) {
             <View style={styles.dragHandle} />
             <View style={styles.headerRow}>
               {selectedTrip ? (
-                <TouchableOpacity style={styles.navBtn} onPress={() => setSelectedTrip(null)}>
+                <TouchableOpacity style={styles.navBtn} onPress={() => setSelectedTrip(null)} accessibilityRole="button" accessibilityLabel="Back to trips">
                   <Ionicons name="arrow-back" size={18} color={Colors.textPrimary} />
                 </TouchableOpacity>
               ) : (
-                <View style={styles.navBtn} />
+                <View style={styles.navSpacer} />
               )}
               <View style={styles.headerCenter}>
                 <Text style={styles.headerTitle}>
@@ -120,7 +120,7 @@ export function AddToTripSheet({ visible, place, onClose }: Props) {
                   </Text>
                 )}
               </View>
-              <TouchableOpacity style={styles.navBtn} onPress={handleClose}>
+              <TouchableOpacity style={styles.navBtn} onPress={handleClose} accessibilityRole="button" accessibilityLabel="Close">
                 <Ionicons name="close" size={18} color={Colors.textSecondary} />
               </TouchableOpacity>
             </View>
@@ -258,10 +258,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.sm,
   },
+  navSpacer: { width: 44, height: 44 },
   navBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: Colors.card,
     alignItems: 'center',
     justifyContent: 'center',
