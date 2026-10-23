@@ -245,6 +245,13 @@ test('invitations honour only a verified e-mail: rules, deletion cleanup and the
   assert.doesNotMatch(read('apps/mobile/components/chat/VerifyEmailBanner.tsx') + hook, /was delivered|has been sent to your inbox/i, 'a successful request is never described as delivery');
 });
 
+test('the verification banner buttons wrap by themselves (a live text-size change leaves the measured scale stale)', () => {
+  const banner = read('apps/mobile/components/chat/VerifyEmailBanner.tsx');
+  assert.match(banner, /row: \{ flexDirection: 'row', flexWrap: 'wrap'/);
+  assert.match(banner, /btn: \{ flexGrow: 1, minWidth: 150/);
+  assert.doesNotMatch(banner, /flexBasis/, 'a flex basis becomes a HEIGHT when the buttons stack in a column (giant buttons seen on the phone)');
+});
+
 test('moderators can hide, remove and restore public trips and community groups, and lift suspensions, from the moderation screen', () => {
   const screen = read('apps/mobile/app/(app)/moderation/index.tsx');
   for (const word of ['setItemModeration', 'Hide', 'Remove', 'Restore', 'subscribeModeratedItems', 'Lift suspension', 'unsuspendUser', 'subscribeSuspensions']) assert.ok(screen.includes(word), word);

@@ -52,6 +52,6 @@ Trips are private by default and can be published as **public trips** that other
 - `apps/mobile/google-services.json` and `GoogleService-Info.plist` are not in the repository and must be supplied for native production builds (see `docs/release-handoff.md`).
 - An installed preview build older than 2026-10-20 cannot create content against the new staging rules until an updated build is installed and the Terms accepted.
 
-## Device verification gaps (2026-10-20)
+## Device verification
 
-Not verified on the physical phone because its USB connection was lost after 2026-10-20: the trip summary and join form at 2.0x text, the gesture-navigation layouts, the Saved Posts text-only tile, and account deletion in the UI. All four were verified on the emulator (section 12 of the QA report) and remain BLOCKED on the phone.
+The four checks that were blocked on 2026-10-20 (2.0x trip summary and join form, gesture-navigation layouts with the keyboard, account deletion in the UI, Saved Posts with a text-only post) were completed on the SM-S711U on 2026-10-23; see section 14 of the QA report. One cosmetic remains at 2.0x text: the chat header avatar shows a single initial.

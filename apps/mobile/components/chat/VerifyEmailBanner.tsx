@@ -37,9 +37,10 @@ const styles = StyleSheet.create({
   card: { backgroundColor: Colors.surface, marginHorizontal: Spacing.lg, marginTop: Spacing.sm, padding: Spacing.md, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.border, gap: Spacing.sm },
   title: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
   body: { fontSize: FontSize.sm, color: Colors.textSecondary },
-  row: { flexDirection: 'row', gap: Spacing.sm },
+  // Wraps whenever the two buttons do not fit side by side, whatever the text scale the screen last measured (a live text-size change leaves the window scale stale).
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   rowStacked: { flexDirection: 'column' },
-  btn: { flexGrow: 1, minHeight: 44, borderRadius: Radius.full, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.sm },
+  btn: { flexGrow: 1, minWidth: 150, minHeight: 44, borderRadius: Radius.full, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.sm },
   secondary: { borderWidth: 1, borderColor: Colors.primary },
   primary: { backgroundColor: Colors.primary },
   secondaryText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.primary },
