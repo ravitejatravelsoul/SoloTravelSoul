@@ -37,6 +37,7 @@ export default function GroupChatScreen() {
   const profile = useAuthStore((s) => s.profile);
   const { isConnected } = useNetworkState();
   const flatRef = useRef<FlatList>(null);
+  const keyboardUp = useRef(false);
 
   const groups = useChatStore((s) => s.groups);
   const group = groups.find((g) => g.id === groupId);
@@ -63,10 +64,18 @@ export default function GroupChatScreen() {
 
   // Keep the newest message in view when the keyboard opens.
   useEffect(() => {
-    const sub = Keyboard.addListener('keyboardDidShow', () => {
-      setTimeout(() => flatRef.current?.scrollToEnd({ animated: false }), 60);
+    const show = Keyboard.addListener('keyboardDidShow', () => {
+      keyboardUp.current = true;
+      // The keyboard animation and the list's own re-measuring finish at different times: scroll again after each.
+      for (const ms of [60, 250, 600]) setTimeout(() => { if (keyboardUp.current) flatRef.current?.scrollToEnd({ animated: false }); }, ms);
     });
-    return () => sub.remove();
+    const hide = Keyboard.addListener('keyboardDidHide', () => { keyboardUp.current = false; });
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+  // The list is resized after the keyboard has appeared (and again when its animation ends); keep the newest message
+  // in view for every resize while the keyboard is open instead of leaving it behind the composer.
+  const keepNewestInView = useCallback(() => {
+    if (keyboardUp.current) flatRef.current?.scrollToEnd({ animated: false });
   }, []);
 
   const renderItem = useCallback(
@@ -130,6 +139,8 @@ export default function GroupChatScreen() {
 
       <FlatList
         ref={flatRef}
+        onLayout={keepNewestInView}
+        onContentSizeChange={keepNewestInView}
         data={listItems}
         renderItem={renderItem}
         keyExtractor={keyExtractor}

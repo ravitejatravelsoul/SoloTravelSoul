@@ -107,6 +107,9 @@ export default function AppLayout() {
   return (
     <View style={styles.root}>
       <Tabs
+      // Back returns to the tab (and screen) the person came from. The default goes to the first tab, so Back from a group
+      // chat (a hidden tab opened from Chats) landed on Home instead of the Chats list.
+      backBehavior="history"
       screenListeners={{ tabPress: () => haptics.selection() }}
       screenOptions={{
         headerShown: false,

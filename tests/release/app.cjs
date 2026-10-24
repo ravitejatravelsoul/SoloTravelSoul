@@ -817,6 +817,36 @@ test('trip requests screen: the organizer query is constrained to the organizer 
   assert.match(screen, /Try again/);
 });
 
+test('navigation: Back from a group chat (a hidden tab opened from Chats) returns to Chats, not to Home (SM-S711U, 2026-10-24)', async () => {
+  // The app's tab navigator is configured with backBehavior="history"; the real TabRouter shows what that changes.
+  const { pathToFileURL } = require('url');
+  const { TabRouter } = await import(pathToFileURL(path.join(root, 'node_modules/@react-navigation/routers/lib/module/index.js')).href);
+  const options = { routeNames: ['home', 'chats', 'groups'], routeParamList: {}, routeGetIdList: {} };
+  const visit = (backBehavior) => {
+    const r = TabRouter({ backBehavior });
+    let st = r.getInitialState(options);
+    for (const name of ['chats', 'groups']) st = r.getStateForAction(st, { type: 'NAVIGATE', payload: { name } }, options);
+    const back = r.getStateForAction(st, { type: 'GO_BACK' }, options);
+    return back && back.routes[back.index].name;
+  };
+  assert.equal(visit('firstRoute'), 'home', 'the default sent Back from the group chat to Home (the defect)');
+  assert.equal(visit('history'), 'chats', 'history returns to the list the chat was opened from');
+  const layout = fs.readFileSync(path.join(root, 'apps/mobile/app/(app)/_layout.tsx'), 'utf8');
+  assert.match(layout, /<Tabs\s+(?:\/\/[^\n]*\s+)*backBehavior="history"/, 'the app opts in');
+});
+
+test('chats: the newest message stays above the composer while the keyboard is open (SM-S711U, 2026-10-24: hidden behind it in a long conversation)', () => {
+  for (const rel of ['apps/mobile/app/(app)/chats/[chatId].tsx', 'apps/mobile/app/(app)/groups/[groupId]/chat.tsx']) {
+    const src = fs.readFileSync(path.join(root, rel), 'utf8');
+    // The list is resized after keyboardDidShow, so a single scroll then is too early: every resize while the keyboard is up scrolls to the end.
+    assert.match(src, /keyboardDidShow[\s\S]{0,200}keyboardUp\.current = true/, rel);
+    assert.match(src, /keyboardDidHide[\s\S]{0,120}keyboardUp\.current = false/, rel);
+    assert.match(src, /if \(keyboardUp\.current\) flatRef\.current\?\.scrollToEnd\(\{ animated: false \}\)/, rel);
+    assert.match(src, /<FlatList[\s\S]{0,200}onLayout=\{keepNewestInView\}[\s\S]{0,80}onContentSizeChange=\{keepNewestInView\}/, rel);
+    assert.match(src, /for \(const ms of \[60, 250, 600\]\)/, rel);
+  }
+});
+
 (async () => {
   let passed = 0;
   for (const t of tests) {

@@ -1173,7 +1173,7 @@ The phone was not attached to the computer at any point in this pass (no USB dev
 
 Screenshots: `docs/screenshots/2026-10-redesign/after/populated/` (fictional staging data, 420 px wide).
 
-## 14. Final device verification attempt (2026-10-23): still BLOCKED
+## 14. Final device verification (2026-10-23 attempts BLOCKED; phone run 2026-10-24 in 14.1)
 
 Base `4786342`. The requested run (launch, populated screens, both navigation modes, 2.0x text with live changes, reduced motion, sign-up and reset with the keyboard open, and the direct and group message cases: rapid disconnect/reconnect, kill with a send in flight, offline send then reconnect, reopening a chat with pending sends, refused sends never delivering later, one server copy, unread counts) needs the SM-S711U (R5CWB2VWTWB). **It was not connected**: `adb devices -l` listed nothing, Windows showed no Samsung/ADB/MTP USB device, and a restart of the adb server changed nothing; rechecked after the build below. As instructed, no fixtures were created, nothing was installed on any device, and no code was changed.
 
@@ -1185,3 +1185,43 @@ What was done instead, so the run can start the moment the phone is attached:
 Status of every item in the request: **BLOCKED** (no phone PASS is claimed for any of them). The emulator evidence in §§12-13 stands as emulator evidence only. To finish: attach the phone with USB debugging authorised, then run the §13.4 steps for both direct and group chats, plus the §12.3 list.
 
 **Repeat attempt (same day, request reissued):** HEAD was `29470a7` (documentation only on top of `4786342`, so the tested source is unchanged). The phone was again not connected (`adb devices -l` empty after an adb server restart; no Samsung/ADB/MTP device on USB). The kept QA APK (`qa-4786342.apk`, SHA-256 `26694e3da5e7770ece878a94aa619d3a0157efe4488a092a8b0f5eb82f5ff936`) matches the source, so no rebuild was needed. No fixtures were created, nothing was installed, no code changed; every item remains **BLOCKED** and no phone PASS is claimed.
+
+### 14.1 Phone run on the SM-S711U (2026-10-24): results
+
+The phone (R5CWB2VWTWB, Android 16, 1080x2340 @450 dpi) was connected as `device`. The recorded APK hash was verified first (`26694e3d...ff936`), then installed as the separate QA package `com.solotravelsoul.app.staging.qa` (staging backend). The preview app (`com.solotravelsoul.app.staging`), its session, the demo feed and every conversation were not touched. Disposable staging fixtures (organizer, poster, moderator, two travelers, a no-Terms account) were created in a fresh state file; an earlier state file's fixtures were already deleted, and four accounts a mis-pointed first start created in it were deleted and verified straight away. Input was guarded by the foreground package (`q.sh`). Server copies and unread counters were read with the app's own SDK (`msgs` phase); **the PASS statements below are the phone's own screens plus that server read, not either alone.**
+
+Builds tested (all local Gradle, no EAS): **A** `26694e3d...` = source `4786342`; **B** `c44dd1e7...` = A + tab `backBehavior="history"`; **C** `d6229671...` = B + chat scroll fix = this commit's source. Results are from A unless marked.
+
+| Check | Result |
+|---|---|
+| Cold launch (first run and signed in), splash hand-off | **PASS** (A, C). On-device recording and 8-10 frames per run: app-open window, ivory splash with the logo, overlay lifting and fading, first screen. No blank or grey frame. Recording: `docs/screenshots/2026-10-redesign/phone/launch-cold-signed-in.mp4` |
+| Warm launch | **PASS** (A; 63 ms to resumed) |
+| Offline cold launch | **PASS** (A): splash, then Home with the offline banner and "Hi, traveler" until the profile can load |
+| Launcher icon | **PASS** (A): app drawer shows the QA icon with the ivory adaptive background, no blue edge, next to the preview app's icon |
+| Populated Home, Discover, trip details, companion matching, public trip, group detail, trip requests | **PASS functionally** (A, C); **design approval is the owner's and is pending** (see 14.2) |
+| Scrolling | **PASS** (A): feed scroll, 1527 frames, 1.8% janky, p50 7 ms, p99 17 ms |
+| Navigation, expanding Home menu, tab sweep | **PASS** (A, also with reduced motion) |
+| Keyboard and safe areas, three-button | **PASS** (A, C): direct and group composers sit above the keyboard; sign-up and reset forms: fields scroll above the keyboard, Create Account and Send reset link stay reachable, nothing under the navigation buttons |
+| Keyboard and safe areas, gesture | **PASS** (A, C): same, tab bar clear of the gesture pill |
+| Normal and 2.0x text, live change | **PASS** (A): changed while the app ran (Home, trip details, public trip, companions, chats, a conversation): wrapping, no clipping; reverted live with no restart |
+| Reduced motion | **PASS** (A): overlay leaves at once, menu and tabs work, no animation needed to reach any screen |
+| Sign-up and password-reset forms, keyboard open | **PASS** (A both modes; not submitted) |
+| Direct and group: rapid disconnect/reconnect with a send in flight | **PASS** (A, C): delivered once (8-9 s), one bubble |
+| Kill the app with a send in flight, reopen | **PASS** (A, C), both chat types: 0 copies on the server while the app was dead, exactly 1 about 7 s after reopening |
+| Offline send, then reconnect | **PASS** (A), both: pending bubble and offline banner while offline, exactly 1 copy 7-17 s after reconnecting |
+| Reopen a chat containing pending sends | **PASS** (A), both: the pending bubble is shown again, 0 server copies until reconnect, then 1 |
+| Unread counts | **PASS** (A, C): each message the phone sent raised the other participant's counter by exactly one (direct 6, group 6 after six sends each) and left the sender's at 0; incoming direct and group messages gave a Chats tab badge of 2 and "1 unread" on each row; opening each chat cleared both |
+| Refused sends never deliver later | **PASS** (A), both: suspended account, online send refused (toast "Message not sent...", text back in the composer, no bubble); offline-queued send dropped on reconnect with the text returned; after lifting the suspension, relaunching and waiting through the retry timer: **0** copies of any refused text anywhere |
+
+**Defects found on the phone and fixed (smallest change, regression added)**
+
+1. **Back from a group chat went to Home, not the Chats list** (system Back and the header arrow; direct chats were fine). Cause: the tab navigator's default back behaviour returns to the first tab, and the group chat is a hidden tab. Fix: `backBehavior="history"` on the tabs. Regression: `tests/release/app.cjs` drives the real `TabRouter` (old behaviour returns `home`, `history` returns `chats`) and asserts the app opts in. Rechecked on the phone with build B and C (system Back and header Back both return to the list).
+2. **The newest message stayed behind the composer once the keyboard opened in a long conversation** (the list is resized after `keyboardDidShow`, so the earlier single scroll came too early). Fix: scroll to the end on every list resize and content change while the keyboard is up, and again at 60/250/600 ms after it appears (direct and group). Regression: source contract in `tests/release/app.cjs`. Rechecked on the phone, both navigation modes (build C): the last bubble is visible above the composer.
+
+Not defects: one run where a test tap landed on the wrong field (the form re-laid out under the keyboard), and the companions screen briefly saying discovery is off after a suspension (a suspension removes the discovery record; fixture re-enabled it).
+
+**Tests and builds:** `npm run test:release` all green (app suite 27, chat queue 30, network 12, others unchanged); `tsc` clean; lint 0 errors; Android and iOS `expo export` succeed. Rules and Worker suites not re-run (no backend change).
+
+### 14.2 Owner design approval and cleanup status
+
+Screens for visual approval (functional PASS above is **not** design approval): `docs/screenshots/2026-10-redesign/phone/` holds Home, Discover, trip details, itinerary, public trip, companion matching (two screens), group detail and trip requests as the phone rendered them, plus the cold-launch recording. The QA app is still installed on the phone, signed in as the organizer, with its staging fixtures kept, so the same screens can be opened by hand; **nothing is removed until approved.** Phone settings are restored (text size 1.0, three-button navigation, animation scales default, airplane off, stay-awake 0). When approved, finish with: uninstall `com.solotravelsoul.app.staging.qa`; `delete-user` then `verify-deleted` for `org pst m e1 e2 u` in the `staging-phone-final2` state file, `redesign2-cleanup`, `qa-unmod <moderator uid>`, `qa-sweep` (must print "no residual documents").
