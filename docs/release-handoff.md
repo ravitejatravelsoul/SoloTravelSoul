@@ -1172,3 +1172,14 @@ The phone was not attached to the computer at any point in this pass (no USB dev
 `npm run test:release` all green (app 25, chat queue 30, network 12, queues, account deletion 77, media 15, edge 6, compatibility 24, safety 26, staging 6+5); `tsc` clean; lint 0 errors; Android and iOS `expo export` succeed. Harnesses that load the chat queue gained timer globals (the queue now uses a timeout); the network harness's in-flight test passes unchanged in meaning (one delivery, nothing left queued). Backend suites (rules, Worker) were not re-run: no backend code changed.
 
 Screenshots: `docs/screenshots/2026-10-redesign/after/populated/` (fictional staging data, 420 px wide).
+
+## 14. Final device verification attempt (2026-10-23): still BLOCKED
+
+Base `4786342`. The requested run (launch, populated screens, both navigation modes, 2.0x text with live changes, reduced motion, sign-up and reset with the keyboard open, and the direct and group message cases: rapid disconnect/reconnect, kill with a send in flight, offline send then reconnect, reopening a chat with pending sends, refused sends never delivering later, one server copy, unread counts) needs the SM-S711U (R5CWB2VWTWB). **It was not connected**: `adb devices -l` listed nothing, Windows showed no Samsung/ADB/MTP USB device, and a restart of the adb server changed nothing; rechecked after the build below. As instructed, no fixtures were created, nothing was installed on any device, and no code was changed.
+
+What was done instead, so the run can start the moment the phone is attached:
+
+- The staging QA package was rebuilt locally with Gradle from `4786342` (no EAS): `com.solotravelsoul.app.staging.qa`, APK SHA-256 `26694e3da5e7770ece878a94aa619d3a0157efe4488a092a8b0f5eb82f5ff936`, identical to the build recorded in §13 (the build is reproducible). It is kept outside the repository (`qa-4786342.apk` in the session scratch folder, ~140 MB); a fresh `rebuildqa2` run regenerates it in about four minutes.
+- Nothing about the preview app, its session, the demo feed or any conversation was touched. No staging accounts exist from this step; the §13 fixtures were already deleted and verified.
+
+Status of every item in the request: **BLOCKED** (no phone PASS is claimed for any of them). The emulator evidence in §§12-13 stands as emulator evidence only. To finish: attach the phone with USB debugging authorised, then run the §13.4 steps for both direct and group chats, plus the §12.3 list.
