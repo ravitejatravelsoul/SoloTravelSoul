@@ -1183,3 +1183,5 @@ What was done instead, so the run can start the moment the phone is attached:
 - Nothing about the preview app, its session, the demo feed or any conversation was touched. No staging accounts exist from this step; the §13 fixtures were already deleted and verified.
 
 Status of every item in the request: **BLOCKED** (no phone PASS is claimed for any of them). The emulator evidence in §§12-13 stands as emulator evidence only. To finish: attach the phone with USB debugging authorised, then run the §13.4 steps for both direct and group chats, plus the §12.3 list.
+
+**Repeat attempt (same day, request reissued):** HEAD was `29470a7` (documentation only on top of `4786342`, so the tested source is unchanged). The phone was again not connected (`adb devices -l` empty after an adb server restart; no Samsung/ADB/MTP device on USB). The kept QA APK (`qa-4786342.apk`, SHA-256 `26694e3da5e7770ece878a94aa619d3a0157efe4488a092a8b0f5eb82f5ff936`) matches the source, so no rebuild was needed. No fixtures were created, nothing was installed, no code changed; every item remains **BLOCKED** and no phone PASS is claimed.
