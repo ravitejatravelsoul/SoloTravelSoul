@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  KeyboardAvoidingView,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,6 +20,7 @@ import {
   Spacing, Fonts } from '@/constants/theme';
 import type { JournalEntry, JournalMood, PlaceEntry } from '@solotravelsoul/shared';
 import { ToastContainer } from '@/components/ui/Toast';
+import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -111,7 +111,7 @@ export function JournalEntryModal({
       onRequestClose={onClose}
     >
       <SafeAreaView edges={['top']} style={styles.flex}>
-      <KeyboardAvoidingView
+      <KeyboardAvoid
         behavior="padding"
         style={styles.flex}
       >
@@ -247,7 +247,7 @@ export function JournalEntryModal({
           </View>
 
         </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAvoid>
       </SafeAreaView>
       <ToastContainer />
     </Modal>

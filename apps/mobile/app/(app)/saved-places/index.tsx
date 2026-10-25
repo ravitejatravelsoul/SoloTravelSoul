@@ -8,7 +8,6 @@ import {
   Modal,
   ScrollView,
   Alert,
-  KeyboardAvoidingView,
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -29,6 +28,8 @@ import {
   Shadow, Fonts } from '@/constants/theme';
 import type { SavedPlace, PlaceEntry, PlaceCategory } from '@solotravelsoul/shared';
 import { ToastContainer } from '@/components/ui/Toast';
+import { ShadowTouchable } from '@/components/ui/ShadowClip';
+import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -317,7 +318,7 @@ const SavedPlaceCard = memo(function SavedPlaceCard({
   const location = [place.city, place.state].filter(Boolean).join(', ');
 
   return (
-    <TouchableOpacity
+    <ShadowTouchable
       style={styles.card}
       onPress={onPress}
       activeOpacity={0.82}
@@ -362,7 +363,7 @@ const SavedPlaceCard = memo(function SavedPlaceCard({
           Saved {formatSavedDate(place.savedAt)}
         </Text>
       </View>
-    </TouchableOpacity>
+    </ShadowTouchable>
   );
 });
 
@@ -392,7 +393,7 @@ function PlaceDetailModal({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <KeyboardAvoidingView
+      <KeyboardAvoid
         style={styles.detailSheet}
         behavior="padding"
       >
@@ -469,7 +470,7 @@ function PlaceDetailModal({
 
           {/* Action buttons */}
           <View style={styles.detailActions}>
-            <TouchableOpacity
+            <ShadowTouchable
               style={styles.detailAddBtn}
               onPress={() => onAddToTrip(place)}
               activeOpacity={0.85}
@@ -483,7 +484,7 @@ function PlaceDetailModal({
                 <Ionicons name="add-circle-outline" size={18} color={Colors.white} />
                 <Text style={styles.detailAddBtnText}>Add to Trip</Text>
               </LinearGradient>
-            </TouchableOpacity>
+            </ShadowTouchable>
 
             <TouchableOpacity
               style={styles.detailRemoveBtn}
@@ -495,7 +496,7 @@ function PlaceDetailModal({
             </TouchableOpacity>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAvoid>
       <ToastContainer />
     </Modal>
   );

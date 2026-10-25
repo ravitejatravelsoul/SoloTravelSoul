@@ -11,6 +11,7 @@ import { useJournal } from '@/hooks/useJournal';
 import { formatDayLabel, formatTime } from '@/utils/dateUtils';
 import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import type { JournalEntry, ItineraryDay } from '@solotravelsoul/shared';
+import { ShadowView } from '@/components/ui/ShadowClip';
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -208,7 +209,7 @@ const MemoryCard = memo(function MemoryCard({
   const moodColor = entry.mood ? MOOD_COLOR[entry.mood] : undefined;
 
   return (
-    <View style={styles.memoryCard}>
+    <ShadowView style={styles.memoryCard}>
       {/* Photo frame */}
       {entry.photoURL ? (
         <View style={styles.photoFrame}>
@@ -286,7 +287,7 @@ const MemoryCard = memo(function MemoryCard({
           </View>
         </View>
       </View>
-    </View>
+    </ShadowView>
   );
 });
 

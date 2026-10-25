@@ -11,6 +11,7 @@ import {
 import { useAuthStore } from '@/stores/authStore';
 import { shouldOfferPreferenceSetup } from '@solotravelsoul/shared';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
+import { ShadowView } from '@/components/ui/ShadowClip';
 
 function FeatureCard({
   icon,
@@ -94,7 +95,7 @@ export default function CommunityScreen() {
         {totalPending > 0 && (
           <>
             <Text style={styles.sectionLabel}>Action needed</Text>
-            <View style={styles.card}>
+            <ShadowView style={styles.card}>
               <FeatureCard
                 icon="notifications"
                 tint={Colors.coralSoft}
@@ -104,7 +105,7 @@ export default function CommunityScreen() {
                 onPress={() => router.push('/(app)/community/my-requests' as never)}
                 badge={totalPending}
               />
-            </View>
+            </ShadowView>
           </>
         )}
 
@@ -124,7 +125,7 @@ export default function CommunityScreen() {
         )}
 
         <Text style={styles.sectionLabel}>Manage</Text>
-        <View style={styles.card}>
+        <ShadowView style={styles.card}>
           <FeatureCard
             icon="shield-checkmark"
             title="My Requests"
@@ -132,10 +133,10 @@ export default function CommunityScreen() {
             onPress={() => router.push('/(app)/community/my-requests' as never)}
             badge={totalPending}
           />
-        </View>
+        </ShadowView>
 
         <Text style={styles.sectionLabel}>Travel groups</Text>
-        <View style={styles.card}>
+        <ShadowView style={styles.card}>
           <FeatureCard
             icon="people"
             tint="#FFF1CC"
@@ -144,10 +145,10 @@ export default function CommunityScreen() {
             subtitle="Discover and join groups traveling to your destination"
             onPress={() => router.push('/(app)/community/groups' as never)}
           />
-        </View>
+        </ShadowView>
 
         <Text style={styles.sectionLabel}>Explore</Text>
-        <View style={styles.card}>
+        <ShadowView style={styles.card}>
           <FeatureCard
             icon="map"
             tint="#E9E6FB"
@@ -156,10 +157,10 @@ export default function CommunityScreen() {
             subtitle="Browse trips and request to join as a co-traveler"
             onPress={() => router.push('/(app)/discover/trips' as never)}
           />
-        </View>
+        </ShadowView>
 
         <Text style={styles.sectionLabel}>Discover</Text>
-        <View style={styles.card}>
+        <ShadowView style={styles.card}>
           <FeatureCard
             icon="git-compare"
             title="Find Travel Companions"
@@ -182,7 +183,7 @@ export default function CommunityScreen() {
             subtitle="See what fellow travelers are up to"
             onPress={() => router.push('/(app)/community/feed' as never)}
           />
-        </View>
+        </ShadowView>
       </ScrollView>
     </SafeAreaView>
   );

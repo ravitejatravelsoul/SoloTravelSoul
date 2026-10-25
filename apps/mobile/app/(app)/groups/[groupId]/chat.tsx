@@ -6,7 +6,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  KeyboardAvoidingView,
   Keyboard,
   ListRenderItemInfo,
 } from 'react-native';
@@ -24,6 +23,7 @@ import { ChatInput } from '@/components/chat/ChatInput';
 import { Colors, FontSize, FontWeight, Radius, Spacing, Fonts } from '@/constants/theme';
 import { isSameDay } from 'date-fns';
 import type { TravelGroupMessage } from '@solotravelsoul/shared';
+import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 type ListItem =
   | { kind: 'message'; msg: TravelGroupMessage }
@@ -104,7 +104,7 @@ export default function GroupChatScreen() {
   }, []);
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoid
       style={styles.root}
       behavior="padding"
     >
@@ -153,7 +153,7 @@ export default function GroupChatScreen() {
       />
 
       <ChatInput onSend={sendMessage} restore={restored} />
-    </KeyboardAvoidingView>
+    </KeyboardAvoid>
   );
 }
 

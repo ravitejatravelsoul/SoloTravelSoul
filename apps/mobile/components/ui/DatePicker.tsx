@@ -9,6 +9,7 @@ import {
 import DateTimePicker, {
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from './Text';
 import { Colors, Radius, Spacing, FontSize, FontWeight } from '@/constants/theme';
@@ -103,7 +104,8 @@ export function DatePicker({
           onRequestClose={() => setShowIOSModal(false)}
         >
           <View style={styles.overlay}>
-            <View style={styles.sheet}>
+            {/* The native SafeAreaView keeps the wheel and the buttons clear of the iPhone home indicator. */}
+            <SafeAreaView edges={['bottom']} style={styles.sheet}>
               <View style={styles.sheetHeader}>
                 <TouchableOpacity
                   onPress={() => setShowIOSModal(false)}
@@ -131,7 +133,7 @@ export function DatePicker({
                 textColor={Colors.textPrimary}
                 accentColor={Colors.primary}
               />
-            </View>
+            </SafeAreaView>
           </View>
         </Modal>
       ) : null}
@@ -165,7 +167,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderTopLeftRadius: Radius.lg,
     borderTopRightRadius: Radius.lg,
-    paddingBottom: Spacing['2xl'],
+    paddingBottom: Spacing.lg,
   },
   sheetHeader: {
     flexDirection: 'row',
@@ -182,7 +184,7 @@ const styles = StyleSheet.create({
   },
   doneLabel: {
     fontSize: FontSize.md,
-    fontWeight: FontWeight.semibold,
-    color: Colors.primary,
+    fontWeight: FontWeight.bold,
+    color: Colors.primaryDark,
   },
 });

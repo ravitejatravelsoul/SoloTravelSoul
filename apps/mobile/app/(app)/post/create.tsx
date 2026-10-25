@@ -7,7 +7,6 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
-  KeyboardAvoidingView,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +19,7 @@ import { pickImageFromLibrary, resizeImage } from '@/utils/imageUtils';
 import { useAuthStore } from '@/stores/authStore';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import type { PostType } from '@solotravelsoul/shared';
+import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 const POST_TYPES: Array<{ type: PostType; label: string; icon: string }> = [
   { type: 'photo', label: 'Photo', icon: 'camera' },
@@ -52,9 +52,13 @@ export default function CreatePostScreen() {
       Alert.alert('Maximum photos', `You can add up to ${MAX_IMAGES} photos.`);
       return;
     }
-    const uri = await pickImageFromLibrary();
-    if (!uri) return;
-    setImages((prev) => [...prev, uri]);
+    try {
+      const uri = await pickImageFromLibrary();
+      if (!uri) return;
+      setImages((prev) => [...prev, uri]);
+    } catch {
+      Alert.alert('Could not open your photos', 'Please try again.');
+    }
   }, [images.length]);
 
   const removeImage = useCallback((index: number) => {
@@ -141,7 +145,7 @@ export default function CreatePostScreen() {
         </TouchableOpacity>
       </View>
 
-      <KeyboardAvoidingView
+      <KeyboardAvoid
         behavior="padding"
         style={{ flex: 1 }}
       >
@@ -290,7 +294,7 @@ export default function CreatePostScreen() {
           </View>
 
         </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAvoid>
     </SafeAreaView>
   );
 }

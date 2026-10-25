@@ -9,6 +9,7 @@ import { useLikeJournal } from '@/hooks/useJournals';
 import { getUserInitials } from '@solotravelsoul/shared';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
 import type { TravelJournal } from '@solotravelsoul/shared';
+import { ShadowTouchable } from '@/components/ui/ShadowClip';
 
 interface Props {
   journal: TravelJournal;
@@ -20,7 +21,7 @@ export const JournalCard = memo(function JournalCard({ journal }: Props) {
   const { liked, toggling, toggle } = useLikeJournal(journal.journalId);
 
   return (
-    <TouchableOpacity
+    <ShadowTouchable
       style={styles.card}
       onPress={() => router.push(`/(app)/journal/${journal.journalId}` as never)}
       activeOpacity={0.88}
@@ -74,7 +75,7 @@ export const JournalCard = memo(function JournalCard({ journal }: Props) {
           </View>
         </View>
       </View>
-    </TouchableOpacity>
+    </ShadowTouchable>
   );
 });
 

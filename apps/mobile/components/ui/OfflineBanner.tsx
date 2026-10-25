@@ -1,8 +1,9 @@
-import { View, StyleSheet } from 'react-native';
+import { Platform, View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from './Text';
-import { Colors, Spacing, FontSize } from '@/constants/theme';
+import { Colors, Spacing, FontSize, Radius } from '@/constants/theme';
+import { tabBarInsets } from '@/utils/tabBar';
 
 /**
  * `overlay`: drawn over the status-bar area instead of taking layout space, so the
@@ -13,6 +14,23 @@ import { Colors, Spacing, FontSize } from '@/constants/theme';
  */
 export function OfflineBanner({ overlay = false }: { overlay?: boolean }) {
   const insets = useSafeAreaInsets();
+  // iPhones with a Dynamic Island or notch put a camera cut-out in the middle of the status-bar band, exactly where the
+  // centred label sits, so on iPhone the app-wide notice is a small pill floating just above the tab bar instead.
+  if (overlay && Platform.OS === 'ios') {
+    return (
+      <View
+        style={[styles.pillWrap, { bottom: tabBarInsets(insets.bottom).height + Spacing.sm }]}
+        pointerEvents="none"
+        accessibilityRole="alert"
+        accessibilityLabel="No internet connection — some features may be unavailable"
+      >
+        <View style={styles.pill}>
+          <Ionicons name="cloud-offline-outline" size={14} color={Colors.white} />
+          <Text style={styles.overlayText} numberOfLines={1} maxFontSizeMultiplier={1.3}>No internet connection</Text>
+        </View>
+      </View>
+    );
+  }
   return (
     <View
       style={[styles.banner, overlay && [styles.overlay, { height: Math.max(insets.top, 24) }]]}
@@ -36,6 +54,16 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.textSecondary,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
+  },
+  pillWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center', zIndex: 10 },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    backgroundColor: Colors.textSecondary,
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
   },
   overlay: {
     position: 'absolute',

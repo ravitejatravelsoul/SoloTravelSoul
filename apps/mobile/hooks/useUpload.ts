@@ -68,9 +68,21 @@ export function useUpload({
 
     if (__DEV__) console.log('[useUpload] trigger started, source:', source);
 
-    const pickedUri = source === 'camera'
-      ? await pickImageFromCamera()
-      : await pickImageFromLibrary();
+    let pickedUri: string | null;
+    try {
+      pickedUri = source === 'camera'
+        ? await pickImageFromCamera()
+        : await pickImageFromLibrary();
+    } catch (err: unknown) {
+      // A picker that cannot open (or a camera that is not allowed) must not leave the button stuck in "picking".
+      const msg = (err as Error).name === 'CameraPermissionDeniedError'
+        ? (err as Error).message
+        : 'Could not open your photos. Please try again.';
+      setErrorMessage(msg);
+      setStatus('error');
+      onError?.(msg);
+      return;
+    }
 
     if (!pickedUri) {
       if (__DEV__) console.log('[useUpload] no URI returned — picker cancelled or permission denied');

@@ -9,6 +9,7 @@ import { Text, BackButton } from '@/components/ui';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
 import { CONTACT_EMAIL } from '@/constants/contact';
 import { SAFETY_TIPS, PLATFORM_ROLE, COMPATIBILITY_NOTICE, NOT_EMERGENCY_SERVICE, REPORT_BLOCK_LEAVE } from '@solotravelsoul/shared';
+import { ShadowView } from '@/components/ui/ShadowClip';
 
 const GUIDELINES = [
   {
@@ -64,7 +65,7 @@ export default function SafetyScreen() {
 
         {/* Guidelines */}
         <Text style={styles.sectionLabel}>Community guidelines</Text>
-        <View style={styles.card}>
+        <ShadowView style={styles.card}>
           {GUIDELINES.map((g, idx) => (
             <View key={g.title}>
               <View style={styles.guidelineRow}>
@@ -79,11 +80,11 @@ export default function SafetyScreen() {
               {idx < GUIDELINES.length - 1 && <View style={styles.divider} />}
             </View>
           ))}
-        </View>
+        </ShadowView>
 
         {/* Meeting people safely */}
         <Text style={styles.sectionLabel}>Meeting people safely</Text>
-        <View style={styles.card}>
+        <ShadowView style={styles.card}>
           {SAFETY_TIPS.map((t, idx) => (
             <View key={t.title}>
               <View style={styles.guidelineRow}>
@@ -98,19 +99,19 @@ export default function SafetyScreen() {
               {idx < SAFETY_TIPS.length - 1 && <View style={styles.divider} />}
             </View>
           ))}
-        </View>
+        </ShadowView>
 
         {/* What the app is and is not */}
         <Text style={styles.sectionLabel}>WHAT SOLOTRAVELSOUL IS (AND IS NOT)</Text>
-        <View style={styles.card}>
+        <ShadowView style={styles.card}>
           <Text style={styles.bodyText}>{PLATFORM_ROLE}</Text>
           <Text style={[styles.bodyText, { marginTop: Spacing.md }]}>{COMPATIBILITY_NOTICE}</Text>
           <Text style={[styles.bodyText, { marginTop: Spacing.md }]}>{NOT_EMERGENCY_SERVICE}</Text>
-        </View>
+        </ShadowView>
 
         {/* How to Report */}
         <Text style={styles.sectionLabel}>How to report</Text>
-        <View style={styles.card}>
+        <ShadowView style={styles.card}>
           {['Tap the 3-dot menu on any profile, trip, or group', 'Select "Report"', 'Choose the issue type and add details', 'Submit. Reports are reviewed by our moderators, who act when the Community Guidelines or Terms are broken'].map((step, idx) => (
             <View key={idx} style={styles.stepRow}>
               <View style={styles.stepBadge}>
@@ -119,19 +120,19 @@ export default function SafetyScreen() {
               <Text style={styles.stepText}>{step}</Text>
             </View>
           ))}
-        </View>
+        </ShadowView>
 
         {/* How to Block */}
         <Text style={styles.sectionLabel}>How to block or leave</Text>
-        <View style={styles.card}>
+        <ShadowView style={styles.card}>
           <Text style={styles.bodyText}>
             {REPORT_BLOCK_LEAVE}{'\n\n'}Tap the 3-dot menu on a profile or chat and choose &quot;Block&quot;. Blocked people cannot message you, ask to join your trips, follow you, comment on your posts or open your profile, and blocking is private and reversible. You may still appear in shared lists such as Nearby Travelers. To leave a group chat, open the group and choose &quot;Leave group&quot;; to leave a trip you joined, open the trip and choose &quot;Leave trip&quot;.
           </Text>
-        </View>
+        </ShadowView>
 
         {/* Links */}
         <Text style={styles.sectionLabel}>Legal & support</Text>
-        <View style={styles.card}>
+        <ShadowView style={styles.card}>
           {moderator && (
             <TouchableOpacity style={styles.linkRow} onPress={() => router.push('/(app)/moderation' as never)} accessibilityLabel="Moderation queue">
               <Ionicons name="shield-outline" size={18} color={Colors.primary} />
@@ -170,7 +171,7 @@ export default function SafetyScreen() {
             <Text style={styles.linkLabel}>{CONTACT_EMAIL}</Text>
             <Ionicons name="chevron-forward" size={14} color={Colors.placeholder} />
           </TouchableOpacity>
-        </View>
+        </ShadowView>
 
         <Text style={styles.footer}>
           Trip join requests need the organizer&apos;s approval. Always use your own judgement when meeting people.

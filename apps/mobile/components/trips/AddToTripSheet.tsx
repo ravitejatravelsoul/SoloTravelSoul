@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,6 +26,8 @@ import {
   Shadow, Fonts } from '@/constants/theme';
 import type { PlaceEntry, PlannedTrip } from '@solotravelsoul/shared';
 import { ToastContainer } from '@/components/ui/Toast';
+import { ShadowTouchable } from '@/components/ui/ShadowClip';
+import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 // Pre-defined pill colors — avoids runtime hex concat which varies across RN versions
 const STATUS_CONFIG: Record<string, {
@@ -94,7 +95,7 @@ export function AddToTripSheet({ visible, place, onClose }: Props) {
       onRequestClose={handleClose}
     >
       <SafeAreaView style={styles.sheet} edges={['top']}>
-        <KeyboardAvoidingView
+        <KeyboardAvoid
           style={styles.fill}
           behavior="padding"
         >
@@ -146,7 +147,7 @@ export function AddToTripSheet({ visible, place, onClose }: Props) {
                   const status = tripStatus(trip.startDate, trip.endDate);
                   const cfg = STATUS_CONFIG[status];
                   return (
-                    <TouchableOpacity
+                    <ShadowTouchable
                       key={trip.id}
                       style={styles.tripCard}
                       onPress={() => setSelectedTrip(trip)}
@@ -177,7 +178,7 @@ export function AddToTripSheet({ visible, place, onClose }: Props) {
                       <View style={styles.chevronWrap}>
                         <Ionicons name="chevron-forward" size={16} color={Colors.placeholder} />
                       </View>
-                    </TouchableOpacity>
+                    </ShadowTouchable>
                   );
                 })
               )}
@@ -223,7 +224,7 @@ export function AddToTripSheet({ visible, place, onClose }: Props) {
             </ScrollView>
           )}
 
-        </KeyboardAvoidingView>
+        </KeyboardAvoid>
       </SafeAreaView>
       <ToastContainer />
     </Modal>

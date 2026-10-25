@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   Alert,
   TextInput,
-  KeyboardAvoidingView,
   ActivityIndicator,
   Image,
 } from 'react-native';
@@ -19,6 +18,7 @@ import { uploadPostPhotoFromUri } from '@/utils/storageUpload';
 import { pickImageFromLibrary, resizeImage } from '@/utils/imageUtils';
 import { useAuthStore } from '@/stores/authStore';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
+import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 const MAX_TITLE = 120;
 const MAX_BODY = 10000;
@@ -43,9 +43,13 @@ export default function CreateJournalScreen() {
   const { create, creating } = useCreateJournal();
 
   const pickCover = useCallback(async () => {
-    const uri = await pickImageFromLibrary();
-    if (!uri) return;
-    setCoverUri(uri);
+    try {
+      const uri = await pickImageFromLibrary();
+      if (!uri) return;
+      setCoverUri(uri);
+    } catch {
+      Alert.alert('Could not open your photos', 'Please try again.');
+    }
   }, []);
 
   const addHashtag = useCallback(() => {
@@ -118,7 +122,7 @@ export default function CreateJournalScreen() {
         </TouchableOpacity>
       </View>
 
-      <KeyboardAvoidingView
+      <KeyboardAvoid
         behavior="padding"
         style={{ flex: 1 }}
       >
@@ -247,7 +251,7 @@ export default function CreateJournalScreen() {
 
           <View style={{ height: 60 }} />
         </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAvoid>
     </SafeAreaView>
   );
 }

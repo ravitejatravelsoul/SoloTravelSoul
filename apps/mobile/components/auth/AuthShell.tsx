@@ -1,10 +1,11 @@
 import { type ReactNode } from 'react';
-import { KeyboardAvoidingView, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, LocalCover } from '@/components/ui';
 import { Reveal } from '@/components/ui/Reveal';
 import { Colors, Gradients, Radius, Shadow, Spacing } from '@/constants/theme';
+import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 interface Props {
   title: string;
@@ -25,7 +26,7 @@ export function AuthShell({ title, subtitle, children, footer, compact = false }
   const insets = useSafeAreaInsets();
   const heroHeight = (compact ? 150 : 230) + insets.top;
   return (
-    <KeyboardAvoidingView style={styles.root} behavior="padding">
+    <KeyboardAvoid style={styles.root} behavior="padding">
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={{ height: heroHeight }}>
           <LocalCover source={require('../../assets/images/hero-hiker.jpg')} focalX={0.3} />
@@ -40,7 +41,7 @@ export function AuthShell({ title, subtitle, children, footer, compact = false }
           {footer ? <View style={styles.footer}>{footer}</View> : null}
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardAvoid>
   );
 }
 

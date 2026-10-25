@@ -1,5 +1,4 @@
 import {
-  KeyboardAvoidingView,
   ScrollView,
   View,
   type ViewStyle,
@@ -8,6 +7,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Spacing } from '@/constants/theme';
+import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 interface ScreenProps {
   children: React.ReactNode;
@@ -48,12 +48,12 @@ export function Screen({
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor }, style]}>
-      <KeyboardAvoidingView
+      <KeyboardAvoid
         style={styles.fill}
         behavior="padding"
       >
         {inner}
-      </KeyboardAvoidingView>
+      </KeyboardAvoid>
     </SafeAreaView>
   );
 }

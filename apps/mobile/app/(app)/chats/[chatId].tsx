@@ -7,7 +7,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  KeyboardAvoidingView,
   Keyboard,
   ListRenderItemInfo,
 } from 'react-native';
@@ -25,6 +24,7 @@ import { Colors, FontSize, FontWeight, Fonts, Spacing } from '@/constants/theme'
 import { isSameDay } from 'date-fns';
 import { DELETED_ACCOUNT_NAME } from '@solotravelsoul/shared';
 import type { DirectMessage } from '@solotravelsoul/shared';
+import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 type ListItem =
   | { kind: 'message'; msg: DirectMessage }
@@ -105,7 +105,7 @@ export default function DirectChatScreen() {
   }, []);
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoid
       style={styles.root}
       behavior="padding"
       keyboardVerticalOffset={0}
@@ -164,7 +164,7 @@ export default function DirectChatScreen() {
       ) : (
         <ChatInput onSend={sendMessage} restore={restored} />
       )}
-    </KeyboardAvoidingView>
+    </KeyboardAvoid>
   );
 }
 

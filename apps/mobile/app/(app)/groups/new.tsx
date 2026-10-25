@@ -7,7 +7,6 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
-  KeyboardAvoidingView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,6 +20,7 @@ import { getUserInitials } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { Colors, FontSize, FontWeight, Radius, Spacing, Fonts } from '@/constants/theme';
+import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 function generateClientId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
@@ -93,7 +93,7 @@ export default function NewGroupScreen() {
   const canCreate = groupName.trim().length > 0 && emails.length > 0 && !creating;
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoid
       style={styles.root}
       behavior="padding"
     >
@@ -170,7 +170,7 @@ export default function NewGroupScreen() {
 
         {createError && <Text style={[styles.errorText, { marginTop: Spacing.md }]}>{createError}</Text>}
       </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardAvoid>
   );
 }
 

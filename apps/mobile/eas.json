@@ -32,6 +32,13 @@
         "EXPO_PUBLIC_FOURSQUARE_ENABLED": "false"
       }
     },
+    "preview-simulator": {
+      "extends": "preview",
+      "ios": {
+        "resourceClass": "m-medium",
+        "simulator": true
+      }
+    },
     "production": {
       "android": {
         "buildType": "app-bundle"

@@ -6,8 +6,6 @@ import {
   FlatList,
   TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +16,7 @@ import { useComments } from '@/hooks/useComments';
 import { Colors, Spacing, Radius, FontSize, Fonts } from '@/constants/theme';
 import { ToastContainer } from '@/components/ui/Toast';
 import { useUIStore } from '@/stores/uiStore';
+import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 interface Props {
   postId: string;
@@ -60,7 +59,7 @@ export function CommentsSheet({ postId, authorId, onClose }: Props) {
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.backdrop} onPress={onClose} />
-        <KeyboardAvoidingView
+        <KeyboardAvoid
           behavior="padding"
           style={styles.sheet}
         >
@@ -138,7 +137,7 @@ export function CommentsSheet({ postId, authorId, onClose }: Props) {
             </TouchableOpacity>
           </View>
           </SafeAreaView>
-        </KeyboardAvoidingView>
+        </KeyboardAvoid>
       </View>
       <ToastContainer />
     </Modal>
@@ -159,7 +158,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: Radius['2xl'],
     borderTopRightRadius: Radius['2xl'],
     maxHeight: '80%',
-    paddingBottom: Platform.OS === 'ios' ? 34 : Spacing.lg,
+    // The native SafeAreaView around the input row adds the home-indicator inset; a fixed 34 on top of it doubled it on iPhone.
+    paddingBottom: Spacing.lg,
   },
   handle: {
     width: 36,

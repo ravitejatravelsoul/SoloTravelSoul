@@ -111,7 +111,7 @@ test('Android preview configuration: staging profile, no native Firebase files, 
   const prod = evaluate('public');
   assert.deepEqual([prod.name, prod.scheme, prod.android.package, prod.ios.bundleIdentifier], ['SoloTravelSoul', 'solotravelsoul', 'com.solotravelsoul.app', 'com.solotravelsoul.app'], 'production identifiers unchanged');
   const stg = evaluate('public', 'staging');
-  assert.deepEqual([stg.name, stg.scheme, stg.android.package, stg.ios.bundleIdentifier], ['SoloTravelSoul Staging', 'solotravelsoul-staging', 'com.solotravelsoul.app.staging', 'com.solotravelsoul.app']);
+  assert.deepEqual([stg.name, stg.scheme, stg.android.package, stg.ios.bundleIdentifier], ['SoloTravelSoul Staging', 'solotravelsoul-staging', 'com.solotravelsoul.app.staging', 'com.solotravelsoul.app.staging']);
   assert.equal(stg.extra.eas.projectId, prod.extra.eas.projectId, 'same EAS project');
   // Evaluated native config (Expo prebuild introspection; no SDK needed) for the staging build.
   const c = evaluate('introspect', 'staging');
@@ -343,6 +343,7 @@ test('journal card: like control never overlapped; author and read time shrink/w
   const card = component('apps/mobile/components/journals/JournalCard.tsx', {
     'react-native': rnStub, 'expo-router': { router: { push() {} } }, '@expo/vector-icons': { Ionicons: 'Ionicons' },
     '@/hooks/useMediaSource': { useMediaSource: () => (u) => ({ uri: u }) },
+    '@/components/ui/ShadowClip': { ShadowView: 'View', ShadowTouchable: 'TouchableOpacity' },
     '@/components/ui': { Text: 'Text', Avatar: 'Avatar' }, '@/components/posts/LikeButton': { LikeButton: 'LikeButton' },
     '@/hooks/useJournals': { useLikeJournal: () => ({ liked: false, toggling: false, toggle() {} }) },
     '@solotravelsoul/shared': { getUserInitials: () => 'AB' },
@@ -688,7 +689,8 @@ test('redesign: press feedback never fires an action twice, and reduced motion r
   const rnFake = { Animated: { Value: function Value() {}, spring: () => { calls.spring++; return { start() {} }; }, createAnimatedComponent: (c) => c }, Pressable: 'Pressable' };
   const load = (reduced) => component('apps/mobile/components/ui/PressableScale.tsx', {
     react: { useCallback: (fn) => fn, useRef: (v) => ({ current: v }) },
-    'react-native': rnFake,
+    'react-native': { ...rnFake, Platform: { OS: 'android' } },
+    '@/utils/shadowClip': { splitShadowClip: () => null },
     '@/constants/theme': { Motion: { pressScale: 0.96, spring: { damping: 14, stiffness: 220, mass: 0.8 } } },
     '@/hooks/useReducedMotion': { useReducedMotion: () => reduced },
   }).PressableScale;

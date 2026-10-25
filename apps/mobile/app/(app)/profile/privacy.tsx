@@ -18,6 +18,7 @@ import type { UserProfile } from '@solotravelsoul/shared';
 import { useTripStore } from '@/stores/tripStore';
 import { applyDiscoverySettings, upcomingTrips } from '@/utils/discovery';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
+import { ShadowView } from '@/components/ui/ShadowClip';
 
 export default function PrivacySettingsScreen() {
   const profile = useAuthStore((s) => s.profile);
@@ -112,7 +113,7 @@ export default function PrivacySettingsScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Profile Visibility */}
         <Text style={styles.sectionLabel}>Profile visibility</Text>
-        <View style={styles.card}>
+        <ShadowView style={styles.card}>
           <View style={styles.row}>
             <View style={styles.rowLeft}>
               <View style={[styles.iconBox, { backgroundColor: Colors.primary + '15' }]}>
@@ -148,11 +149,11 @@ export default function PrivacySettingsScreen() {
                 : 'Visitors see only your name and photo. All other profile data is hidden.'}
             </Text>
           </View>
-        </View>
+        </ShadowView>
 
         {/* Traveler Discovery */}
         <Text style={styles.sectionLabel}>Traveler discovery</Text>
-        <View style={styles.card}>
+        <ShadowView style={styles.card}>
           <View style={styles.row}>
             <View style={styles.rowLeft}>
               <View style={[styles.iconBox, { backgroundColor: Colors.accent + '15' }]}>
@@ -186,11 +187,11 @@ export default function PrivacySettingsScreen() {
               </Text>
             </View>
           )}
-        </View>
+        </ShadowView>
 
         {/* Travel compatibility */}
         <Text style={styles.sectionLabel}>Travel compatibility</Text>
-        <View style={styles.card}>
+        <ShadowView style={styles.card}>
           <View style={styles.row}>
             <View style={styles.rowLeft}>
               <View style={[styles.iconBox, { backgroundColor: Colors.primary + '15' }]}>
@@ -229,11 +230,11 @@ export default function PrivacySettingsScreen() {
             </View>
             <Ionicons name="chevron-forward" size={16} color={Colors.placeholder} />
           </TouchableOpacity>
-        </View>
+        </ShadowView>
 
         {/* Trip shown in discovery */}
         <Text style={styles.sectionLabel}>Trip shown in discovery</Text>
-        <View style={styles.card}>
+        <ShadowView style={styles.card}>
           {[{ id: null as string | null, label: "Don't show a trip", sub: 'Only your city is shown' },
             ...shareableTrips.map((t) => ({ id: t.id as string | null, label: t.destination, sub: `${t.startDate.toLocaleDateString()} – ${t.endDate.toLocaleDateString()}` }))]
             .map((o) => (
@@ -260,11 +261,11 @@ export default function PrivacySettingsScreen() {
                 : 'Takes effect when traveler discovery is on. Only the destination and dates are ever shown.'}
             </Text>
           </View>
-        </View>
+        </ShadowView>
 
         {/* Blocked Users */}
         <Text style={styles.sectionLabel}>Safety</Text>
-        <View style={styles.card}>
+        <ShadowView style={styles.card}>
           <TouchableOpacity
             style={styles.row}
             onPress={() => router.push('/(app)/profile/blocked-users' as never)}
@@ -281,7 +282,7 @@ export default function PrivacySettingsScreen() {
             </View>
             <Ionicons name="chevron-forward" size={16} color={Colors.placeholder} />
           </TouchableOpacity>
-        </View>
+        </ShadowView>
 
         <Text style={styles.footer}>
           Your exact location is never stored or shared. Traveler discovery uses city names only.

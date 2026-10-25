@@ -18,6 +18,7 @@ import { useTrips } from '@/hooks/useTrips';
 import { useAuthStore } from '@/stores/authStore';
 import { setTripVisibility, addFeedItem } from '@solotravelsoul/firebase';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
+import { ShadowTouchable, ShadowView } from '@/components/ui/ShadowClip';
 
 export default function EditTripScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -139,7 +140,7 @@ export default function EditTripScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Text style={styles.sectionLabel}>Trip details</Text>
-        <View style={[styles.card, styles.cardPadded]}>
+        <ShadowView style={[styles.card, styles.cardPadded]}>
           <Input
             label="Destination"
             value={destination}
@@ -167,10 +168,10 @@ export default function EditTripScreen() {
             numberOfLines={4}
             style={{ minHeight: 80, textAlignVertical: 'top' }}
           />
-        </View>
+        </ShadowView>
 
         <Text style={styles.sectionLabel}>Visibility</Text>
-        <View style={styles.card}>
+        <ShadowView style={styles.card}>
           <View style={styles.visibilityRow}>
             <View style={styles.rowLeft}>
               <View style={[styles.iconBox, { backgroundColor: isPublic ? Colors.primary + '15' : Colors.chipBackground }]}>
@@ -255,13 +256,13 @@ export default function EditTripScreen() {
               </View>
             </View>
           )}
-        </View>
+        </ShadowView>
 
         {/* Manage join requests shortcut */}
         {trip.visibility === 'public' && (
           <>
             <Text style={styles.sectionLabel}>Join requests</Text>
-            <TouchableOpacity
+            <ShadowTouchable
               style={styles.card}
               onPress={() => router.push(`/(app)/trips/${trip.id}/requests` as never)}
               activeOpacity={0.7}
@@ -275,7 +276,7 @@ export default function EditTripScreen() {
                 </View>
                 <Ionicons name="chevron-forward" size={16} color={Colors.placeholder} />
               </View>
-            </TouchableOpacity>
+            </ShadowTouchable>
           </>
         )}
 

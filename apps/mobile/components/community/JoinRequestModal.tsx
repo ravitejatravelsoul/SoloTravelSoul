@@ -5,7 +5,6 @@ import {
   Modal,
   TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
   ScrollView,
   ActivityIndicator,
   Alert,
@@ -21,6 +20,7 @@ import type { PublicTrip, UserProfile } from '@solotravelsoul/shared';
 import { preferencesOf } from '@solotravelsoul/shared';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import { ToastContainer } from '@/components/ui/Toast';
+import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 const MESSAGE_MAX = 300;
 const DAILY_LIMIT_KEY = 'community_join_requests_daily';
@@ -99,7 +99,7 @@ export function JoinRequestModal({ trip, requestor, onClose, onSubmitted }: Join
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <KeyboardAvoidingView style={styles.flex} behavior="padding">
+        <KeyboardAvoid style={styles.flex} behavior="padding">
           <View style={styles.header}>
             <TouchableOpacity onPress={onClose} hitSlop={12}>
               <Ionicons name="close" size={24} color={Colors.textPrimary} />
@@ -158,7 +158,7 @@ export function JoinRequestModal({ trip, requestor, onClose, onSubmitted }: Join
               )}
             </TouchableOpacity>
           </View>
-        </KeyboardAvoidingView>
+        </KeyboardAvoid>
       </SafeAreaView>
       <ToastContainer />
     </Modal>

@@ -26,12 +26,21 @@ export async function pickImageFromLibrary(): Promise<string | null> {
   return uri;
 }
 
+/** Raised when the person has not allowed camera access; the caller explains how to turn it on (Settings). */
+export class CameraPermissionDeniedError extends Error {
+  constructor() {
+    super('Camera access is turned off. You can allow it for SoloTravelSoul in Settings.');
+    this.name = 'CameraPermissionDeniedError';
+  }
+}
+
 export async function pickImageFromCamera(): Promise<string | null> {
   const { status } = await ImagePicker.requestCameraPermissionsAsync();
   if (__DEV__) console.log('[ImagePicker] camera permission status:', status);
   if (status !== 'granted') {
-    if (__DEV__) console.warn('[ImagePicker] camera permission denied');
-    return null;
+    // Said out loud instead of returning "nothing picked": on iPhone a refused prompt is never shown again, so a silent
+    // no-op would look like a broken button.
+    throw new CameraPermissionDeniedError();
   }
 
   const result = await ImagePicker.launchCameraAsync({

@@ -17,10 +17,10 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.solotravelsoul.app",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "SoloTravelSoul uses your location to show nearby places and travel recommendations.",
-        "NSCameraUsageDescription": "SoloTravelSoul needs camera access to add photos to your travel journal.",
-        "NSPhotoLibraryUsageDescription": "SoloTravelSoul needs photo library access to upload journey photos.",
-        "NSFaceIDUsageDescription": "Use Face ID to sign in quickly and securely."
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSAllowsLocalNetworking": true
+        }
       },
       "config": {
         "usesNonExemptEncryption": false
@@ -54,6 +54,17 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "ios": {
+            "image": "./assets/images/splash-icon.png",
+            "imageWidth": 220,
+            "resizeMode": "contain",
+            "backgroundColor": "#FFF8EE"
+          }
+        }
+      ],
       "expo-secure-store",
       [
         "expo-notifications",
@@ -66,20 +77,23 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "SoloTravelSoul uses your location to show nearby attractions and sort places by distance."
+          "locationWhenInUsePermission": "SoloTravelSoul can use your location while the app is open to sort places by distance. It is optional and is never shared with other travelers.",
+          "locationAlwaysAndWhenInUsePermission": "SoloTravelSoul only uses your location while the app is open. It does not track you in the background.",
+          "locationAlwaysPermission": "SoloTravelSoul only uses your location while the app is open. It does not track you in the background."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow SoloTravelSoul to access your photos to add memories to your journal.",
+          "photosPermission": "SoloTravelSoul opens your photo library only when you choose to add a picture to a post, a journal or your profile. Only the photos you pick are used.",
+          "cameraPermission": "SoloTravelSoul uses the camera only if you choose to take a new photo for your profile or a post.",
           "microphonePermission": false
         }
       ],
       [
         "expo-local-authentication",
         {
-          "faceIDPermission": "Allow SoloTravelSoul to use Face ID for secure sign-in."
+          "faceIDPermission": "SoloTravelSoul uses Face ID to unlock a session you are already signed in to. It cannot sign anyone in."
         }
       ],
       "@rnmapbox/maps",

@@ -96,7 +96,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.sm,
-    paddingBottom: Platform.OS === 'ios' ? Spacing.xl : Spacing.sm,
+    // The chat sits above the floating tab bar (which already clears the home indicator) or directly above the keyboard,
+    // so no extra home-indicator padding on any platform.
+    paddingBottom: Spacing.sm,
   },
   inputRow: {
     flexDirection: 'row',

@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react';
-import { Animated, Pressable, type GestureResponderEvent, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
+import { Animated, Platform, Pressable, type GestureResponderEvent, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
+import { splitShadowClip } from '@/utils/shadowClip';
 import { Motion } from '@/constants/theme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 
@@ -36,15 +37,25 @@ export function PressableScale({ style, scaleTo = Motion.pressScale, guardMs = 0
     onPress?.(e);
   }, [guardMs, onPress]);
 
+  const handlers = {
+    disabled,
+    onPress: handlePress,
+    onPressIn: (e: GestureResponderEvent) => { animate(scaleTo); onPressIn?.(e); },
+    onPressOut: (e: GestureResponderEvent) => { animate(1); onPressOut?.(e); },
+  };
+
+  // iPhone: a card that casts a shadow and clips its content needs two layers or the shadow disappears (utils/shadowClip.ts).
+  const parts = Platform.OS === 'ios' ? splitShadowClip(style) : null;
+  if (parts) {
+    return (
+      <Animated.View style={[parts.outer, { transform: [{ scale }] }]}>
+        <Pressable {...rest} {...handlers} style={parts.inner}>{children}</Pressable>
+      </Animated.View>
+    );
+  }
+
   return (
-    <AnimatedPressable
-      {...rest}
-      disabled={disabled}
-      onPress={handlePress}
-      onPressIn={(e) => { animate(scaleTo); onPressIn?.(e); }}
-      onPressOut={(e) => { animate(1); onPressOut?.(e); }}
-      style={[style, { transform: [{ scale }] }]}
-    >
+    <AnimatedPressable {...rest} {...handlers} style={[style, { transform: [{ scale }] }]}>
       {children}
     </AnimatedPressable>
   );

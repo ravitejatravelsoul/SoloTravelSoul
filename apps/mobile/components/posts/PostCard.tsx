@@ -15,6 +15,7 @@ import { useLikePost } from '@/hooks/usePosts';
 import { getUserInitials } from '@solotravelsoul/shared';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import type { TravelPost } from '@solotravelsoul/shared';
+import { ShadowView } from '@/components/ui/ShadowClip';
 
 const POST_TYPE_LABEL: Record<string, string> = {
   photo: '',
@@ -53,7 +54,7 @@ export const PostCard = memo(function PostCard({ post, onPress }: Props) {
   const typeLabel = POST_TYPE_LABEL[post.postType] ?? '';
 
   return (
-    <View style={styles.card}>
+    <ShadowView style={styles.card}>
       {/* ── Author header ── */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.authorRow} onPress={handleAuthorPress} activeOpacity={0.8}>
@@ -129,7 +130,7 @@ export const PostCard = memo(function PostCard({ post, onPress }: Props) {
           </Text>
         </TouchableOpacity>
       )}
-    </View>
+    </ShadowView>
   );
 });
 

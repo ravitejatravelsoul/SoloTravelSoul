@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  KeyboardAvoidingView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,6 +19,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { Colors, FontSize, FontWeight, Radius, Spacing, Fonts } from '@/constants/theme';
 import type { UserLookup } from '@solotravelsoul/shared';
+import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 export default function NewChatScreen() {
   const router = useRouter();
@@ -93,7 +93,7 @@ export default function NewChatScreen() {
   }, [result, user, profile, router, addToast]);
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoid
       style={styles.root}
       behavior="padding"
     >
@@ -164,7 +164,7 @@ export default function NewChatScreen() {
           </View>
         )}
       </View>
-    </KeyboardAvoidingView>
+    </KeyboardAvoid>
   );
 }
 

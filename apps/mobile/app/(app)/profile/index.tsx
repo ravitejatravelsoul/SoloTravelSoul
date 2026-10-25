@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   Modal,
   TextInput,
-  KeyboardAvoidingView,
   Image,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -33,6 +32,8 @@ import { useFollowCounts } from '@/hooks/useFollows';
 import { getUserInitials } from '@solotravelsoul/shared';
 import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
 import { ToastContainer } from '@/components/ui/Toast';
+import { ShadowView } from '@/components/ui/ShadowClip';
+import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 type ProfileTab = 'posts' | 'journals' | 'trips';
 
@@ -337,7 +338,7 @@ export default function ProfileScreen() {
         {/* ── Library & Community Settings ── */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Library</Text>
-          <View style={styles.settingsCard}>
+          <ShadowView style={styles.settingsCard}>
             <SettingsRow
               icon="heart"
               label="Saved Places"
@@ -354,12 +355,12 @@ export default function ProfileScreen() {
               iconColor={Colors.warning}
               onPress={() => router.push('/(app)/saved-posts' as never)}
             />
-          </View>
+          </ShadowView>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Community</Text>
-          <View style={styles.settingsCard}>
+          <ShadowView style={styles.settingsCard}>
             <SettingsRow
               icon="people-outline"
               label="Followers"
@@ -401,12 +402,12 @@ export default function ProfileScreen() {
               iconColor={Colors.success}
               onPress={() => router.push('/(app)/profile/safety' as never)}
             />
-          </View>
+          </ShadowView>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>App</Text>
-          <View style={styles.settingsCard}>
+          <ShadowView style={styles.settingsCard}>
             <SettingsRow
               icon="document-text-outline"
               label="Terms of Service"
@@ -431,7 +432,7 @@ export default function ProfileScreen() {
               onPress={() => {}}
               showChevron={false}
             />
-          </View>
+          </ShadowView>
         </View>
 
         <TouchableOpacity style={styles.signOutBtn} onPress={handleLogout} activeOpacity={0.8}>
@@ -454,7 +455,7 @@ export default function ProfileScreen() {
         onRequestClose={() => setShowDeleteModal(false)}
       >
         <SafeAreaView style={styles.modalSafe} edges={['top', 'bottom']}>
-          <KeyboardAvoidingView
+          <KeyboardAvoid
             style={styles.modalInner}
             behavior="padding"
           >
@@ -507,7 +508,7 @@ export default function ProfileScreen() {
                 <Text style={styles.cancelLabel}>Cancel</Text>
               </TouchableOpacity>
             </View>
-          </KeyboardAvoidingView>
+          </KeyboardAvoid>
         </SafeAreaView>
         <ToastContainer />
       </Modal>
