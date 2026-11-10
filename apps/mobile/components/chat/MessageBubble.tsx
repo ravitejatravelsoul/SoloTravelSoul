@@ -1,5 +1,7 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { View, Text, StyleSheet } from 'react-native';
-import { Colors, FontSize, Radius, Spacing, FontWeight } from '@/constants/theme';
+import { FontSize, Radius, Spacing, FontWeight } from '@/constants/theme';
 
 interface MessageBubbleProps {
   text: string;
@@ -9,6 +11,8 @@ interface MessageBubbleProps {
 }
 
 export function MessageBubble({ text, isMine, senderName, status }: MessageBubbleProps) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   return (
     <View style={[styles.row, isMine ? styles.rowMine : styles.rowTheirs]}>
       <View
@@ -31,7 +35,7 @@ export function MessageBubble({ text, isMine, senderName, status }: MessageBubbl
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   row: {
     paddingHorizontal: Spacing.lg,
     marginVertical: 3,
@@ -77,4 +81,4 @@ const styles = StyleSheet.create({
   textTheirs: {
     color: Colors.textPrimary,
   },
-});
+})));

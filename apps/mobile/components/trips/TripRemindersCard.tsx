@@ -1,7 +1,9 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { Switch, View, StyleSheet, TouchableOpacity, Linking, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import { REMINDER_META, isExpoGoiOS, isReminderSchedulable } from '@/services/notificationService';
 import { useTripReminders } from '@/hooks/useTripReminders';
 import type { PlannedTrip } from '@solotravelsoul/shared';
@@ -20,6 +22,9 @@ interface Props {
 }
 
 export function TripRemindersCard({ trip }: Props) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const { prefs, permStatus, loading, saving, toggleReminder, requestPermission } =
     useTripReminders(trip);
 
@@ -145,6 +150,9 @@ export function TripRemindersCard({ trip }: Props) {
 }
 
 function RemindersSkeleton() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -166,7 +174,7 @@ function RemindersSkeleton() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   card: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
@@ -327,4 +335,4 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.chipBackground,
     borderRadius: Radius.sm,
   },
-});
+})));

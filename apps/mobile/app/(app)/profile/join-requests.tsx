@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState } from 'react';
 import {
   View,
@@ -15,11 +17,14 @@ import { SentRequestCard, ReceivedRequestCard } from '@/components/community/Joi
 import { useMyJoinRequests, useOwnerJoinRequests } from '@/hooks/useTripJoinRequest';
 import { useTripAvailability } from '@/hooks/useTripAvailability';
 import { useAuthStore } from '@/stores/authStore';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts, Shadow } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 type Tab = 'sent' | 'received';
 
 export default function JoinRequestsScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const [activeTab, setActiveTab] = useState<Tab>('sent');
 
@@ -138,7 +143,7 @@ export default function JoinRequestsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   navBar: {
     flexDirection: 'row',
@@ -181,4 +186,4 @@ const styles = StyleSheet.create({
   },
   browseBtnLabel: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.white },
   list: { padding: Spacing.lg, paddingBottom: Spacing['3xl'] },
-});
+})));

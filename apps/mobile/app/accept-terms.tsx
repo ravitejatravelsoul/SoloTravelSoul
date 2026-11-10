@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { router, Redirect } from 'expo-router';
@@ -9,7 +11,7 @@ import { TERMS_VERSION, COMPATIBILITY_NOTICE, SAFETY_TIPS, NOT_EMERGENCY_SERVICE
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useAuth } from '@/hooks/useAuth';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 /**
  * Terms acceptance before anything user-generated can be created. The (app) layout sends a signed-in account here
@@ -17,6 +19,9 @@ import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constant
  * This is a client gate: a modified client could skip it, so it is not a substitute for server-side enforcement.
  */
 export default function AcceptTermsScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const profile = useAuthStore((s) => s.profile);
   const user = useAuthStore((s) => s.user);
   const setProfile = useAuthStore((s) => s.setProfile);
@@ -70,10 +75,10 @@ export default function AcceptTermsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   content: { padding: Spacing['2xl'], gap: Spacing.md, alignItems: 'flex-start' },
-  badge: { width: 76, height: 76, borderRadius: 38, backgroundColor: Colors.tealSoft, alignItems: 'center', justifyContent: 'center' },
+  badge: { width: 76, height: 76, borderRadius: 38, backgroundColor: Colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   title: { fontFamily: Fonts.displayHeavy, fontSize: 30, lineHeight: 38, color: Colors.textPrimary },
   sub: { fontFamily: Fonts.display, fontSize: FontSize.xl, color: Colors.textPrimary, marginTop: Spacing.md },
   body: { fontSize: FontSize.md, color: Colors.textSecondary, lineHeight: 22 },
@@ -85,4 +90,4 @@ const styles = StyleSheet.create({
   primaryLabel: { color: Colors.white, fontSize: FontSize.md, fontWeight: FontWeight.bold },
   secondary: { alignItems: 'center', justifyContent: 'center', minHeight: 44 },
   secondaryLabel: { color: Colors.textSecondary, fontSize: FontSize.md },
-});
+})));

@@ -1,10 +1,12 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useCallback, useRef, useState } from 'react';
 import { Animated, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, Button, PressableScale, LocalCover } from '@/components/ui';
-import { Colors, FontSize, FontWeight, Radius, Shadow, Spacing } from '@/constants/theme';
+import { FontSize, FontWeight, Radius, Shadow, Spacing } from '@/constants/theme';
 import { isReducedMotion } from '@/hooks/useReducedMotion';
 
 interface Slide {
@@ -17,14 +19,17 @@ interface Slide {
 }
 
 // First-launch introduction. Photography is used once, on the first card; the others are friendly illustrated panels.
-const SLIDES: Slide[] = [
-  { emoji: '🌍', title: 'Your world awaits', body: 'SoloTravelSoul is a place to plan trips and meet travelers who want the same kind of trip: built for the independent explorer in you.', tint: Colors.tealSoft, blob: Colors.accent, photo: true },
+const getSlides = themed(({ Colors }): Slide[] => ([
+  { emoji: '🌍', title: 'Your world awaits', body: 'SoloTravelSoul is a place to plan trips and meet travelers who want the same kind of trip: built for the independent explorer in you.', tint: Colors.accentSoft, blob: Colors.accent, photo: true },
   { emoji: '🗓️', title: 'Plan every adventure', body: 'Build day-by-day itineraries, packing lists and reminders. Stay organized from first idea to landing.', tint: Colors.coralSoft, blob: Colors.coral },
   { emoji: '📖', title: 'Keep every memory', body: 'Capture moments with words and photos. Share a post, or keep the journal just for you.', tint: '#FFF1CC', blob: Colors.sun },
   { emoji: '🧭', title: 'Find your people', body: 'Ask to join public trips and see what you have in common. You choose what to share, and you can leave any time.', tint: '#E9E6FB', blob: Colors.catMountain },
-];
+]));
 
 export default function OnboardingScreen() {
+  const theme = useAppTheme();
+  const SLIDES = getSlides(theme);
+  const styles = getStyles(theme);
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [page, setPage] = useState(0);
@@ -95,6 +100,9 @@ export default function OnboardingScreen() {
 
 /** Progress dot: the active one stretches into a pill with a short spring (transform only). */
 function Dot({ active, onPress }: { active: boolean; onPress: () => void }) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const v = useRef(new Animated.Value(active ? 1 : 0)).current;
   const prev = useRef(active);
   if (prev.current !== active) {
@@ -109,7 +117,7 @@ function Dot({ active, onPress }: { active: boolean; onPress: () => void }) {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
   topRow: { height: 52, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: Spacing.xl },
   skip: { minWidth: 64, minHeight: 40, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.md },
@@ -126,4 +134,4 @@ const styles = StyleSheet.create({
   footer: { paddingHorizontal: Spacing['2xl'], gap: Spacing.xl },
   dots: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: Spacing.sm },
   dot: { height: 8, borderRadius: 4 },
-});
+})));

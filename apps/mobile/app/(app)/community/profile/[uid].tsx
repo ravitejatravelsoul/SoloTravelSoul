@@ -1,3 +1,6 @@
+import { EDITORIAL_APPEARANCE_ENABLED, useAppTheme } from '@/stores/appearanceStore';
+import { EditorialCover } from '@/components/ui/EditorialCover';
+import { themed } from '@/constants/appearance';
 import { useEffect, useState } from 'react';
 import {
   View,
@@ -17,7 +20,7 @@ import { useIsFollowing } from '@/hooks/useFollows';
 import type { PublicProfile } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useBlockStore } from '@/stores/blockStore';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import { getUserInitials } from '@solotravelsoul/shared';
 
 const TRAVEL_STYLE_LABELS: Record<string, string> = {
@@ -35,6 +38,9 @@ function formatDate(d: Date) {
 }
 
 export default function PublicProfileScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const { uid } = useLocalSearchParams<{ uid: string }>();
   const currentUid = useAuthStore((s) => s.user?.uid ?? '');
   const { blockedUids, blockUser, unblockUser } = useBlockStore();
@@ -173,8 +179,17 @@ export default function PublicProfileScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Hero */}
         <View style={styles.hero}>
-          <Avatar uri={profile.photoURL} initials={initials} size={88} />
-          <Text style={styles.heroName}>{profile.displayName}</Text>
+          {EDITORIAL_APPEARANCE_ENABLED && profile.photoURL ? (
+            <EditorialCover photoURL={profile.photoURL} style={styles.profileCover}>
+              <Text style={styles.profileCoverLabel}>Traveler profile</Text>
+              <Text variant="h2" style={styles.profileCoverLabel}>{profile.displayName}</Text>
+            </EditorialCover>
+          ) : (
+            <>
+              <Avatar uri={profile.photoURL} initials={initials} size={88} />
+              <Text style={styles.heroName}>{profile.displayName}</Text>
+            </>
+          )}
           {(profile.currentCity || profile.homeCountry) ? (
             <View style={styles.locationRow}>
               <Ionicons name="location-outline" size={14} color={Colors.textSecondary} />
@@ -261,6 +276,8 @@ export default function PublicProfileScreen() {
 }
 
 function NavBar() {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   return (
     <View style={styles.navBar}>
       <BackButton />
@@ -271,6 +288,8 @@ function NavBar() {
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   return (
     <View style={styles.section}>
       <Text style={styles.sectionLabel}>{title}</Text>
@@ -280,6 +299,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function StatPill({ icon, label, value }: { icon: string; label: string; value: string }) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   return (
     <View style={styles.statPill}>
       <Ionicons name={icon as never} size={18} color={Colors.primary} />
@@ -289,7 +311,9 @@ function StatPill({ icon, label, value }: { icon: string; label: string; value: 
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
+  profileCover: { alignSelf: 'stretch', minHeight: 200 },
+  profileCoverLabel: { color: Colors.white },
   safe: { flex: 1, backgroundColor: Colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing['2xl'], gap: Spacing.md },
   navBar: {
@@ -350,4 +374,4 @@ const styles = StyleSheet.create({
   retryLink: { fontSize: FontSize.md, color: Colors.primary, fontWeight: FontWeight.semibold },
   unblockBtn: { marginTop: Spacing.sm, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.lg },
   unblockLabel: { fontSize: FontSize.md, color: Colors.primary, fontWeight: FontWeight.semibold },
-});
+})));

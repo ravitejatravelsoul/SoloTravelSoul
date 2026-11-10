@@ -1,10 +1,12 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, Avatar } from '@/components/ui';
 import { RequesterAnswers } from './RequesterAnswers';
 import type { TripJoinRequest, RequestStatus } from '@solotravelsoul/shared';
 import type { TripAvailability } from '@solotravelsoul/firebase';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 const STATUS_CONFIG: Record<RequestStatus, { label: string; color: string; icon: string }> = {
   pending: { label: 'Pending', color: Colors.warning, icon: 'time-outline' },
@@ -38,6 +40,9 @@ interface SentCardProps {
 }
 
 export function SentRequestCard({ request, availability, onCancel, onViewTrip }: SentCardProps) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const config = STATUS_CONFIG[request.status];
   const note = unavailableNote(availability);
   return (
@@ -77,6 +82,8 @@ interface ReceivedCardProps {
 }
 
 export function ReceivedRequestCard({ request, availability, onApprove, onReject }: ReceivedCardProps) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const note = unavailableNote(availability);
   return (
     <View style={styles.card}>
@@ -116,7 +123,7 @@ export function ReceivedRequestCard({ request, availability, onApprove, onReject
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   card: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.xl,
@@ -163,4 +170,4 @@ const styles = StyleSheet.create({
   rejectLabel: { color: '#B3261E' },
   approveBtn: { flex: 1, backgroundColor: Colors.primaryDark, borderColor: Colors.primaryDark },
   approveLabel: { color: Colors.white },
-});
+})));

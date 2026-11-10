@@ -1,3 +1,6 @@
+import { EDITORIAL_APPEARANCE_ENABLED, useAppTheme } from '@/stores/appearanceStore';
+import { EditorialCover, LISBON_COVER } from '@/components/ui/EditorialCover';
+import { themed } from '@/constants/appearance';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
@@ -23,7 +26,7 @@ import { subscribeNearbyTravelers, subscribePublicTrips } from '@solotravelsoul/
 import { useAuthStore } from '@/stores/authStore';
 import { useBlockStore } from '@/stores/blockStore';
 import { getUserInitials } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, Fonts, Shadow } from '@/constants/theme';
+import { Spacing, Radius, FontSize, Fonts } from '@/constants/theme';
 import type { TravelPost } from '@solotravelsoul/shared';
 import type { NearbyTraveler, PublicTrip } from '@solotravelsoul/shared';
 
@@ -42,6 +45,9 @@ function groupByCountry(posts: TravelPost[]): Array<{ country: string; count: nu
 }
 
 export default function ExploreScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const profile = useAuthStore((s) => s.profile);
   const { blockedUids } = useBlockStore();
   const [searchFocused, setSearchFocused] = useState(false);
@@ -141,6 +147,13 @@ export default function ExploreScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} />
           }
         >
+          {EDITORIAL_APPEARANCE_ENABLED && (
+            <EditorialCover source={LISBON_COVER} style={{ minHeight: 184 }}>
+              <Text style={{ color: Colors.white }}>Destination spotlight</Text>
+              <Text variant="h2" style={{ color: Colors.white }}>Lisbon, Portugal</Text>
+              <Text style={{ color: Colors.white }}>Markets, river views and room to wander.</Text>
+            </EditorialCover>
+          )}
           {/* ── Open trips shortcut ── */}
           <Reveal>
             <PressableScale
@@ -258,7 +271,7 @@ export default function ExploreScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   searchWrap: {
     paddingHorizontal: Spacing['2xl'],
@@ -307,4 +320,4 @@ const styles = StyleSheet.create({
   postCardWrap: { width: 280 },
   travelerCard: { alignItems: 'center', gap: 6, width: 70 },
   travelerName: { fontSize: FontSize.xs, color: Colors.textSecondary, textAlign: 'center' },
-});
+})));

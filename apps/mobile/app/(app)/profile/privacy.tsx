@@ -1,3 +1,4 @@
+import { EDITORIAL_APPEARANCE_ENABLED, useAppTheme } from '@/stores/appearanceStore';
 import { useState, useEffect } from 'react';
 import {
   View,
@@ -21,6 +22,7 @@ import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/
 import { ShadowView } from '@/components/ui/ShadowClip';
 
 export default function PrivacySettingsScreen() {
+  const { Colors } = useAppTheme();
   const profile = useAuthStore((s) => s.profile);
   const setProfile = useAuthStore((s) => s.setProfile);
   const user = useAuthStore((s) => s.user);
@@ -157,7 +159,7 @@ export default function PrivacySettingsScreen() {
           <View style={styles.row}>
             <View style={styles.rowLeft}>
               <View style={[styles.iconBox, { backgroundColor: Colors.accent + '15' }]}>
-                <Ionicons name="people-outline" size={18} color={Colors.accent} />
+                <Ionicons name="people-outline" size={18} color={EDITORIAL_APPEARANCE_ENABLED ? Colors.primaryDark : Colors.accent} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowTitle}>Show me to other travelers</Text>
@@ -221,7 +223,7 @@ export default function PrivacySettingsScreen() {
           >
             <View style={styles.rowLeft}>
               <View style={[styles.iconBox, { backgroundColor: Colors.accent + '15' }]}>
-                <Ionicons name="list-outline" size={18} color={Colors.accent} />
+                <Ionicons name="list-outline" size={18} color={EDITORIAL_APPEARANCE_ENABLED ? Colors.primaryDark : Colors.accent} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowTitle}>Travel preferences</Text>

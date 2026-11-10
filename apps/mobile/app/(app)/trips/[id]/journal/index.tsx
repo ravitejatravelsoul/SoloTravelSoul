@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, memo, useCallback } from 'react';
 import { useMediaSource } from '@/hooks/useMediaSource';
 import { View, FlatList, StyleSheet, TouchableOpacity, Alert, Image } from 'react-native';
@@ -9,7 +11,7 @@ import { JournalEntryModal, type JournalDraft } from '@/components/journal/Journ
 import { useTripStore } from '@/stores/tripStore';
 import { useJournal } from '@/hooks/useJournal';
 import { formatDayLabel, formatTime } from '@/utils/dateUtils';
-import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 import type { JournalEntry, ItineraryDay } from '@solotravelsoul/shared';
 import { ShadowView } from '@/components/ui/ShadowClip';
 
@@ -42,6 +44,9 @@ const MOOD_COLOR: Record<string, string> = {
 // ── Screen ────────────────────────────────────────────────────────────
 
 export default function JournalScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const { id } = useLocalSearchParams<{ id: string }>();
   const trip = useTripStore((s) => s.trips.find((t) => t.id === id));
   const itinerary = useTripStore((s) => s.itinerary);
@@ -117,6 +122,9 @@ const DaySection = memo(function DaySection({
   editEntry: EditEntryFn;
   deleteEntry: DeleteEntryFn;
 }) {
+  const theme = useAppTheme();
+  const { Gradients } = theme;
+  const styles = getStyles(theme);
   const [editingEntry, setEditingEntry] = useState<JournalEntry | null>(null);
 
   const handleSaveEdit = useCallback(
@@ -201,6 +209,9 @@ const MemoryCard = memo(function MemoryCard({
   onEdit: (entry: JournalEntry) => void;
   onDelete: (entryId: string) => void;
 }) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const mediaSrc = useMediaSource();
   const [expanded, setExpanded] = useState(false);
   const isLong = entry.text.length > 280;
@@ -293,7 +304,7 @@ const MemoryCard = memo(function MemoryCard({
 
 // ── Styles ────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -412,4 +423,4 @@ const styles = StyleSheet.create({
   entryTime: { color: Colors.placeholder },
   footerActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   readMore: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: FontWeight.medium },
-});
+})));

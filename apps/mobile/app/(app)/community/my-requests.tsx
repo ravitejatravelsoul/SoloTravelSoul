@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useEffect } from 'react';
 import {
   View,
@@ -22,7 +24,7 @@ import {
 } from '@solotravelsoul/firebase';
 import type { TripJoinRequest, CommunityGroupJoinRequest } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import { formatDistanceToNowStrict } from 'date-fns';
 
 type SectionItem =
@@ -38,6 +40,8 @@ function RequestCard({
   onApprove: () => void;
   onReject: () => void;
 }) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const name = item.requestorName;
   const photo = item.requestorPhotoURL;
   const bio = item.kind === 'trip' ? (item as TripJoinRequest).requestorBio : undefined;
@@ -71,6 +75,8 @@ function RequestCard({
 }
 
 function SectionHeader({ title, count }: { title: string; count: number }) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   return (
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -84,6 +90,9 @@ function SectionHeader({ title, count }: { title: string; count: number }) {
 }
 
 export default function MyRequestsScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const [tripRequests, setTripRequests] = useState<TripJoinRequest[]>([]);
   const [groupRequests, setGroupRequests] = useState<CommunityGroupJoinRequest[]>([]);
@@ -259,7 +268,7 @@ export default function MyRequestsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   navBar: {
     flexDirection: 'row',
@@ -326,4 +335,4 @@ const styles = StyleSheet.create({
   rejectLabel: { color: Colors.error },
   approveBtn: { backgroundColor: Colors.success, borderColor: Colors.success },
   approveLabel: { color: Colors.white },
-});
+})));

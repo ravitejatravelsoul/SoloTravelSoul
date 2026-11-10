@@ -1,7 +1,9 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { View, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from './Text';
-import { Colors, Spacing, FontSize, Radius } from '@/constants/theme';
+import { Spacing, FontSize, Radius } from '@/constants/theme';
 
 function relativeTime(date: Date): string {
   const diffMin = Math.round((Date.now() - date.getTime()) / 60_000);
@@ -29,6 +31,9 @@ export function SyncStatusBar({
   isOffline,
   onRetry,
 }: Props) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   if (syncing) {
     return (
       <View style={[styles.bar, styles.pendingBar]}>
@@ -79,7 +84,7 @@ export function SyncStatusBar({
   return null;
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   bar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -94,4 +99,4 @@ const styles = StyleSheet.create({
   failedBar:  { backgroundColor: Colors.warning  + '15' },
   label: { fontSize: FontSize.xs, fontWeight: '500' as const },
   spinner: { transform: [{ scale: 0.65 }] },
-});
+})));

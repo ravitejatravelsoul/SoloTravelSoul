@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { memo, useState, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert, TextInput } from 'react-native';
 import { useModerationActions } from '@/hooks/useModerationActions';
@@ -5,7 +7,7 @@ import { useModerationActions } from '@/hooks/useModerationActions';
 import { Text, Avatar } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
 import { getUserInitials } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 import type { PostComment } from '@solotravelsoul/shared';
 
 function timeAgo(date: Date): string {
@@ -25,6 +27,8 @@ interface Props {
 }
 
 export const CommentItem = memo(function CommentItem({ comment, onReply, onDelete, onEdit, isReply }: Props) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const myUid = useAuthStore((s) => s.user?.uid ?? '');
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(comment.text);
@@ -110,7 +114,7 @@ export const CommentItem = memo(function CommentItem({ comment, onReply, onDelet
   );
 });
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -154,4 +158,4 @@ const styles = StyleSheet.create({
   replyBtn: { fontSize: FontSize.xs, fontWeight: FontWeight.semibold, color: Colors.textSecondary },
   replyCount: { fontSize: FontSize.xs, color: Colors.primary },
   deleted: { fontSize: FontSize.sm, color: Colors.placeholder, fontStyle: 'italic' },
-});
+})));

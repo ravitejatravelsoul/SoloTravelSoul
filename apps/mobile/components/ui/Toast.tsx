@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useEffect, useRef } from 'react';
 import {
   Animated,
@@ -9,13 +11,15 @@ import { useUIStore, type ToastType } from '@/stores/uiStore';
 import { Colors, FontSize, FontWeight, Radius, Spacing } from '@/constants/theme';
 import { Text } from './Text';
 
-const BG: Record<ToastType, string> = {
+const getBg = themed(({ Colors }): Record<ToastType, string> => ({
   success: Colors.success,
   error: Colors.error,
   info: Colors.primary,
-};
+}));
 
 function ToastItem({ id, message, type }: { id: string; message: string; type: ToastType }) {
+  const theme = useAppTheme();
+  const BG = getBg(theme);
   const opacity = useRef(new Animated.Value(0)).current;
   const removeToast = useUIStore((s) => s.removeToast);
 

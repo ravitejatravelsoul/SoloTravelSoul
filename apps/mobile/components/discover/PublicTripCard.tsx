@@ -1,11 +1,14 @@
+import { EDITORIAL_APPEARANCE_ENABLED, useAppTheme } from '@/stores/appearanceStore';
+import { themed, type AppTheme } from '@/constants/appearance';
 import { useState } from 'react';
 import { View, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text, Avatar, Chip, PressableScale } from '@/components/ui';
 import { useMediaSource } from '@/hooks/useMediaSource';
+import { EditorialBackdrop, destinationCover } from '@/components/ui/EditorialCover';
 import type { PublicTrip } from '@solotravelsoul/shared';
-import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Fonts, Shadow } from '@/constants/theme';
+import { Gradients, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 function formatDateRange(start: Date, end: Date): string {
   const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
@@ -13,8 +16,9 @@ function formatDateRange(start: Date, end: Date): string {
 }
 
 // Trips without a cover photo get a warm gradient picked from the destination, so the same place always looks the same.
-const COVER_GRADIENTS = [Gradients.ocean, Gradients.sunset, Gradients.mountain, Gradients.adventure, Gradients.solo, Gradients.hidden] as const;
-function coverGradient(destination: string) {
+const getCoverGradients = themed(({ Gradients }) => ([Gradients.ocean, Gradients.sunset, Gradients.mountain, Gradients.adventure, Gradients.solo, Gradients.hidden] as const));
+function coverGradient(destination: string, theme: AppTheme) {
+  const COVER_GRADIENTS = getCoverGradients(theme);
   let h = 0;
   for (let i = 0; i < destination.length; i++) h = (h * 31 + destination.charCodeAt(i)) >>> 0;
   return COVER_GRADIENTS[h % COVER_GRADIENTS.length];
@@ -26,6 +30,9 @@ interface PublicTripCardProps {
 }
 
 export function PublicTripCard({ trip, onPress }: PublicTripCardProps) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const mediaSrc = useMediaSource();
   const [coverFailed, setCoverFailed] = useState(false);
   const memberLabel = trip.maxMembers
@@ -33,7 +40,6 @@ export function PublicTripCard({ trip, onPress }: PublicTripCardProps) {
     : `${trip.memberCount} member${trip.memberCount !== 1 ? 's' : ''}`;
   const open = trip.isAcceptingMembers && (trip.maxMembers == null || trip.memberCount < trip.maxMembers);
   const title = trip.title || trip.destination;
-  const showPhoto = !!trip.coverPhotoURL && !coverFailed;
 
   return (
     <PressableScale
@@ -45,12 +51,23 @@ export function PublicTripCard({ trip, onPress }: PublicTripCardProps) {
       accessibilityLabel={`${title}, ${trip.destination}, ${open ? 'open to join' : 'not accepting requests'}`}
     >
       <View style={styles.cover}>
-        {showPhoto ? (
-          <Image source={mediaSrc(trip.coverPhotoURL!)} style={StyleSheet.absoluteFill} resizeMode="cover" onError={() => setCoverFailed(true)} accessibilityIgnoresInvertColors />
+        {EDITORIAL_APPEARANCE_ENABLED ? (
+          <>
+            <LinearGradient colors={coverGradient(trip.destination, theme)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill}>
+              <Ionicons name="airplane" size={64} color="rgba(255,255,255,0.35)" style={styles.coverIcon} />
+            </LinearGradient>
+            <EditorialBackdrop source={destinationCover(trip.destination)} photoURL={trip.coverPhotoURL} />
+          </>
         ) : (
-          <LinearGradient colors={coverGradient(trip.destination)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill}>
-            <Ionicons name="airplane" size={64} color="rgba(255,255,255,0.35)" style={styles.coverIcon} />
-          </LinearGradient>
+          <>
+            {trip.coverPhotoURL && !coverFailed ? (
+              <Image source={mediaSrc(trip.coverPhotoURL!)} style={StyleSheet.absoluteFill} resizeMode="cover" onError={() => setCoverFailed(true)} accessibilityIgnoresInvertColors />
+            ) : (
+              <LinearGradient colors={coverGradient(trip.destination, theme)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill}>
+                <Ionicons name="airplane" size={64} color="rgba(255,255,255,0.35)" style={styles.coverIcon} />
+              </LinearGradient>
+            )}
+          </>
         )}
         <LinearGradient colors={Gradients.scrim} style={styles.coverScrim} />
         <View style={styles.coverBadges}>
@@ -92,7 +109,7 @@ export function PublicTripCard({ trip, onPress }: PublicTripCardProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   card: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.xl,
@@ -129,4 +146,4 @@ const styles = StyleSheet.create({
   metaText: { fontSize: FontSize.sm, color: Colors.textSecondary },
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },
   tag: { paddingHorizontal: Spacing.sm, paddingVertical: 2, minHeight: 28 },
-});
+})));

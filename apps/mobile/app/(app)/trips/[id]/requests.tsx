@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useEffect } from 'react';
 import {
   View,
@@ -16,11 +18,14 @@ import { subscribeRequestsForTrip, approveTripJoinRequest, rejectTripJoinRequest
 import type { TripJoinRequest, RequestStatus } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useTripStore } from '@/stores/tripStore';
-import { Colors, Spacing, Radius, Shadow, FontSize, FontWeight, Fonts } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 type Filter = 'pending' | 'approved' | 'all';
 
 export default function TripRequestsScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const { id } = useLocalSearchParams<{ id: string }>();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const trip = useTripStore((s) => s.trips.find((t) => t.id === id));
@@ -133,7 +138,7 @@ export default function TripRequestsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   navBar: {
     flexDirection: 'row',
@@ -169,4 +174,4 @@ const styles = StyleSheet.create({
   emptyTitle: { fontFamily: Fonts.display, fontSize: FontSize.xl, color: Colors.textPrimary, textAlign: 'center' },
   emptySubtitle: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center' },
   list: { padding: Spacing.lg, paddingBottom: Spacing['3xl'] },
-});
+})));

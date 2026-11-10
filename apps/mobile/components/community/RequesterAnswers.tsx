@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useEffect, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,7 +11,7 @@ import type { NearbyTraveler } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { compareAnswers } from '@/utils/tripSummary';
 import { ComparisonList } from './JoinSummary';
-import { Colors, Spacing, FontSize, FontWeight } from '@/constants/theme';
+import { Spacing, FontSize, FontWeight } from '@/constants/theme';
 
 /**
  * For the organizer's decision: the requester's travel answers next to the organizer's own, loaded only when
@@ -17,6 +19,9 @@ import { Colors, Spacing, FontSize, FontWeight } from '@/constants/theme';
  * requester chose to share.
  */
 export function RequesterAnswers({ requestorUid }: { requestorUid: string }) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const profile = useAuthStore((s) => s.profile);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -55,11 +60,11 @@ export function RequesterAnswers({ requestorUid }: { requestorUid: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   wrap: { marginTop: Spacing.sm },
   toggle: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, paddingVertical: Spacing.xs },
   toggleText: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: FontWeight.semibold },
   body: { gap: Spacing.sm, paddingTop: Spacing.xs },
   notice: { fontSize: FontSize.xs, color: Colors.placeholder, lineHeight: 17 },
   link: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: FontWeight.semibold },
-});
+})));

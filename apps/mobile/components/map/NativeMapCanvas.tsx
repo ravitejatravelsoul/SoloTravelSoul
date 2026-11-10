@@ -1,8 +1,10 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import React, { useCallback, useMemo, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, LayoutChangeEvent } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 
 // ── Public types ──────────────────────────────────────────────────────
 
@@ -97,6 +99,8 @@ function connLineStyle(ax: number, ay: number, bx: number, by: number): LineStyl
 interface Projected { pin: NativeMapPin; x: number; y: number; }
 
 export function NativeMapCanvas({ pins, userLocation, onPinTap, showConnections }: Props) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const [dims, setDims] = useState({ w: 0, h: 0 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -208,7 +212,7 @@ export function NativeMapCanvas({ pins, userLocation, onPinTap, showConnections 
 
 // ── Styles ────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   root: {
     flex: 1,
     overflow: 'hidden',
@@ -270,4 +274,4 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontWeight: FontWeight.medium,
   },
-});
+})));

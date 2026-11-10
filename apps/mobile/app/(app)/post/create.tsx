@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useCallback } from 'react';
 import {
   View,
@@ -17,7 +19,7 @@ import { useCreatePost } from '@/hooks/usePosts';
 import { uploadPostPhotoFromUri } from '@/utils/storageUpload';
 import { pickImageFromLibrary, resizeImage } from '@/utils/imageUtils';
 import { useAuthStore } from '@/stores/authStore';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import type { PostType } from '@solotravelsoul/shared';
 import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
@@ -34,6 +36,9 @@ const MAX_CAPTION = 500;
 const MAX_HASHTAGS = 20;
 
 export default function CreatePostScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const user = useAuthStore((s) => s.user);
   const [images, setImages] = useState<string[]>([]);
   const [caption, setCaption] = useState('');
@@ -299,7 +304,7 @@ export default function CreatePostScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row',
@@ -431,4 +436,4 @@ const styles = StyleSheet.create({
   visChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   visText: { fontSize: FontSize.sm, color: Colors.textSecondary },
   visTextActive: { color: Colors.white, fontWeight: FontWeight.semibold },
-});
+})));

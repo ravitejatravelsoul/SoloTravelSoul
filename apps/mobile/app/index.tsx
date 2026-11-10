@@ -1,10 +1,10 @@
+import { useAppTheme } from '@/stores/appearanceStore';
 import { useEffect, useState } from 'react';
 import { Redirect } from 'expo-router';
 import { View, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useShallow } from 'zustand/react/shallow';
 import { useAuthStore } from '@/stores/authStore';
-import { Colors } from '@/constants/theme';
 
 /** First-launch introduction is shown once, to people who are signed out and have not seen it. Anything unreadable means "seen". */
 function useIntroSeen(needed: boolean): boolean | null {
@@ -21,6 +21,7 @@ function useIntroSeen(needed: boolean): boolean | null {
 }
 
 export default function Index() {
+  const { Colors } = useAppTheme();
   const { user, initialized } = useAuthStore(
     useShallow((s) => ({ user: s.user, initialized: s.initialized }))
   );

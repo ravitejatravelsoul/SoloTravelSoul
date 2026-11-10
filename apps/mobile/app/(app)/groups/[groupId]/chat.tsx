@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useRef, useCallback, useEffect } from 'react';
 import { BackButton } from '@/components/ui/BackButton';
 import {
@@ -20,7 +22,7 @@ import { MessageBubble } from '@/components/chat/MessageBubble';
 import { DateSeparator } from '@/components/chat/DateSeparator';
 import { SystemMessage } from '@/components/chat/SystemMessage';
 import { ChatInput } from '@/components/chat/ChatInput';
-import { Colors, FontSize, FontWeight, Radius, Spacing, Fonts } from '@/constants/theme';
+import { FontSize, FontWeight, Radius, Spacing, Fonts } from '@/constants/theme';
 import { isSameDay } from 'date-fns';
 import type { TravelGroupMessage } from '@solotravelsoul/shared';
 import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
@@ -30,6 +32,8 @@ type ListItem =
   | { kind: 'separator'; date: Date; key: string };
 
 export default function GroupChatScreen() {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const router = useRouter();
   const { top } = useSafeAreaInsets();
@@ -157,7 +161,7 @@ export default function GroupChatScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row',
@@ -194,4 +198,4 @@ const styles = StyleSheet.create({
   messageList: { paddingVertical: Spacing.md, flexGrow: 1 },
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 80 },
   emptyText: { fontSize: FontSize.md, color: Colors.textSecondary },
-});
+})));

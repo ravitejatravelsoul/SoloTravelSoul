@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useCallback } from 'react';
 import {
   View,
@@ -22,6 +24,8 @@ import type { UserLookup } from '@solotravelsoul/shared';
 import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 export default function NewChatScreen() {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const router = useRouter();
   const { top } = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
@@ -168,7 +172,7 @@ export default function NewChatScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row',
@@ -235,4 +239,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   startBtnText: { color: Colors.white, fontWeight: FontWeight.semibold, fontSize: FontSize.sm },
-});
+})));

@@ -1,3 +1,4 @@
+import { useAppTheme } from '@/stores/appearanceStore';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import WebView from 'react-native-webview';
@@ -38,7 +39,7 @@ type BridgeMessage =
 const JS_LEN = LEAFLET_JS.length;
 const CSS_LEN = LEAFLET_CSS.length;
 
-function buildMapHtml(pins: MapPin[]): string {
+function buildMapHtml(pins: MapPin[], accent: string): string {
   const pinsJson = JSON.stringify(pins).replace(/<\//g, '<\\/');
 
   return `<!DOCTYPE html>
@@ -56,7 +57,7 @@ function buildMapHtml(pins: MapPin[]): string {
   .leaflet-control-zoom a{
     border-radius:8px!important;
     border:1px solid #e5e7eb!important;
-    color:#00897B!important;
+    color:${accent}!important;
     font-size:16px!important;
     line-height:28px!important;
     width:28px!important;
@@ -128,7 +129,7 @@ if(typeof window.L==='undefined'&&typeof window.leaflet!=='undefined'){
     var userMarker=null;
 
     window.centerOnUser=function(lat,lng){
-      var dotHtml='<div style="width:14px;height:14px;border-radius:50%;background:#00897B;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);"></div>';
+      var dotHtml='<div style="width:14px;height:14px;border-radius:50%;background:${accent};border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);"></div>';
       var icon=L.divIcon({html:dotHtml,className:'',iconSize:[14,14],iconAnchor:[7,7]});
       if(userMarker){
         userMarker.setLatLng([lat,lng]);
@@ -176,6 +177,7 @@ if(typeof window.L==='undefined'&&typeof window.leaflet!=='undefined'){
 }
 
 export function WebLeafletMap({ pins, userLocation, onPinTap, onError }: Props) {
+  const { Colors } = useAppTheme();
   const [errored, setErrored] = useState(false);
   const webViewRef = useRef<WebView>(null);
   const mapReadyRef = useRef(false);
@@ -185,7 +187,7 @@ export function WebLeafletMap({ pins, userLocation, onPinTap, onError }: Props) 
     mapReadyRef.current = false;
     pendingCenterRef.current = userLocation ?? null;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pins]);
+  }, [pins, Colors.primary]);
 
   useEffect(() => {
     if (!userLocation) return;
@@ -241,7 +243,7 @@ export function WebLeafletMap({ pins, userLocation, onPinTap, onError }: Props) 
     onError?.();
   }, [onError]);
 
-  const mapSource = useMemo(() => ({ html: buildMapHtml(pins) }), [pins]);
+  const mapSource = useMemo(() => ({ html: buildMapHtml(pins, Colors.primary) }), [pins, Colors.primary]);
 
   if (errored) return null;
 

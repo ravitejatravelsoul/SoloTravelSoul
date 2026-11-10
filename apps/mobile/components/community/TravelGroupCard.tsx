@@ -1,8 +1,10 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, Avatar, Chip } from '@/components/ui';
 import type { CommunityGroup } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 import { getUserInitials } from '@solotravelsoul/shared';
 
 interface Props {
@@ -11,6 +13,9 @@ interface Props {
 }
 
 export function TravelGroupCard({ group, onPress }: Props) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const spotsLeft = group.capacity - group.memberCount;
   const isFull = spotsLeft <= 0;
 
@@ -48,7 +53,7 @@ export function TravelGroupCard({ group, onPress }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   card: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
@@ -84,4 +89,4 @@ const styles = StyleSheet.create({
   memberCount: { fontSize: FontSize.sm, color: Colors.textSecondary },
   tags: { flexDirection: 'row', gap: Spacing.xs },
   tag: { paddingHorizontal: Spacing.sm, paddingVertical: 2 },
-});
+})));

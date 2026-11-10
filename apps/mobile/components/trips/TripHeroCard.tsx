@@ -1,12 +1,15 @@
+import { EDITORIAL_APPEARANCE_ENABLED, useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { memo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui/Text';
-import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Fonts, Shadow } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import { PressableScale } from '@/components/ui/PressableScale';
-import { tripStatus, tripDurationDays, daysUntil, tripCurrentDay } from '@/utils/dateUtils';
+import { destinationCover, EditorialBackdrop } from '@/components/ui/EditorialCover';
+import { tripStatus, tripDurationDays, daysUntil, tripCurrentDay, formatDateRange } from '@/utils/dateUtils';
 import type { PlannedTrip } from '@solotravelsoul/shared';
 
 interface TripHeroCardProps {
@@ -14,9 +17,14 @@ interface TripHeroCardProps {
 }
 
 export const TripHeroCard = memo(function TripHeroCard({ trip }: TripHeroCardProps) {
+  const theme = useAppTheme();
+  const { Colors, Gradients } = theme;
+  const styles = getStyles(theme);
   const status = tripStatus(trip.startDate, trip.endDate);
   const isActive = status === 'active';
   const gradient = isActive ? Gradients.heroActive : Gradients.hero;
+  const cover = EDITORIAL_APPEARANCE_ENABLED ? destinationCover(trip.destination) : undefined;
+  const dates = formatDateRange(trip.startDate, trip.endDate);
 
   const totalDays = tripDurationDays(trip.startDate, trip.endDate);
   const currentDay = tripCurrentDay(trip.startDate);
@@ -38,7 +46,7 @@ export const TripHeroCard = memo(function TripHeroCard({ trip }: TripHeroCardPro
       guardMs={500}
       onPress={() => router.push(`/(app)/trips/${trip.id}`)}
       accessibilityRole="button"
-      accessibilityLabel={`${eyebrow}: ${trip.destination}. ${statusLine}`}
+      accessibilityLabel={`${eyebrow}: ${trip.destination}. ${EDITORIAL_APPEARANCE_ENABLED ? dates + ". " : ""}${statusLine}`}
       style={styles.wrapper}
     >
       <LinearGradient
@@ -50,6 +58,7 @@ export const TripHeroCard = memo(function TripHeroCard({ trip }: TripHeroCardPro
         {/* Decorative circles */}
         <View style={styles.decCircle1} />
         <View style={styles.decCircle2} />
+        <EditorialBackdrop source={cover} />
 
         {/* Eyebrow */}
         <View style={styles.eyebrowRow}>
@@ -64,6 +73,7 @@ export const TripHeroCard = memo(function TripHeroCard({ trip }: TripHeroCardPro
 
         {/* Destination */}
         <Text style={styles.destination} numberOfLines={2}>{trip.destination}</Text>
+        {EDITORIAL_APPEARANCE_ENABLED && <Text style={styles.dates}>{dates}</Text>}
 
         {/* Status line */}
         <Text style={styles.statusLine}>{statusLine}</Text>
@@ -94,7 +104,7 @@ export const TripHeroCard = memo(function TripHeroCard({ trip }: TripHeroCardPro
   );
 });
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   wrapper: {
     borderRadius: Radius['2xl'],
     overflow: 'hidden',
@@ -129,13 +139,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    ...(EDITORIAL_APPEARANCE_ENABLED ? { flexWrap: 'wrap' as const, gap: Spacing.xs } : {}),
     marginBottom: Spacing.md,
   },
   eyebrowBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.xs,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: EDITORIAL_APPEARANCE_ENABLED ? 'rgba(13,26,31,0.82)' : 'rgba(255,255,255,0.18)',
     paddingHorizontal: Spacing.md,
     paddingVertical: 5,
     borderRadius: Radius.full,
@@ -156,7 +167,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   durationBadge: {
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: EDITORIAL_APPEARANCE_ENABLED ? 'rgba(13,26,31,0.82)' : 'rgba(255,255,255,0.18)',
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
     borderRadius: Radius.full,
@@ -173,9 +184,10 @@ const styles = StyleSheet.create({
     lineHeight: 42,
     marginBottom: Spacing.xs,
   },
+  dates: { color: Colors.white, fontSize: FontSize.sm, fontWeight: FontWeight.semibold },
   statusLine: {
     fontSize: FontSize.md,
-    color: 'rgba(255,255,255,0.75)',
+    color: EDITORIAL_APPEARANCE_ENABLED ? Colors.white : 'rgba(255,255,255,0.75)',
     fontWeight: FontWeight.medium,
     marginBottom: Spacing.md,
   },
@@ -216,4 +228,4 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.bold,
     color: Colors.primaryDark,
   },
-});
+})));

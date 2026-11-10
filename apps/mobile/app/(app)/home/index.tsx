@@ -1,3 +1,5 @@
+import { EDITORIAL_APPEARANCE_ENABLED, useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useCallback } from 'react';
 import {
   View,
@@ -11,7 +13,8 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Avatar, OfflineBanner, ExpandingMenu, PressableScale, Reveal } from '@/components/ui';
+import { Text, Avatar, Button, OfflineBanner, ExpandingMenu, PressableScale, Reveal } from '@/components/ui';
+import { EditorialCover, LISBON_COVER } from '@/components/ui/EditorialCover';
 import { PostCard } from '@/components/posts/PostCard';
 import { TripHeroCard } from '@/components/trips/TripHeroCard';
 import { useFeed } from '@/hooks/useFeed';
@@ -28,14 +31,17 @@ function firstName(name: string | undefined): string {
   return first || 'traveler';
 }
 
-const SHORTCUTS: { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; route: string; tint: string }[] = [
-  { key: 'explore', label: 'Explore trips', icon: 'compass', route: '/(app)/discover/trips', tint: Colors.tealSoft },
+const getShortcuts = themed(({ Colors }): { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; route: string; tint: string }[] => ([
+  { key: 'explore', label: 'Explore trips', icon: 'compass', route: '/(app)/discover/trips', tint: Colors.accentSoft },
   { key: 'companions', label: 'Find companions', icon: 'people', route: '/(app)/community/companions', tint: Colors.coralSoft },
   { key: 'saved', label: 'Saved posts', icon: 'bookmark', route: '/(app)/saved-posts', tint: '#FFF1CC' },
   { key: 'groups', label: 'Groups', icon: 'chatbubbles', route: '/(app)/community/groups', tint: '#E9E6FB' },
-];
+]));
 
 function FeedHeader({ subtitle }: { subtitle: string }) {
+  const theme = useAppTheme();
+  const SHORTCUTS = getShortcuts(theme);
+  const styles = getStyles(theme);
   const profile = useAuthStore((s) => s.profile);
   const initials = getUserInitials(profile?.name ?? '?');
 
@@ -88,6 +94,9 @@ function FeedHeader({ subtitle }: { subtitle: string }) {
 }
 
 function EmptyFeed({ isNewUser }: { isNewUser: boolean }) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   return (
     <View style={styles.emptyWrap}>
       <Ionicons name="earth-outline" size={56} color={Colors.border} />
@@ -124,6 +133,9 @@ function EmptyFeed({ isNewUser }: { isNewUser: boolean }) {
 }
 
 export default function FeedScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const { items, loading, refreshing, refresh, isEmpty, isNewUser } = useFeed();
   const { upcoming } = useTrips();
   const { isConnected } = useNetworkState();
@@ -147,15 +159,37 @@ export default function FeedScreen() {
       {nextTrip ? (
         <Reveal style={styles.tripBanner}>
           <TripHeroCard trip={nextTrip} />
+          {EDITORIAL_APPEARANCE_ENABLED && (
+            <View style={styles.tripActions}>
+              <Button label="Write a journal" variant="secondary" onPress={() => router.push('/(app)/journal/create' as never)} />
+            </View>
+          )}
         </Reveal>
+      ) : EDITORIAL_APPEARANCE_ENABLED ? (
+        <View style={styles.tripBanner}>
+          <EditorialCover source={LISBON_COVER} style={styles.inspiration}>
+            <Text style={styles.coverLabel}>Destination inspiration</Text>
+            <Text variant="h2" style={styles.coverLabel}>Lisbon, Portugal</Text>
+          </EditorialCover>
+        </View>
       ) : null}
+      {EDITORIAL_APPEARANCE_ENABLED && (
+        <View style={styles.companionInvite}>
+          <Text variant="h3">{nextTrip ? `Meet travelers in ${nextTrip.destination}` : 'Find your travel people'}</Text>
+          <Text>{nextTrip ? 'See whose dates line up and what you could do together.' : 'Start with a destination you’re curious about.'}</Text>
+          <Button label={nextTrip ? 'Find companions' : 'Browse travelers'} onPress={() => {
+            if (nextTrip) router.push({ pathname: '/(app)/community/companions', params: { tripId: nextTrip.id } } as never);
+            else router.push('/(app)/community/travelers' as never);
+          }} />
+        </View>
+      )}
       {loading && items.length === 0 ? (
         <View style={styles.centerLoader}>
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>
       ) : null}
     </>
-  ), [isConnected, nextTrip, loading, items.length, headerSubtitle]);
+  ), [isConnected, nextTrip, loading, items.length, headerSubtitle, styles, Colors.primary]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -183,7 +217,7 @@ export default function FeedScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row',
@@ -203,6 +237,13 @@ const styles = StyleSheet.create({
   tripBanner: {
     marginHorizontal: Spacing['2xl'],
     marginVertical: Spacing.lg,
+  },
+  tripActions: { alignItems: 'flex-start' },
+  inspiration: { minHeight: 186 },
+  coverLabel: { color: Colors.white },
+  companionInvite: {
+    backgroundColor: Colors.accentSoft, marginHorizontal: Spacing['2xl'], marginBottom: Spacing.lg,
+    padding: Spacing.lg, borderRadius: Radius.xl, gap: Spacing.sm, alignItems: 'flex-start',
   },
   list: { flexGrow: 1 },
   centerLoader: { padding: Spacing['4xl'], alignItems: 'center' },
@@ -242,4 +283,4 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
   },
   emptyBtnText: { fontSize: FontSize.sm, color: Colors.white, fontWeight: FontWeight.semibold },
-});
+})));

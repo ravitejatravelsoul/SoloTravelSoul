@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState } from 'react';
 import {
   View,
@@ -12,7 +14,7 @@ import DateTimePicker, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from './Text';
-import { Colors, Radius, Spacing, FontSize, FontWeight } from '@/constants/theme';
+import { Radius, Spacing, FontSize, FontWeight } from '@/constants/theme';
 
 function formatDisplay(date: Date): string {
   return date.toLocaleDateString('en-US', {
@@ -39,6 +41,9 @@ export function DatePicker({
   maximumDate,
   error,
 }: DatePickerProps) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const [showAndroid, setShowAndroid] = useState(false);
   const [showIOSModal, setShowIOSModal] = useState(false);
   const [tempDate, setTempDate] = useState<Date>(value);
@@ -141,7 +146,7 @@ export function DatePicker({
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   wrapper: { gap: 4 },
   label: { marginBottom: 2 },
   field: {
@@ -187,4 +192,4 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.bold,
     color: Colors.primaryDark,
   },
-});
+})));

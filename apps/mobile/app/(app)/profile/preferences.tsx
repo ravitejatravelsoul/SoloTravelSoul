@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 // Optional travel-preference setup: offered after sign-up and to existing users, one
 // question per step. Each step saves (partial progress), so leaving and coming back
 // resumes where the user stopped. Editing later uses the same fields (Edit Profile).
@@ -26,12 +28,15 @@ const STEP_FIELDS: Record<PreferenceStep, (keyof TravelPreferences)[]> = {
 const STEP_EMOJI: Record<PreferenceStep, string> = {
   styles: '🧭', interests: '🎒', languages: '🗣️', pace: '🐢', schedule: '🗓️', groupSize: '👥', sharing: '🔐',
 };
-const STEP_TINT: Record<PreferenceStep, string> = {
-  styles: Colors.tealSoft, interests: Colors.coralSoft, languages: '#FFF1CC', pace: Colors.tealSoft, schedule: Colors.coralSoft, groupSize: '#FFF1CC', sharing: '#E9E6FB',
-};
+const getStepTint = themed(({ Colors }): Record<PreferenceStep, string> => ({
+  styles: Colors.accentSoft, interests: Colors.coralSoft, languages: '#FFF1CC', pace: Colors.accentSoft, schedule: Colors.coralSoft, groupSize: '#FFF1CC', sharing: '#E9E6FB',
+}));
 const PUBLIC_STEPS: PreferenceStep[] = ['styles', 'interests', 'languages', 'sharing'];
 
 export default function PreferenceSetupScreen() {
+  const theme = useAppTheme();
+  const STEP_TINT = getStepTint(theme);
+  const styles = getStyles(theme);
   const { from } = useLocalSearchParams<{ from?: string }>();
   const user = useAuthStore((s) => s.user);
   const profile = useAuthStore((s) => s.profile);
@@ -132,7 +137,7 @@ export default function PreferenceSetupScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   navBar: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -153,4 +158,4 @@ const styles = StyleSheet.create({
   footer: { padding: Spacing.lg, gap: Spacing.sm, backgroundColor: Colors.background },
   later: { alignItems: 'center', paddingVertical: Spacing.sm },
   laterLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
-});
+})));

@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useEffect, useState } from 'react';
 import { useMediaSource } from '@/hooks/useMediaSource';
 import { useModerationActions } from '@/hooks/useModerationActions';
@@ -19,10 +21,13 @@ import { CommentsSheet } from '@/components/posts/CommentsSheet';
 import { useLikeJournal } from '@/hooks/useJournals';
 import { getJournal } from '@solotravelsoul/firebase';
 import { getUserInitials } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import type { TravelJournal } from '@solotravelsoul/shared';
 
 export default function JournalDetailScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const mediaSrc = useMediaSource();
   const moderation = useModerationActions();
   const { journalId } = useLocalSearchParams<{ journalId: string }>();
@@ -180,7 +185,7 @@ export default function JournalDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   backBtn: { padding: Spacing['2xl'] },
@@ -253,4 +258,4 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   commentsBtnText: { fontSize: FontSize.md, color: Colors.primary, fontWeight: FontWeight.medium },
-});
+})));

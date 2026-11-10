@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useCallback, useEffect, useState } from 'react';
 import { useMediaSource } from '@/hooks/useMediaSource';
 import { View, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator, Image, ScrollView, Modal } from 'react-native';
@@ -29,6 +31,8 @@ import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constant
 
 /** One reported photo: loading spinner, error fallback, tap to view full size. */
 function ReviewImage({ uri, onOpen }: { uri: string; onOpen: (uri: string) => void }) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const mediaSrc = useMediaSource();
   const [state, setState] = useState<'loading' | 'loaded' | 'error'>('loading');
   return (
@@ -68,6 +72,8 @@ function age(date: Date): string {
  * all actions are enforced by Firestore rules, not by this screen).
  */
 export default function ModerationScreen() {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const mediaSrc = useMediaSource();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const addToast = useUIStore((s) => s.addToast);
@@ -317,7 +323,7 @@ export default function ModerationScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   navBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
   navTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
@@ -343,4 +349,4 @@ const styles = StyleSheet.create({
   thumbError: { alignItems: 'center', gap: 4 },
   viewer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
   viewerImage: { width: '100%', height: '80%' },
-});
+})));

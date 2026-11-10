@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useCallback } from 'react';
 import {
   View,
@@ -19,7 +21,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useHaptics } from '@/hooks/useHaptics';
 import { ChatListItem } from '@/components/chat/ChatListItem';
 import { Text, Skeleton, PressableScale } from '@/components/ui';
-import { Colors, FontSize, FontWeight, Fonts, Spacing, Radius } from '@/constants/theme';
+import { FontSize, FontWeight, Fonts, Spacing, Radius } from '@/constants/theme';
 import type { DirectChat, TravelGroup } from '@solotravelsoul/shared';
 
 // ── Chat skeleton row ─────────────────────────────────────────────────
@@ -61,6 +63,9 @@ const sk = StyleSheet.create({
 // ── Screen ────────────────────────────────────────────────────────────
 
 export default function ChatsIndexScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
@@ -247,7 +252,7 @@ export default function ChatsIndexScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: Colors.background,
@@ -270,7 +275,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.tealSoft,
+    backgroundColor: Colors.accentSoft,
   },
   list: {
     paddingBottom: 32,
@@ -339,4 +344,4 @@ const styles = StyleSheet.create({
   ctaBtnTextSecondary: {
     color: Colors.primary,
   },
-});
+})));

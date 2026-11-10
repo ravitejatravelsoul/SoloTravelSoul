@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useRef, useCallback, useEffect, useMemo } from 'react';
 import { BackButton } from '@/components/ui/BackButton';
 import { useModerationActions } from '@/hooks/useModerationActions';
@@ -31,6 +33,8 @@ type ListItem =
   | { kind: 'separator'; date: Date; key: string };
 
 export default function DirectChatScreen() {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const { chatId } = useLocalSearchParams<{ chatId: string }>();
   const router = useRouter();
   const { top } = useSafeAreaInsets();
@@ -168,7 +172,7 @@ export default function DirectChatScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row',
@@ -236,4 +240,4 @@ const styles = StyleSheet.create({
     fontSize: FontSize.md,
     color: Colors.textSecondary,
   },
-});
+})));

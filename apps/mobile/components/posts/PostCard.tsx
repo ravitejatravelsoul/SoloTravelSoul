@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { memo, useCallback } from 'react';
 import {
   View,
@@ -13,7 +15,7 @@ import { SaveButton } from './SaveButton';
 import { PostImageCarousel } from './PostImageCarousel';
 import { useLikePost } from '@/hooks/usePosts';
 import { getUserInitials } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 import type { TravelPost } from '@solotravelsoul/shared';
 import { ShadowView } from '@/components/ui/ShadowClip';
 
@@ -33,6 +35,8 @@ interface Props {
 }
 
 export const PostCard = memo(function PostCard({ post, onPress }: Props) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const initials = getUserInitials(post.authorName);
   const { liked, toggling, toggle } = useLikePost(post.postId);
 
@@ -134,7 +138,7 @@ export const PostCard = memo(function PostCard({ post, onPress }: Props) {
   );
 });
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   card: {
     backgroundColor: Colors.surface,
     marginHorizontal: Spacing.lg,
@@ -235,4 +239,4 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
   },
-});
+})));

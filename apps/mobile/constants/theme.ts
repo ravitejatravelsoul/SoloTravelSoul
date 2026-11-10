@@ -1,5 +1,5 @@
 // ── "Playful Explorer" design tokens ───────────────────────────────────
-// Warm ivory surfaces, deep ink text, electric teal as the one primary accent and coral as a selective highlight.
+// Base palette: warm ivory, deep ink, teal and coral. The iOS appearance store can derive a custom accent.
 // Every screen reads these tokens, so changing a value here re-skins the app. Contrast notes (WCAG, on the surface
 // they are used on): ink on ivory 15:1, secondary text on ivory 6.4:1, white on primary 4.6:1, primaryDark on ivory
 // 7.1:1 (links and small teal text), ink on coral 5.7:1 (coral carries ink text or icons, never white text).
@@ -11,7 +11,7 @@ export const Colors = {
   accent: '#19C3B1', // bright teal: highlights, progress, decorative fills (carries ink text)
   coral: '#FF6B57', // selective highlight: badges, likes, celebration (carries ink text)
   coralSoft: '#FFE3DD',
-  tealSoft: '#DDF5F1',
+  accentSoft: '#DDF5F1',
   sun: '#FFC857', // small celebratory / star accents
 
   // Backgrounds

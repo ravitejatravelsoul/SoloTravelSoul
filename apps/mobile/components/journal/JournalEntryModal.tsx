@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useEffect, useRef } from 'react';
 import {
   Modal,
@@ -12,11 +14,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui';
 import {
-  Colors,
   FontSize,
   FontWeight,
   Radius,
-  Shadow,
   Spacing, Fonts } from '@/constants/theme';
 import type { JournalEntry, JournalMood, PlaceEntry } from '@solotravelsoul/shared';
 import { ToastContainer } from '@/components/ui/Toast';
@@ -61,6 +61,9 @@ export function JournalEntryModal({
   onClose,
   modalTitle,
 }: Props) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
   const [mood, setMood] = useState<JournalMood | undefined>(undefined);
@@ -256,7 +259,7 @@ export function JournalEntryModal({
 
 // ── Styles ────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   flex: { flex: 1, backgroundColor: Colors.background },
 
   handle: {
@@ -382,4 +385,4 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     color: Colors.placeholder,
   },
-});
+})));

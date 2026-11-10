@@ -1,3 +1,4 @@
+import { useAppTheme } from '@/stores/appearanceStore';
 import { useState, useCallback } from 'react';
 import { View, FlatList, StyleSheet, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
@@ -11,6 +12,7 @@ import type { PlannedTrip } from '@solotravelsoul/shared';
 type Filter = 'upcoming' | 'past';
 
 export default function TripsScreen() {
+  const { Colors } = useAppTheme();
   const { upcoming, past, loading, refreshing, refresh } = useTrips();
   const [filter, setFilter] = useState<Filter>('upcoming');
 

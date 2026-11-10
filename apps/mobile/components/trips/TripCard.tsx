@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { memo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
@@ -5,21 +7,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/Text';
 import { PressableScale } from '@/components/ui/PressableScale';
-import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { formatDateRange, tripDurationDays, tripStatus, daysUntil, tripCurrentDay } from '@/utils/dateUtils';
 import type { PlannedTrip } from '@solotravelsoul/shared';
 
-const STATUS_COLOR = {
+const getStatusColor = themed(({ Colors }) => ({
   upcoming: Colors.primary,
   active: Colors.success,
   past: Colors.textSecondary,
-} as const;
+} as const));
 
-const STATUS_GRADIENT = {
+const getStatusGradient = themed(({ Gradients }) => ({
   upcoming: Gradients.primary,
   active: Gradients.success,
   past: ['#9CA3AF', '#6B7280'] as const,
-} as const;
+} as const));
 
 const STATUS_LABEL = {
   upcoming: (trip: PlannedTrip) => {
@@ -45,6 +47,9 @@ interface TripCardProps {
 }
 
 export const TripCard = memo(function TripCard({ trip }: TripCardProps) {
+  const theme = useAppTheme();
+  const STATUS_COLOR = getStatusColor(theme);
+  const STATUS_GRADIENT = getStatusGradient(theme);
   const status = tripStatus(trip.startDate, trip.endDate);
   const accentColor = STATUS_COLOR[status];
   const gradient = STATUS_GRADIENT[status];

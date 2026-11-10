@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useEffect } from 'react';
 import { useMediaSource } from '@/hooks/useMediaSource';
 import {
@@ -28,6 +30,8 @@ export function Avatar({
   showEditBadge = false,
   loading = false,
 }: AvatarProps) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const mediaSrc = useMediaSource();
   const [imgError, setImgError] = useState(false);
 
@@ -107,7 +111,7 @@ export function Avatar({
   return inner;
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   base: {
     backgroundColor: Colors.primary,
     alignItems: 'center',
@@ -127,4 +131,4 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Colors.white,
   },
-});
+})));

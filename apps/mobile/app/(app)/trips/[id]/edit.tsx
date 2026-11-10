@@ -1,3 +1,4 @@
+import { EDITORIAL_APPEARANCE_ENABLED, useAppTheme } from '@/stores/appearanceStore';
 import { useState } from 'react';
 import {
   View,
@@ -21,6 +22,7 @@ import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/
 import { ShadowTouchable, ShadowView } from '@/components/ui/ShadowClip';
 
 export default function EditTripScreen() {
+  const { Colors } = useAppTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const trip = useTripStore((s) => s.trips.find((t) => t.id === id));
   const { updateTrip, loading } = useTrips();
@@ -270,7 +272,7 @@ export default function EditTripScreen() {
               <View style={styles.visibilityRow}>
                 <View style={styles.rowLeft}>
                   <View style={[styles.iconBox, { backgroundColor: Colors.accent + '15' }]}>
-                    <Ionicons name="people-outline" size={18} color={Colors.accent} />
+                    <Ionicons name="people-outline" size={18} color={EDITORIAL_APPEARANCE_ENABLED ? Colors.primaryDark : Colors.accent} />
                   </View>
                   <Text style={styles.rowTitle}>Manage Requests</Text>
                 </View>

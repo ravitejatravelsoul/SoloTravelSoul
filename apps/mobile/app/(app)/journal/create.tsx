@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useCallback } from 'react';
 import {
   View,
@@ -17,7 +19,7 @@ import { useCreateJournal } from '@/hooks/useJournals';
 import { uploadPostPhotoFromUri } from '@/utils/storageUpload';
 import { pickImageFromLibrary, resizeImage } from '@/utils/imageUtils';
 import { useAuthStore } from '@/stores/authStore';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 const MAX_TITLE = 120;
@@ -28,6 +30,9 @@ function countWords(text: string): number {
 }
 
 export default function CreateJournalScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const user = useAuthStore((s) => s.user);
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
@@ -256,7 +261,7 @@ export default function CreateJournalScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row',
@@ -377,4 +382,4 @@ const styles = StyleSheet.create({
   },
   visChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   visText: { fontSize: FontSize.sm, color: Colors.textSecondary },
-});
+})));

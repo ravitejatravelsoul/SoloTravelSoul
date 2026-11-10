@@ -1,3 +1,5 @@
+import { EDITORIAL_APPEARANCE_ENABLED, useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useEffect, useState } from 'react';
 import {
   View,
@@ -15,13 +17,14 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient';
 import { PressableScale, Celebration, BackButton } from '@/components/ui';
 import { useMediaSource } from '@/hooks/useMediaSource';
+import { EditorialBackdrop, destinationCover } from '@/components/ui/EditorialCover';
 import { Text, Avatar, Chip, Button } from '@/components/ui';
 import { JoinRequestModal } from '@/components/community/JoinRequestModal';
 import { JoinSummary } from '@/components/community/JoinSummary';
 import { getPublicTrip, subscribePublicTripMembers, getTripJoinRequestStatus, cancelTripJoinRequest, getNearbyTraveler, leavePublicTrip, getOrCreateDirectChat } from '@solotravelsoul/firebase';
 import type { PublicTrip, TripMember, RequestStatus, NearbyTraveler } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
-import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Fonts, Shadow, TapTarget } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts, TapTarget } from '@/constants/theme';
 import { getUserInitials, preferencesOf, isListed } from '@solotravelsoul/shared';
 
 function formatDateRange(start: Date, end: Date): string {
@@ -34,6 +37,11 @@ function durationDays(start: Date, end: Date): number {
 }
 
 export default function PublicTripDetailScreen() {
+  const theme = useAppTheme();
+  const { Colors, Gradients } = theme;
+  const styles = getStyles(theme);
+  const mediaSrc = useMediaSource();
+  const [coverFailed, setCoverFailed] = useState(false);
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const profile = useAuthStore((s) => s.profile);
@@ -46,8 +54,6 @@ export default function PublicTripDetailScreen() {
   const [organizer, setOrganizer] = useState<NearbyTraveler | null>(null);
   const [leaving, setLeaving] = useState(false);
   const insets = useSafeAreaInsets();
-  const mediaSrc = useMediaSource();
-  const [coverFailed, setCoverFailed] = useState(false);
   const [celebrate, setCelebrate] = useState(0);
   // Once the hero has scrolled away the status bar gets a solid ivory strip, so content never runs under the clock.
   const [pastHero, setPastHero] = useState(false);
@@ -173,12 +179,23 @@ export default function PublicTripDetailScreen() {
       >
         {/* Hero: cover photo (or a warm gradient), floating round buttons, destination and title over a scrim */}
         <View style={[styles.hero, { paddingTop: insets.top + Spacing.sm }]}>
-          {trip.coverPhotoURL && !coverFailed ? (
-            <Image source={mediaSrc(trip.coverPhotoURL)} style={StyleSheet.absoluteFill} resizeMode="cover" onError={() => setCoverFailed(true)} accessibilityIgnoresInvertColors />
+          {EDITORIAL_APPEARANCE_ENABLED ? (
+            <>
+              <LinearGradient colors={Gradients.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill}>
+                <Ionicons name="airplane" size={120} color="rgba(255,255,255,0.14)" style={styles.heroArt} />
+              </LinearGradient>
+              <EditorialBackdrop source={destinationCover(trip.destination)} photoURL={trip.coverPhotoURL} />
+            </>
           ) : (
-            <LinearGradient colors={Gradients.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill}>
-              <Ionicons name="airplane" size={120} color="rgba(255,255,255,0.14)" style={styles.heroArt} />
-            </LinearGradient>
+            <>
+              {trip.coverPhotoURL && !coverFailed ? (
+                <Image source={mediaSrc(trip.coverPhotoURL)} style={StyleSheet.absoluteFill} resizeMode="cover" onError={() => setCoverFailed(true)} accessibilityIgnoresInvertColors />
+              ) : (
+                <LinearGradient colors={Gradients.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill}>
+                  <Ionicons name="airplane" size={120} color="rgba(255,255,255,0.14)" style={styles.heroArt} />
+                </LinearGradient>
+              )}
+            </>
           )}
           <LinearGradient colors={Gradients.scrim} style={styles.heroScrim} />
           <View style={styles.heroBar}>
@@ -355,6 +372,8 @@ export default function PublicTripDetailScreen() {
 }
 
 function NavBar() {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   return (
     <View style={styles.navBar}>
       <BackButton />
@@ -365,6 +384,8 @@ function NavBar() {
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   return (
     <View style={styles.section}>
       <Text style={styles.sectionLabel} accessibilityRole="header">{title.charAt(0) + title.slice(1).toLowerCase()}</Text>
@@ -374,6 +395,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function DetailRow({ icon, label, sublabel }: { icon: string; label: string; sublabel?: string }) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   return (
     <View style={styles.detailRow}>
       <Ionicons name={icon as never} size={18} color={Colors.primary} />
@@ -385,7 +409,7 @@ function DetailRow({ icon, label, sublabel }: { icon: string; label: string; sub
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   noticeBox: { marginHorizontal: Spacing.lg, marginTop: Spacing.md, padding: Spacing.md, borderRadius: Radius.md, backgroundColor: Colors.warning + '22', borderWidth: 1, borderColor: Colors.warning + '66' },
   noticeText: { fontSize: FontSize.sm, color: Colors.textPrimary },
   safe: { flex: 1, backgroundColor: Colors.background },
@@ -471,4 +495,4 @@ const styles = StyleSheet.create({
   secondaryBtnLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
   memberNote: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center' },
   emptyTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
-});
+})));

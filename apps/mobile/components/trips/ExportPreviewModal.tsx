@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useMemo } from 'react';
 import {
   Modal,
@@ -15,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { Text } from '@/components/ui';
 import { formatTripSummary } from '@/utils/formatTripSummary';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import type { PlannedTrip, ItineraryDay, ChecklistItem } from '@solotravelsoul/shared';
 import { ToastContainer } from '@/components/ui/Toast';
 
@@ -28,6 +30,9 @@ interface Props {
 }
 
 export function ExportPreviewModal({ visible, onClose, trip, itinerary, checklist }: Props) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const [includeJournal, setIncludeJournal] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -165,7 +170,7 @@ export function ExportPreviewModal({ visible, onClose, trip, itinerary, checklis
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
 
   // Header
@@ -320,4 +325,4 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.bold,
     color: Colors.white,
   },
-});
+})));

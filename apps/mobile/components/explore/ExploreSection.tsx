@@ -1,8 +1,10 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { memo } from 'react';
 import { View, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui';
-import { Colors, Spacing, FontSize, FontWeight, Fonts } from '@/constants/theme';
+import { Spacing, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 interface Props {
   title: string;
@@ -19,6 +21,9 @@ export const ExploreSection = memo(function ExploreSection({
   children,
   horizontal = true,
 }: Props) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   return (
     <View style={styles.section}>
       <View style={styles.header}>
@@ -47,7 +52,7 @@ export const ExploreSection = memo(function ExploreSection({
   );
 });
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   section: { marginBottom: Spacing['2xl'] },
   header: {
     flexDirection: 'row',
@@ -61,4 +66,4 @@ const styles = StyleSheet.create({
   seeAll: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: FontWeight.medium },
   row: { paddingHorizontal: Spacing['2xl'], gap: Spacing.md },
   col: { paddingHorizontal: Spacing['2xl'], gap: Spacing.md },
-});
+})));

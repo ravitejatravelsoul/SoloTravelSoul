@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui';
@@ -10,6 +12,8 @@ import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constant
 const STACK_FROM_FONT_SCALE = 1.4;
 
 function Rows({ rows }: { rows: SummaryRow[] }) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const { fontScale } = useWindowDimensions();
   const stacked = fontScale >= STACK_FROM_FONT_SCALE;
   return (
@@ -26,6 +30,8 @@ function Rows({ rows }: { rows: SummaryRow[] }) {
 
 /** Shared / differences / not provided: the actual answers, never a score or a personality label. */
 export function ComparisonList({ comparison }: { comparison: AnswerComparison }) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const c = comparison;
   return (
     <View style={styles.comparison} accessible={false}>
@@ -56,6 +62,9 @@ interface Props {
 
 /** What to know before asking to join: trip facts, the organizer's expectations, shared answers and a safety reminder. */
 export function JoinSummary({ trip, organizer, viewer, showAnswers = true }: Props) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const comparison = compareAnswers(viewer, organizer);
   return (
     <View>
@@ -80,7 +89,7 @@ export function JoinSummary({ trip, organizer, viewer, showAnswers = true }: Pro
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', gap: Spacing.md, paddingVertical: Spacing.xs },
   rowStacked: { flexDirection: 'column', gap: 0, paddingVertical: Spacing.sm },
   rowLabelStacked: { fontSize: FontSize.sm, color: Colors.textSecondary },
@@ -93,6 +102,6 @@ const styles = StyleSheet.create({
   headline: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.xs },
   line: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm },
   lineText: { flex: 1, fontSize: FontSize.md, color: Colors.textPrimary, lineHeight: 22 },
-  notice: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg, padding: Spacing.md, borderRadius: Radius.lg, backgroundColor: Colors.tealSoft },
+  notice: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg, padding: Spacing.md, borderRadius: Radius.lg, backgroundColor: Colors.accentSoft },
   noticeText: { fontSize: FontSize.sm, color: Colors.textPrimary, lineHeight: 20 },
-});
+})));

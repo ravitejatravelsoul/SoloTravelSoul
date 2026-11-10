@@ -1,6 +1,8 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 
 interface Props {
   following: boolean;
@@ -11,6 +13,9 @@ interface Props {
 }
 
 export function FollowButton({ following, loading, toggling, onToggle, size = 'md' }: Props) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const isSmall = size === 'sm';
 
   if (loading) {
@@ -52,7 +57,7 @@ export function FollowButton({ following, loading, toggling, onToggle, size = 'm
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   base: {
     borderRadius: Radius.full,
     alignItems: 'center',
@@ -97,4 +102,4 @@ const styles = StyleSheet.create({
     width: 100,
     height: 40,
   },
-});
+})));

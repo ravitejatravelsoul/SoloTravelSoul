@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
@@ -10,7 +12,7 @@ import {
 } from '@solotravelsoul/firebase';
 import { useAuthStore } from '@/stores/authStore';
 import { shouldOfferPreferenceSetup } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import { ShadowView } from '@/components/ui/ShadowClip';
 
 function FeatureCard({
@@ -20,8 +22,8 @@ function FeatureCard({
   onPress,
   badge,
   comingSoon,
-  tint = Colors.tealSoft,
-  tintIcon = Colors.primaryDark,
+  tint,
+  tintIcon,
 }: {
   icon: string;
   title: string;
@@ -32,6 +34,9 @@ function FeatureCard({
   tint?: string;
   tintIcon?: string;
 }) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   return (
     <PressableScale
       style={[styles.featureCard, comingSoon && styles.featureCardDim]}
@@ -42,8 +47,8 @@ function FeatureCard({
       accessibilityRole="button"
       accessibilityLabel={`${title}. ${subtitle}${badge ? `. ${badge} waiting` : ''}`}
     >
-      <View style={[styles.featureIcon, { backgroundColor: tint }]}>
-        <Ionicons name={icon as never} size={28} color={comingSoon ? Colors.textSecondary : tintIcon} />
+      <View style={[styles.featureIcon, { backgroundColor: tint ?? Colors.accentSoft }]}>
+        <Ionicons name={icon as never} size={28} color={comingSoon ? Colors.textSecondary : tintIcon ?? Colors.primaryDark} />
       </View>
       <View style={styles.featureText}>
         <View style={styles.featureTitleRow}>
@@ -67,6 +72,9 @@ function FeatureCard({
 }
 
 export default function CommunityScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const profile = useAuthStore((s) => s.profile);
   const offerSetup = shouldOfferPreferenceSetup(profile);
@@ -189,10 +197,10 @@ export default function CommunityScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   setupCard: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg, marginTop: Spacing.md,
-    borderRadius: Radius.xl, backgroundColor: Colors.tealSoft, borderWidth: 1, borderColor: Colors.accent,
+    borderRadius: Radius.xl, backgroundColor: Colors.accentSoft, borderWidth: 1, borderColor: Colors.accent,
   },
   setupTitle: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   setupText: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
@@ -256,4 +264,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   pendingBadgeText: { fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white },
-});
+})));

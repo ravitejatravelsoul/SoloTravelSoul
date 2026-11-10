@@ -4,6 +4,7 @@
  */
 import { memo } from 'react';
 import { View, StyleSheet } from 'react-native';
+import { useAppTheme } from '@/stores/appearanceStore';
 
 const STORIES_ENABLED = process.env.EXPO_PUBLIC_STORIES_ENABLED === 'true';
 
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export const StoryRing = memo(function StoryRing({ hasStory, seen, size = 80, children }: Props) {
+  const { Colors } = useAppTheme();
   if (!STORIES_ENABLED || !hasStory) return <>{children}</>;
 
   const ringSize = size + 6;
@@ -27,7 +29,7 @@ export const StoryRing = memo(function StoryRing({ hasStory, seen, size = 80, ch
           width: ringSize,
           height: ringSize,
           borderRadius: ringSize / 2,
-          borderColor: seen ? '#D1D5DB' : '#00897B',
+          borderColor: seen ? '#D1D5DB' : Colors.primary,
         },
       ]}
     >

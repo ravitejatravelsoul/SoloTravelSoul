@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useEffect, useState } from 'react';
 import { View, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
 
@@ -10,6 +12,8 @@ import { useBlockStore } from '@/stores/blockStore';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 export default function BlockedUsersScreen() {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const { blockedUids, unblockUser } = useBlockStore();
   const myUid = useAuthStore((s) => s.user?.uid ?? '');
   const [names, setNames] = useState<Record<string, string | null>>({});
@@ -64,7 +68,7 @@ export default function BlockedUsersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   navBar: {
     flexDirection: 'row',
@@ -85,4 +89,4 @@ const styles = StyleSheet.create({
   uidText: { flex: 1, fontSize: FontSize.md, color: Colors.textPrimary },
   unblockBtn: { paddingVertical: 6, paddingHorizontal: Spacing.md, borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.primary },
   unblockLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.primary },
-});
+})));

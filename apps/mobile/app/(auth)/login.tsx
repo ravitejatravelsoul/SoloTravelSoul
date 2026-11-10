@@ -1,3 +1,4 @@
+import { useAppTheme } from '@/stores/appearanceStore';
 import { useState } from 'react';
 import { StyleSheet, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
@@ -7,10 +8,11 @@ import { useAuth } from '@/hooks/useAuth';
 import { useBiometric } from '@/hooks/useBiometric';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
-import { Colors, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { isValidEmail, isValidPassword } from '@/utils/validations';
 
 export default function LoginScreen() {
+  const { Colors } = useAppTheme();
   const { login, loading } = useAuth();
   const { enrolled, authenticate } = useBiometric();
   // Biometric unlock only resumes an existing session; it cannot sign anyone in,

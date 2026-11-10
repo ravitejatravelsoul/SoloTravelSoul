@@ -1,8 +1,10 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { View, StyleSheet } from 'react-native';
 
 
 import { Screen, Text, Divider, ScreenHeader } from '@/components/ui';
-import { Colors, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { CONTACT_EMAIL } from '@/constants/contact';
 import { TERMS_VERSION, COMPATIBILITY_NOTICE, PLATFORM_ROLE, NOT_EMERGENCY_SERVICE, REPORT_BLOCK_LEAVE, SAFETY_TIPS } from '@solotravelsoul/shared';
 
@@ -46,6 +48,8 @@ const SECTIONS = [
 ];
 
 export default function TermsScreen() {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   return (
     <Screen scroll padded>
       <ScreenHeader title="Terms of Service" />
@@ -66,7 +70,7 @@ export default function TermsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   nav: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -82,4 +86,4 @@ const styles = StyleSheet.create({
   section: { marginBottom: Spacing.xl, gap: Spacing.xs },
   sectionTitle: { color: Colors.primaryDark },
   sectionBody: { color: Colors.textSecondary, lineHeight: 22 },
-});
+})));

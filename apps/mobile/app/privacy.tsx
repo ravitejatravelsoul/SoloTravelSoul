@@ -1,8 +1,10 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { View, StyleSheet } from 'react-native';
 
 
 import { Screen, Text, Divider, ScreenHeader } from '@/components/ui';
-import { Colors, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { CONTACT_EMAIL } from '@/constants/contact';
 
 // Google Play requires a web resource for deletion requests (no app needed).
@@ -51,6 +53,8 @@ const SECTIONS = [
 ];
 
 export default function PrivacyScreen() {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   return (
     <Screen scroll padded>
       <ScreenHeader title="Privacy Policy" />
@@ -71,7 +75,7 @@ export default function PrivacyScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   nav: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -87,4 +91,4 @@ const styles = StyleSheet.create({
   section: { marginBottom: Spacing.xl, gap: Spacing.xs },
   sectionTitle: { color: Colors.primaryDark },
   sectionBody: { color: Colors.textSecondary, lineHeight: 22 },
-});
+})));

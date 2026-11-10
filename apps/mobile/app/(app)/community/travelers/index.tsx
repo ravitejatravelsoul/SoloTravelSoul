@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -16,9 +18,12 @@ import type { NearbyTraveler, TravelPreferences } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useBlockStore } from '@/stores/blockStore';
 import { getUserInitials, compareTravelers, preferencesOf, LEVEL_LABELS, TRAVEL_STYLE_LABELS } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 export default function DiscoverTravelersScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const profile = useAuthStore((s) => s.profile);
   const { blockedUids } = useBlockStore();
   const [travelers, setTravelers] = useState<NearbyTraveler[]>([]);
@@ -126,6 +131,8 @@ function NavBar() {
 }
 
 function TravelerCard({ traveler, me }: { traveler: NearbyTraveler; me: TravelPreferences }) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   // Explained on the device from what both travelers chose to share; no extra reads.
   const result = compareTravelers(me, traveler);
   return (
@@ -160,7 +167,7 @@ function TravelerCard({ traveler, me }: { traveler: NearbyTraveler; me: TravelPr
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   navBar: {
     flexDirection: 'row',
@@ -216,4 +223,4 @@ const styles = StyleSheet.create({
   reason: { fontSize: FontSize.sm, color: Colors.textSecondary },
   matchLink: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginBottom: Spacing.sm },
   matchLinkText: { fontSize: FontSize.sm, color: Colors.primaryDark, fontWeight: FontWeight.semibold },
-});
+})));

@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useCallback } from 'react';
 import {
   View,
@@ -13,7 +15,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useHaptics } from '@/hooks/useHaptics';
 import { ChatListItem } from '@/components/chat/ChatListItem';
 import { Text, Skeleton, BackButton } from '@/components/ui';
-import { Colors, FontSize, FontWeight, Spacing, Radius, Fonts } from '@/constants/theme';
+import { FontSize, FontWeight, Spacing, Radius, Fonts } from '@/constants/theme';
 import type { TravelGroup } from '@solotravelsoul/shared';
 
 // ── Skeleton ──────────────────────────────────────────────────────────
@@ -44,6 +46,9 @@ const sk = StyleSheet.create({
 // ── Screen ────────────────────────────────────────────────────────────
 
 export default function GroupsIndexScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const router = useRouter();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const haptics = useHaptics();
@@ -138,7 +143,7 @@ export default function GroupsIndexScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row',
@@ -188,4 +193,4 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.semibold,
     fontSize: FontSize.sm,
   },
-});
+})));

@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useMemo } from 'react';
 import {
   View,
@@ -15,9 +17,12 @@ import { Text, Skeleton, ScreenHeader, EmptyState, Reveal } from '@/components/u
 import { PublicTripCard } from '@/components/discover/PublicTripCard';
 import { usePublicTrips } from '@/hooks/usePublicTrips';
 import { useBlockStore } from '@/stores/blockStore';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 
 export default function PublicTripsScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const [search, setSearch] = useState('');
   const [acceptingOnly, setAcceptingOnly] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -107,7 +112,7 @@ export default function PublicTripsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   filterBar: {
     paddingHorizontal: Spacing.lg,
@@ -135,4 +140,4 @@ const styles = StyleSheet.create({
   emptySubtitle: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
   retryBtn: { paddingVertical: Spacing.sm, paddingHorizontal: Spacing.lg },
   retryLabel: { fontSize: FontSize.md, color: Colors.primary, fontWeight: FontWeight.semibold },
-});
+})));

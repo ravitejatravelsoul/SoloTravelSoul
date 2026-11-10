@@ -1,3 +1,5 @@
+import { EDITORIAL_APPEARANCE_ENABLED, useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useEffect, useState } from 'react';
 import { useMediaSource } from '@/hooks/useMediaSource';
 import {
@@ -30,7 +32,7 @@ import { useAuthorPosts } from '@/hooks/usePosts';
 import { useAuthorJournals } from '@/hooks/useJournals';
 import { useFollowCounts } from '@/hooks/useFollows';
 import { getUserInitials } from '@solotravelsoul/shared';
-import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import { ToastContainer } from '@/components/ui/Toast';
 import { ShadowView } from '@/components/ui/ShadowClip';
 import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
@@ -54,6 +56,8 @@ function SettingsRow({
   showChevron?: boolean;
   rightLabel?: string;
 }) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   return (
     <TouchableOpacity
       style={styles.settingsRow}
@@ -72,6 +76,9 @@ function SettingsRow({
 }
 
 export default function ProfileScreen() {
+  const theme = useAppTheme();
+  const { Colors, Gradients } = theme;
+  const styles = getStyles(theme);
   const mediaSrc = useMediaSource();
   const { profile, logout, deleteAccount } = useAuth();
   const { savedPlaces } = useSavedPlaces();
@@ -365,7 +372,7 @@ export default function ProfileScreen() {
               icon="people-outline"
               label="Followers"
               iconBg={Colors.accent + '15'}
-              iconColor={Colors.accent}
+              iconColor={EDITORIAL_APPEARANCE_ENABLED ? Colors.primaryDark : Colors.accent}
               onPress={() => router.push('/(app)/profile/followers' as never)}
               rightLabel={followersCount > 0 ? String(followersCount) : undefined}
             />
@@ -383,10 +390,22 @@ export default function ProfileScreen() {
               icon="paper-plane-outline"
               label="My Join Requests"
               iconBg={Colors.accent + '15'}
-              iconColor={Colors.accent}
+              iconColor={EDITORIAL_APPEARANCE_ENABLED ? Colors.primaryDark : Colors.accent}
               onPress={() => router.push('/(app)/profile/join-requests' as never)}
             />
             <View style={styles.rowDivider} />
+            {EDITORIAL_APPEARANCE_ENABLED && (
+              <>
+                <SettingsRow
+                  icon="color-palette-outline"
+                  label="Appearance"
+                  iconBg={Colors.accentSoft}
+                  iconColor={Colors.primaryDark}
+                  onPress={() => router.push('/(app)/profile/appearance' as never)}
+                />
+                <View style={styles.rowDivider} />
+              </>
+            )}
             <SettingsRow
               icon="lock-closed-outline"
               label="Privacy Settings"
@@ -516,7 +535,7 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   retryBox: { alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing['2xl'] },
@@ -694,4 +713,4 @@ const styles = StyleSheet.create({
   cancelBtn: { alignItems: 'center', padding: Spacing.md },
   cancelLabel: { color: Colors.textSecondary, fontSize: FontSize.md },
   deleteErrorText: { color: Colors.error, fontSize: FontSize.sm, lineHeight: 20, textAlign: 'center' },
-});
+})));

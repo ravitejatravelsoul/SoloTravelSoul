@@ -1,9 +1,11 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useRef, useState } from 'react';
 import { Animated, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from './Text';
 import { PressableScale } from './PressableScale';
-import { Colors, FontSize, FontWeight, Motion, Radius, Shadow, Spacing, TapTarget } from '@/constants/theme';
+import { FontSize, FontWeight, Motion, Radius, Spacing, TapTarget } from '@/constants/theme';
 import { isReducedMotion } from '@/hooks/useReducedMotion';
 
 export interface MenuAction {
@@ -25,6 +27,9 @@ interface Props {
  * opens or closes so an action cannot be triggered twice.
  */
 export function ExpandingMenu({ actions, label = 'Create' }: Props) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const [open, setOpen] = useState(false);
   const progress = useRef(new Animated.Value(0)).current;
   const closing = useRef(false);
@@ -81,7 +86,7 @@ export function ExpandingMenu({ actions, label = 'Create' }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   trigger: {
     width: TapTarget,
     height: TapTarget,
@@ -105,6 +110,6 @@ const styles = StyleSheet.create({
   },
   item: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing.lg, minHeight: 52 },
   itemDivider: { borderTopWidth: 1, borderTopColor: Colors.borderLight },
-  itemIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: Colors.tealSoft, alignItems: 'center', justifyContent: 'center' },
+  itemIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: Colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   itemLabel: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary, flexShrink: 1 },
-});
+})));

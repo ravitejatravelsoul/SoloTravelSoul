@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 // The travel-preference questions, shared by the optional setup (one step at a time)
 // and Edit Profile (all at once). Values are validated by sanitizePreferences() on save
 // and by firestore.rules on write.
@@ -10,7 +12,7 @@ import {
   PACE_OPTIONS, SCHEDULE_OPTIONS, GROUP_SIZE_OPTIONS,
 } from '@solotravelsoul/shared';
 import type { PreferenceStep, TravelPreferences, TravelStyle, Interest } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 
 export const STEP_TITLES: Record<PreferenceStep, { title: string; hint: string }> = {
   styles: { title: 'How do you like to travel?', hint: 'Pick any that fit. You can change these later.' },
@@ -29,6 +31,9 @@ function SingleSelect<T extends string>({ options, value, onChange }: {
   value: T | null;
   onChange: (v: T | null) => void;
 }) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   return (
     <View style={styles.options} accessibilityRole="radiogroup">
       {options.map((o) => {
@@ -62,6 +67,9 @@ export function PreferenceField({ step, value, onChange, discoverable }: {
   /** Whether the user currently appears in traveler discovery (sharing explanation). */
   discoverable?: boolean;
 }) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const set = (patch: Partial<TravelPreferences>) => onChange({ ...value, ...patch });
   switch (step) {
     case 'styles':
@@ -100,13 +108,13 @@ export function PreferenceField({ step, value, onChange, discoverable }: {
   }
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   options: { gap: Spacing.sm },
   option: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg, minHeight: 64,
     borderRadius: Radius.lg, borderWidth: 2, borderColor: Colors.border, backgroundColor: Colors.surface,
   },
-  optionSelected: { borderColor: Colors.primary, backgroundColor: Colors.tealSoft },
+  optionSelected: { borderColor: Colors.primary, backgroundColor: Colors.accentSoft },
   optionText: { flex: 1 },
   optionLabel: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
   optionLabelSelected: { color: Colors.primaryDark },
@@ -115,4 +123,4 @@ const styles = StyleSheet.create({
   sharingRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   sharingLabel: { flex: 1, fontSize: FontSize.md, color: Colors.textPrimary, fontWeight: FontWeight.semibold },
   sharingNote: { fontSize: FontSize.sm, color: Colors.textSecondary, lineHeight: 20 },
-});
+})));

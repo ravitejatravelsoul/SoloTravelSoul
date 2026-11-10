@@ -1,3 +1,4 @@
+import { useAppTheme } from '@/stores/appearanceStore';
 import { useState } from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
@@ -9,6 +10,7 @@ import { Colors, Spacing } from '@/constants/theme';
 import { isValidEmail, isValidPassword, isNonEmpty } from '@/utils/validations';
 
 export default function SignupScreen() {
+  const { Colors } = useAppTheme();
   const { register, loading } = useAuth();
 
   const [name, setName] = useState('');

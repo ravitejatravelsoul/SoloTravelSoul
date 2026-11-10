@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useCallback, useRef } from 'react';
 import {
   View,
@@ -13,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, EmptyState } from '@/components/ui';
 import { CommentItem } from './CommentItem';
 import { useComments } from '@/hooks/useComments';
-import { Colors, Spacing, Radius, FontSize, Fonts } from '@/constants/theme';
+import { Spacing, Radius, FontSize, Fonts } from '@/constants/theme';
 import { ToastContainer } from '@/components/ui/Toast';
 import { useUIStore } from '@/stores/uiStore';
 import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
@@ -27,6 +29,9 @@ interface Props {
 const MAX_COMMENT = 500;
 
 export function CommentsSheet({ postId, authorId, onClose }: Props) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const { comments, loading, submitting, submit, remove, edit } = useComments(postId, authorId);
   const [text, setText] = useState('');
   const [replyTo, setReplyTo] = useState<{ id: string; name: string } | null>(null);
@@ -144,7 +149,7 @@ export function CommentsSheet({ postId, authorId, onClose }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -227,4 +232,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendBtnDisabled: { opacity: 0.5 },
-});
+})));

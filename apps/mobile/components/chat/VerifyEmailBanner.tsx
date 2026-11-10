@@ -1,5 +1,7 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, useWindowDimensions } from 'react-native';
-import { Colors, FontSize, FontWeight, Radius, Spacing, Fonts } from '@/constants/theme';
+import { FontSize, FontWeight, Radius, Spacing, Fonts } from '@/constants/theme';
 
 interface Props {
   email: string;
@@ -12,6 +14,9 @@ interface Props {
 
 /** Shown while the signed-in e-mail is unverified: invitations are addressed to an e-mail, so only its verified owner can see and answer them. */
 export function VerifyEmailBanner({ email, sending, checking, message, onSend, onRefresh }: Props) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   // At large text sizes the two buttons stack so neither label is squeezed.
   const stacked = useWindowDimensions().fontScale >= 1.4;
   return (
@@ -33,7 +38,7 @@ export function VerifyEmailBanner({ email, sending, checking, message, onSend, o
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   card: { backgroundColor: Colors.surface, marginHorizontal: Spacing.lg, marginTop: Spacing.sm, padding: Spacing.md, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.border, gap: Spacing.sm },
   title: { fontFamily: Fonts.display, fontSize: FontSize.md, color: Colors.textPrimary },
   body: { fontSize: FontSize.sm, color: Colors.textSecondary },
@@ -46,4 +51,4 @@ const styles = StyleSheet.create({
   secondaryText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.primary },
   primaryText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.white },
   message: { fontSize: FontSize.xs, color: Colors.textSecondary },
-});
+})));

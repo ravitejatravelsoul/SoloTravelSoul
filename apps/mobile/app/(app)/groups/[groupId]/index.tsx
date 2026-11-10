@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useEffect, useState, useCallback } from 'react';
 import { BackButton } from '@/components/ui/BackButton';
 import {
@@ -22,6 +24,8 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** The creator invites people by e-mail address and can withdraw invitations that are still pending. */
 function InvitePanel({ group, uid, myName }: { group: TravelGroup; uid: string; myName: string }) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const [invites, setInvites] = useState<GroupInvite[]>([]);
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
@@ -100,6 +104,9 @@ function InvitePanel({ group, uid, myName }: { group: TravelGroup; uid: string; 
 }
 
 export default function GroupDetailScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const router = useRouter();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
@@ -230,7 +237,7 @@ export default function GroupDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   inviteInput: { flex: 1, height: 48, backgroundColor: Colors.surface, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: Spacing.md, fontSize: FontSize.sm, color: Colors.textPrimary },
   inviteBtn: { minWidth: 72, height: 48, borderRadius: Radius.md, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.md },
   inviteBtnText: { color: Colors.white, fontWeight: FontWeight.semibold, fontSize: FontSize.sm },
@@ -283,4 +290,4 @@ const styles = StyleSheet.create({
   memberInfo: { flex: 1 },
   memberName: { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: Colors.textPrimary },
   memberRole: { fontSize: FontSize.xs, color: Colors.primaryDark, fontWeight: FontWeight.semibold, marginTop: 2 },
-});
+})));

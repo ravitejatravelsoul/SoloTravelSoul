@@ -1,3 +1,4 @@
+import { useAppTheme } from '@/stores/appearanceStore';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 
@@ -8,6 +9,7 @@ import { useSavedPosts } from '@/hooks/useSavedPosts';
 import { Colors, Spacing, FontSize, Fonts } from '@/constants/theme';
 
 export default function SavedPostsScreen() {
+  const { Colors } = useAppTheme();
   const { posts, loading } = useSavedPosts(100);
 
   return (

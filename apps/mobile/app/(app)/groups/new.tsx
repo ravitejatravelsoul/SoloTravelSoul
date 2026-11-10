@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useCallback } from 'react';
 import {
   View,
@@ -19,7 +21,7 @@ import {
 import { getUserInitials } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
-import { Colors, FontSize, FontWeight, Radius, Spacing, Fonts } from '@/constants/theme';
+import { FontSize, FontWeight, Radius, Spacing, Fonts } from '@/constants/theme';
 import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 function generateClientId(): string {
@@ -30,6 +32,9 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_INVITES = 20;
 
 export default function NewGroupScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const router = useRouter();
   const { top } = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
@@ -174,7 +179,7 @@ export default function NewGroupScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row',
@@ -232,4 +237,4 @@ const styles = StyleSheet.create({
   memberInfo: { flex: 1 },
   memberName: { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: Colors.textPrimary },
   memberEmail: { fontSize: FontSize.xs, color: Colors.textSecondary },
-});
+})));

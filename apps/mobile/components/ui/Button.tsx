@@ -1,7 +1,9 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { ActivityIndicator, StyleSheet, type ViewStyle } from 'react-native';
 import { Text } from './Text';
 import { PressableScale } from './PressableScale';
-import { Colors, FontSize, FontWeight, Radius, Shadow, Spacing } from '@/constants/theme';
+import { FontSize, FontWeight, Radius, Spacing } from '@/constants/theme';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'coral';
 type Size = 'sm' | 'md' | 'lg';
@@ -18,7 +20,7 @@ interface ButtonProps {
 }
 
 /**
- * Pill button. Teal is the primary action, white-with-teal-outline the secondary, coral a selective highlight (ink label).
+ * Pill button using the selected accent for primary and secondary actions.
  * Press feedback is a transform only, and presses within 350 ms of each other are ignored so a double tap cannot repeat an action.
  */
 export function Button({
@@ -31,6 +33,10 @@ export function Button({
   fullWidth = false,
   style,
 }: ButtonProps) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
+  const labelColor = getLabelColor(theme);
   const inactive = disabled || loading;
   const loaderColor = variant === 'primary' || variant === 'danger' ? Colors.white : variant === 'coral' ? Colors.textPrimary : Colors.primary;
 
@@ -69,7 +75,7 @@ export function Button({
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   base: {
     borderRadius: Radius.full,
     alignItems: 'center',
@@ -91,7 +97,7 @@ const styles = StyleSheet.create({
     fontSize: FontSize.md,
     fontWeight: FontWeight.bold,
   },
-});
+})));
 
 const sizeStyle = StyleSheet.create({
   sm: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs + 2, minHeight: 40 },
@@ -99,10 +105,10 @@ const sizeStyle = StyleSheet.create({
   lg: { paddingHorizontal: Spacing['2xl'], paddingVertical: Spacing.md, minHeight: 56 },
 });
 
-const labelColor = StyleSheet.create({
+const getLabelColor = themed(({ Colors }) => (StyleSheet.create({
   primary: { color: Colors.white },
   secondary: { color: Colors.primaryDark },
   ghost: { color: Colors.primaryDark },
   danger: { color: Colors.white },
   coral: { color: Colors.textPrimary },
-});
+})));

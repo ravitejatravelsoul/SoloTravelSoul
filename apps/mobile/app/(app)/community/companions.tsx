@@ -1,3 +1,6 @@
+import { EDITORIAL_APPEARANCE_ENABLED, useAppTheme } from '@/stores/appearanceStore';
+import { EditorialCover, destinationCover } from '@/components/ui/EditorialCover';
+import { themed } from '@/constants/appearance';
 // Find travel companions for one of your trips. Ranks travelers who shared a trip to the
 // same destination, and public trips there, by date overlap first and then by stated
 // preferences — with reasons, differences and what was not provided. Reads are one-shot
@@ -19,11 +22,14 @@ import { useTripStore } from '@/stores/tripStore';
 import { upcomingTrips } from '@/utils/discovery';
 import { buildMatches, createMatchLoader, matchQueryKey, EMPTY_RAW } from '@/utils/companions';
 import type { LoadContext, LoadState, RawMatches } from '@/utils/companions';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 const range = (a: Date, b: Date) => `${a.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – ${b.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`;
 
 export default function CompanionsScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const params = useLocalSearchParams<{ tripId?: string }>();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const profile = useAuthStore((s) => s.profile);
@@ -89,7 +95,13 @@ export default function CompanionsScreen() {
           </View>
         ) : (
           <>
-            <Text style={styles.sectionLabel}>Match for trip</Text>
+            {EDITORIAL_APPEARANCE_ENABLED && selected ? (
+              <EditorialCover source={destinationCover(selected.destination)}>
+                <Text style={styles.coverText}>Match for trip</Text>
+                <Text variant="h2" style={styles.coverText}>{selected.destination}</Text>
+                <Text style={styles.coverText}>{range(selected.startDate, selected.endDate)}</Text>
+              </EditorialCover>
+            ) : <Text style={styles.sectionLabel}>Match for trip</Text>}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tripChips}>
               {myTrips.map((t) => (
                 <Chip key={t.id} label={`${t.destination} · ${t.startDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`} selected={selected?.id === t.id} onPress={() => setTripId(t.id)} />
@@ -159,18 +171,34 @@ export function MatchCard({ title, subtitle, photoURL, initialsFrom, result, act
   title: string; subtitle: string; photoURL: string | null; initialsFrom?: string; result: CompatibilityResult;
   actionLabel: string; onAction: () => void; ownerNote?: string | null;
 }) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const levelColor = result.level === 'strong' ? Colors.success : result.level === 'good' ? Colors.primaryDark : result.level === 'dates_differ' ? Colors.warning : Colors.textSecondary;
   return (
-    <View style={styles.card} accessible accessibilityLabel={`${title}. ${LEVEL_LABELS[result.level]}. ${result.dates.label ? `${result.dates.label}. ` : ''}Preferences: ${PREFERENCE_LABELS[result.preferences.level]}. ${result.reasons.join('. ')}`}>
-      <View style={styles.cardHeader}>
-        <Avatar uri={photoURL} initials={getUserInitials(initialsFrom ?? title)} size={44} />
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={styles.cardTitle}>{title}</Text>
-          {subtitle ? <Text style={styles.cardSubtitle}>{subtitle}</Text> : null}
-          {/* Under the name, not beside it: beside it the name was squeezed into a few letters per line at large text. */}
-          <Text style={[styles.level, { color: levelColor, borderColor: levelColor, marginTop: Spacing.xs }]}>{LEVEL_LABELS[result.level]}</Text>
+    <View
+      style={styles.card}
+      accessible={!EDITORIAL_APPEARANCE_ENABLED}
+      accessibilityLabel={EDITORIAL_APPEARANCE_ENABLED ? undefined : `${title}. ${LEVEL_LABELS[result.level]}. ${result.dates.label ? `${result.dates.label}. ` : ''}Preferences: ${PREFERENCE_LABELS[result.preferences.level]}. ${result.reasons.join('. ')}`}
+    >
+      {EDITORIAL_APPEARANCE_ENABLED && photoURL && !initialsFrom ? (
+        <EditorialCover photoURL={photoURL}>
+          <Text variant="h2" style={styles.coverText}>{title}</Text>
+          {subtitle ? <Text style={styles.coverText}>{subtitle}</Text> : null}
+        </EditorialCover>
+      ) : (
+        <View style={styles.cardHeader}>
+          <Avatar uri={photoURL} initials={getUserInitials(initialsFrom ?? title)} size={44} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.cardTitle}>{title}</Text>
+            {subtitle ? <Text style={styles.cardSubtitle}>{subtitle}</Text> : null}
+            {!EDITORIAL_APPEARANCE_ENABLED && (
+              <Text style={[styles.level, { color: levelColor, borderColor: levelColor, marginTop: Spacing.xs }]}>{LEVEL_LABELS[result.level]}</Text>
+            )}
+          </View>
         </View>
-      </View>
+      )}
+      {EDITORIAL_APPEARANCE_ENABLED && <Text style={[styles.level, { color: levelColor, borderColor: levelColor }]}>{LEVEL_LABELS[result.level]}</Text>}
       {result.dates.label ? (
         <View style={styles.line}>
           <Ionicons name="calendar-outline" size={14} color={result.dates.status === 'overlap' ? Colors.success : Colors.textSecondary} />
@@ -195,8 +223,9 @@ export function MatchCard({ title, subtitle, photoURL, initialsFrom, result, act
   );
 }
 
-const styles = StyleSheet.create({
-  refreshBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.tealSoft, alignItems: 'center', justifyContent: 'center' },
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
+  coverText: { color: Colors.white },
+  refreshBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   safe: { flex: 1, backgroundColor: Colors.background },
   navBar: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg,
@@ -206,7 +235,7 @@ const styles = StyleSheet.create({
   content: { padding: Spacing.lg, gap: Spacing.md, paddingBottom: Spacing['3xl'] },
   sectionLabel: { fontFamily: Fonts.display, fontSize: FontSize.xl, color: Colors.textPrimary, marginTop: Spacing.md },
   tripChips: { gap: Spacing.sm },
-  hintCard: { flexDirection: 'row', gap: Spacing.sm, padding: Spacing.md, borderRadius: Radius.lg, backgroundColor: Colors.tealSoft, alignItems: 'flex-start' },
+  hintCard: { flexDirection: 'row', gap: Spacing.sm, padding: Spacing.md, borderRadius: Radius.lg, backgroundColor: Colors.accentSoft, alignItems: 'flex-start' },
   hintText: { flex: 1, fontSize: FontSize.sm, color: Colors.textPrimary, lineHeight: 20 },
   empty: { alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing['2xl'] },
   emptyTitle: { fontFamily: Fonts.display, fontSize: FontSize.xl, color: Colors.textPrimary },
@@ -222,4 +251,4 @@ const styles = StyleSheet.create({
   lineText: { flex: 1, fontSize: FontSize.sm, color: Colors.textPrimary, lineHeight: 20 },
   notProvided: { fontSize: FontSize.sm, color: Colors.textSecondary, fontStyle: 'italic' },
   strong: { fontWeight: FontWeight.semibold },
-});
+})));

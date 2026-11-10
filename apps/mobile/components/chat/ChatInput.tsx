@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
@@ -24,6 +26,8 @@ interface ChatInputProps {
 }
 
 export function ChatInput({ onSend, disabled, placeholder = 'Message…', restore }: ChatInputProps) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const [text, setText] = useState('');
   const lastRestoreKey = useRef(0);
   useEffect(() => {
@@ -89,7 +93,7 @@ export function ChatInput({ onSend, disabled, placeholder = 'Message…', restor
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   container: {
     borderTopWidth: 1,
     borderTopColor: Colors.border,
@@ -143,4 +147,4 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     marginTop: 2,
   },
-});
+})));

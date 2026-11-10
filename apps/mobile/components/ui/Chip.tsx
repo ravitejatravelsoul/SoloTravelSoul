@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, type ViewStyle } from 'react-native';
 import { Text } from './Text';
@@ -15,6 +17,8 @@ interface ChipProps {
 
 /** Selection chip. Choosing one gives a short spring pop (transform only, so neighbours never shift). */
 export function Chip({ label, selected = false, onPress, style, disabled = false }: ChipProps) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const pop = useRef(new Animated.Value(1)).current;
   const first = useRef(true);
   const reduced = useReducedMotion();
@@ -43,7 +47,7 @@ export function Chip({ label, selected = false, onPress, style, disabled = false
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   base: {
     paddingHorizontal: Spacing.md + 2,
     paddingVertical: Spacing.xs + 3,
@@ -55,6 +59,6 @@ const styles = StyleSheet.create({
   unselected: { backgroundColor: Colors.chipBackground },
   selected: { backgroundColor: Colors.chipSelected },
   label: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold },
-});
+})));
 
 export const CHIP_MOTION_MS = Motion.fast;

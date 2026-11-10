@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useMemo, useCallback, memo } from 'react';
 import {
   View,
@@ -19,8 +21,6 @@ import { AddToTripSheet } from '@/components/trips/AddToTripSheet';
 import { useSavedPlaces } from '@/hooks/useSavedPlaces';
 import { useHaptics } from '@/hooks/useHaptics';
 import {
-  Colors,
-  Gradients,
   Spacing,
   Radius,
   FontSize,
@@ -67,7 +67,7 @@ const CATEGORY_EMOJI: Record<string, string> = {
   Other: '📍',
 };
 
-const CATEGORY_GRADIENT: Record<string, readonly [string, string]> = {
+const getCategoryGradient = themed(({ Gradients }): Record<string, readonly [string, string]> => ({
   Beach: Gradients.beach,
   Hiking: Gradients.mountain,
   City: Gradients.city,
@@ -79,7 +79,7 @@ const CATEGORY_GRADIENT: Record<string, readonly [string, string]> = {
   Accommodation: Gradients.ocean,
   Transport: ['#9CA3AF', '#6B7280'] as const,
   Other: Gradients.primarySoft,
-};
+}));
 
 function formatSavedDate(d: Date): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -88,6 +88,9 @@ function formatSavedDate(d: Date): string {
 // ── Screen ────────────────────────────────────────────────────────────
 
 export default function SavedPlacesScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const { savedPlaces, loading, unsavePlace } = useSavedPlaces();
   const haptics = useHaptics();
 
@@ -313,6 +316,10 @@ const SavedPlaceCard = memo(function SavedPlaceCard({
   onAddToTrip: () => void;
   onRemove: () => void;
 }) {
+  const theme = useAppTheme();
+  const { Colors, Gradients } = theme;
+  const CATEGORY_GRADIENT = getCategoryGradient(theme);
+  const styles = getStyles(theme);
   const gradient = CATEGORY_GRADIENT[place.category] ?? Gradients.primarySoft;
   const emoji = CATEGORY_EMOJI[place.category] ?? '📍';
   const location = [place.city, place.state].filter(Boolean).join(', ');
@@ -380,6 +387,10 @@ function PlaceDetailModal({
   onAddToTrip: (p: SavedPlace) => void;
   onRemove: (p: SavedPlace) => void;
 }) {
+  const theme = useAppTheme();
+  const { Colors, Gradients } = theme;
+  const CATEGORY_GRADIENT = getCategoryGradient(theme);
+  const styles = getStyles(theme);
   if (!place) return null;
 
   const gradient = CATEGORY_GRADIENT[place.category] ?? Gradients.primarySoft;
@@ -504,7 +515,7 @@ function PlaceDetailModal({
 
 // ── Styles ────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
 
   // ── Header ────────────────────────────────────────────────────────
@@ -825,4 +836,4 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.semibold,
     color: Colors.error,
   },
-});
+})));

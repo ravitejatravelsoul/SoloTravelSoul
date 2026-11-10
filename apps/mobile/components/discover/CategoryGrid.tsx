@@ -1,8 +1,10 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { memo } from 'react';
 import { View, TouchableOpacity, StyleSheet, type ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/Text';
-import { Gradients, Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 
 export interface TravelCategory {
   id: string;
@@ -13,7 +15,7 @@ export interface TravelCategory {
   types: string[];
 }
 
-export const TRAVEL_CATEGORIES: TravelCategory[] = [
+const getTravelCategories = themed(({ Gradients }): TravelCategory[] => ([
   { id: 'beach',     label: 'Beach',       emoji: '🏖️', gradient: Gradients.beach,     types: ['Beach'] },
   { id: 'hiking',    label: 'Mountains',   emoji: '⛰️', gradient: Gradients.mountain,  types: ['Hiking', 'National Park', 'Mountain'] },
   { id: 'city',      label: 'City',        emoji: '🏙️', gradient: Gradients.city,      types: ['City', 'Landmark', 'Museum'] },
@@ -22,7 +24,7 @@ export const TRAVEL_CATEGORIES: TravelCategory[] = [
   { id: 'nightlife', label: 'Nightlife',   emoji: '🌙', gradient: Gradients.nightlife, types: ['Nightlife', 'Bar', 'Entertainment'] },
   { id: 'hidden',    label: 'Hidden Gems', emoji: '💎', gradient: Gradients.hidden,    types: ['Hidden Gem', 'Hidden'] },
   { id: 'solo',      label: 'Solo',        emoji: '🧳', gradient: Gradients.solo,      types: ['Solo', 'Solo-Friendly'] },
-];
+]));
 
 interface CategoryGridProps {
   selectedId: string | null;
@@ -35,6 +37,8 @@ export const CategoryGrid = memo(function CategoryGrid({
   onSelect,
   style,
 }: CategoryGridProps) {
+  const theme = useAppTheme();
+  const TRAVEL_CATEGORIES = getTravelCategories(theme);
   return (
     <View style={[styles.grid, style]}>
       {TRAVEL_CATEGORIES.map((cat) => {

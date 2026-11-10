@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState } from 'react';
 import {
   View,
@@ -72,6 +74,8 @@ interface ReportModalProps {
 }
 
 export function ReportModal({ visible, targetType, targetId, onClose }: ReportModalProps) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [reason, setReason] = useState<ReportReason | null>(null);
@@ -196,7 +200,7 @@ export function ReportModal({ visible, targetType, targetId, onClose }: ReportMo
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row',
@@ -250,4 +254,4 @@ const styles = StyleSheet.create({
   successBody: { fontSize: FontSize.md, color: Colors.textSecondary, textAlign: 'center', lineHeight: 24 },
   doneBtn: { backgroundColor: Colors.primary, borderRadius: Radius.lg, paddingVertical: Spacing.md, paddingHorizontal: Spacing['2xl'] },
   doneBtnLabel: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.white },
-});
+})));

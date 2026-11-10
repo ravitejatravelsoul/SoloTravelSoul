@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState } from 'react';
 import {
   View,
@@ -32,10 +34,14 @@ const BIO_MAX = 500;
 const UPLOADS_ENABLED = isUploadsEnabled();
 
 function SectionHeader({ title }: { title: string }) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   return <Text style={styles.sectionHeader} accessibilityRole="header">{title.charAt(0) + title.slice(1).toLowerCase()}</Text>;
 }
 
 export default function EditProfileScreen() {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const { profile } = useProfile();
   const addToast = useUIStore((s) => s.addToast);
   const user = useAuthStore((s) => s.user);
@@ -268,7 +274,7 @@ export default function EditProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   navBar: {
     flexDirection: 'row',
@@ -315,4 +321,4 @@ const styles = StyleSheet.create({
   },
   saveRow: { marginHorizontal: Spacing.lg, marginTop: Spacing.xl },
   prefNote: { color: Colors.textSecondary, marginHorizontal: Spacing.lg, marginTop: Spacing.sm },
-});
+})));

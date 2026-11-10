@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState } from 'react';
 import {
   View,
@@ -18,7 +20,7 @@ import { JoinSummary } from './JoinSummary';
 import { submitTripJoinRequest, getTripJoinRequestStatus } from '@solotravelsoul/firebase';
 import type { PublicTrip, UserProfile } from '@solotravelsoul/shared';
 import { preferencesOf } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import { ToastContainer } from '@/components/ui/Toast';
 import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
@@ -60,6 +62,9 @@ interface JoinRequestModalProps {
 }
 
 export function JoinRequestModal({ trip, requestor, onClose, onSubmitted }: JoinRequestModalProps) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -165,7 +170,7 @@ export function JoinRequestModal({ trip, requestor, onClose, onSubmitted }: Join
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   flex: { flex: 1 },
   header: {
@@ -230,4 +235,4 @@ const styles = StyleSheet.create({
   },
   submitBtnDisabled: { opacity: 0.5 },
   submitLabel: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.white },
-});
+})));

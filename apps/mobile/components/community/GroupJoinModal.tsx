@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState } from 'react';
 import {
   View,
@@ -13,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui';
 import { submitGroupJoinRequest } from '@solotravelsoul/firebase';
 import type { CommunityGroup, UserProfile } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import { ToastContainer } from '@/components/ui/Toast';
 import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
@@ -27,6 +29,9 @@ interface Props {
 }
 
 export function JoinRequestModal({ group, requestor, onClose, onSubmitted }: Props) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -105,7 +110,7 @@ export function JoinRequestModal({ group, requestor, onClose, onSubmitted }: Pro
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   flex: { flex: 1 },
   header: {
@@ -155,4 +160,4 @@ const styles = StyleSheet.create({
   submitBtn: { flex: 2, paddingVertical: Spacing.md, borderRadius: Radius.full, backgroundColor: Colors.primaryDark, alignItems: 'center', justifyContent: 'center', minHeight: 48 },
   submitBtnDisabled: { opacity: 0.5 },
   submitLabel: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.white },
-});
+})));

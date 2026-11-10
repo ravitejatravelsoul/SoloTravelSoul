@@ -1,8 +1,8 @@
+import { useAppTheme } from '@/stores/appearanceStore';
 import { memo } from 'react';
 import { TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSavePost } from '@/hooks/useSavedPosts';
-import { Colors } from '@/constants/theme';
 
 interface Props {
   postId: string;
@@ -11,6 +11,7 @@ interface Props {
 
 /** Bookmark toggle: saves the post to the person's Saved Posts, or takes it out again. */
 export const SaveButton = memo(function SaveButton({ postId, size = 22 }: Props) {
+  const { Colors } = useAppTheme();
   const { saved, toggling, toggle } = useSavePost(postId);
   return (
     <TouchableOpacity

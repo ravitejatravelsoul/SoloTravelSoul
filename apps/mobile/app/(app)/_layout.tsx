@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { Tabs, Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View, StyleSheet, Animated } from 'react-native';
@@ -11,7 +13,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useChatStore, totalChatUnread } from '@/stores/chatStore';
 import { useHaptics } from '@/hooks/useHaptics';
 import { Badge, OfflineBanner } from '@/components/ui';
-import { Colors, Radius, Shadow } from '@/constants/theme';
+import { Radius } from '@/constants/theme';
 import { isReducedMotion } from '@/hooks/useReducedMotion';
 import { useDiscoveryReconcile } from '@/hooks/useDiscoveryReconcile';
 import { useBlockStore } from '@/stores/blockStore';
@@ -34,6 +36,8 @@ function TabIcon({
   focused: boolean;
   badge?: number;
 }) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   // The selected tab pops with a short spring (transform only: the tab never changes size or place).
   const pop = useRef(new Animated.Value(1)).current;
   const wasFocused = useRef(focused);
@@ -58,12 +62,17 @@ function TabIcon({
 
 /** The floating pill behind the tabs: rounded, ivory, softly shadowed, inset from the screen edges and above the system bar. */
 function TabPill() {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const insets = useSafeAreaInsets();
   const { paddingBottom } = tabBarInsets(insets.bottom);
   return <View pointerEvents="none" style={[styles.pill, { bottom: Math.max(paddingBottom - 4, 6) }]} />;
 }
 
 export default function AppLayout() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const { isConnected } = useNetworkState();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const initialized = useAuthStore((s) => s.initialized);
@@ -201,6 +210,7 @@ export default function AppLayout() {
       <Tabs.Screen name="groups" options={{ href: null }} />
       <Tabs.Screen name="profile/edit" options={{ href: null }} />
       <Tabs.Screen name="profile/privacy" options={{ href: null }} />
+      <Tabs.Screen name="profile/appearance" options={{ href: null }} />
       <Tabs.Screen name="profile/preferences" options={{ href: null }} />
       <Tabs.Screen name="profile/safety" options={{ href: null }} />
       <Tabs.Screen name="moderation/index" options={{ href: null }} />
@@ -221,7 +231,7 @@ export default function AppLayout() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
   pill: {
     position: 'absolute',
@@ -242,11 +252,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   iconPillActive: {
-    backgroundColor: Colors.tealSoft,
+    backgroundColor: Colors.accentSoft,
   },
   badgeWrap: {
     position: 'absolute',
     top: 0,
     right: 2,
   },
-});
+})));

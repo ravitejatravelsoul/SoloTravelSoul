@@ -1,14 +1,15 @@
+import { EDITORIAL_APPEARANCE_ENABLED, useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { View, ScrollView, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui';
-import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 import type { BundledAttraction } from '@solotravelsoul/shared';
 
 const TYPE_COLOR: Record<string, string> = {
   Beach: '#F59E0B',
   Hiking: '#6366F1',
-  City: '#00897B',
   Food: '#EF4444',
   Adventure: '#10B981',
   Nightlife: '#8B5CF6',
@@ -22,6 +23,9 @@ interface Props {
 }
 
 export function MapPlaceholder({ attractions, totalCount }: Props) {
+  const theme = useAppTheme();
+  const { Colors, Gradients } = theme;
+  const styles = getStyles(theme);
   return (
     <ScrollView
       style={styles.container}
@@ -97,6 +101,8 @@ export function MapPlaceholder({ attractions, totalCount }: Props) {
 }
 
 function StatBadge({ icon, label }: { icon: string; label: string }) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   return (
     <View style={styles.statBadge}>
       <Ionicons name={icon as never} size={12} color="rgba(255,255,255,0.8)" />
@@ -112,7 +118,10 @@ function PinPreviewRow({
   attraction: BundledAttraction;
   index: number;
 }) {
-  const pinColor = TYPE_COLOR[attraction.type] ?? Colors.primary;
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
+  const pinColor = attraction.type === 'City' && !EDITORIAL_APPEARANCE_ENABLED ? '#00897B' : TYPE_COLOR[attraction.type] ?? Colors.primary;
   return (
     <View style={styles.pinRow}>
       <View style={[styles.pinDot, { backgroundColor: pinColor }]}>
@@ -135,7 +144,7 @@ function PinPreviewRow({
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   content: { paddingBottom: Spacing['4xl'] },
 
@@ -348,4 +357,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: Spacing.md,
   },
-});
+})));

@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { memo, useState } from 'react';
 import { useMediaSource } from '@/hooks/useMediaSource';
 import {
@@ -17,6 +19,8 @@ interface Props {
 }
 
 export const PostImageCarousel = memo(function PostImageCarousel({ images, height = 300 }: Props) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const mediaSrc = useMediaSource();
   const [activeIndex, setActiveIndex] = useState(0);
   const isSingle = images.length === 1;
@@ -67,7 +71,7 @@ export const PostImageCarousel = memo(function PostImageCarousel({ images, heigh
   );
 });
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   image: {
     backgroundColor: Colors.borderLight,
   },
@@ -100,4 +104,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
-});
+})));

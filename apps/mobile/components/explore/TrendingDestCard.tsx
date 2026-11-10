@@ -4,6 +4,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, PressableScale } from '@/components/ui';
 import { Colors, Spacing, Radius, FontSize, Fonts } from '@/constants/theme';
+import { EDITORIAL_APPEARANCE_ENABLED, useAppTheme } from '@/stores/appearanceStore';
+import { EditorialBackdrop, LISBON_COVER } from '@/components/ui/EditorialCover';
 
 // Country → gradient pairs (deterministic from country name)
 const DEST_GRADIENTS: Array<readonly [string, string]> = [
@@ -29,17 +31,19 @@ interface Props {
 }
 
 export const TrendingDestCard = memo(function TrendingDestCard({ country, postCount, onPress }: Props) {
-  const gradient = gradientForCountry(country);
+  const { Gradients } = useAppTheme();
+  const cover = EDITORIAL_APPEARANCE_ENABLED && country.trim().toLowerCase() === 'portugal' ? LISBON_COVER : undefined;
 
   return (
     <PressableScale style={styles.card} onPress={onPress} guardMs={500} accessibilityRole="button" accessibilityLabel={`${country}, ${postCount} post${postCount !== 1 ? 's' : ''}`}>
       <LinearGradient
-        colors={[gradient[0], gradient[1]]}
+        colors={EDITORIAL_APPEARANCE_ENABLED ? Gradients.hero : gradientForCountry(country)}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.gradient}
       >
         <View style={styles.decCircle} />
+        <EditorialBackdrop source={cover} />
         <Ionicons name="location" size={22} color="rgba(255,255,255,0.7)" />
         <Text style={styles.country} numberOfLines={2}>{country}</Text>
         <Text style={styles.postCount}>{postCount} post{postCount !== 1 ? 's' : ''}</Text>

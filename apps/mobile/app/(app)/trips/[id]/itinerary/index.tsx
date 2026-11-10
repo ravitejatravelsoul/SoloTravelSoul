@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useEffect, memo, useCallback, useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -9,18 +11,19 @@ import { useItinerary } from '@/hooks/useItinerary';
 import { formatDayLabel, tripStatus, tripCurrentDay, tripDurationDays } from '@/utils/dateUtils';
 import {
   Colors,
-  Gradients,
   Spacing,
   Radius,
   FontSize,
   FontWeight,
-  Shadow,
   Fonts,
 } from '@/constants/theme';
 import { TripMapView } from '@/components/map/TripMapView';
 import type { ItineraryDay } from '@solotravelsoul/shared';
 
 export default function ItineraryScreen() {
+  const theme = useAppTheme();
+  const { Colors, Gradients } = theme;
+  const styles = getStyles(theme);
   const { id } = useLocalSearchParams<{ id: string }>();
   const trip = useTripStore((s) => s.trips.find((t) => t.id === id));
   const { itinerary, loading, load } = useItinerary(id);
@@ -193,6 +196,8 @@ const DayRow = memo(function DayRow({
   isPast: boolean;
   isLast: boolean;
 }) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const placeCount = day.places.length;
   const entryCount = day.journalEntries.length;
   const hasContent = placeCount > 0 || entryCount > 0;
@@ -303,9 +308,9 @@ const DayRow = memo(function DayRow({
 
 // ── Styles ────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  mapToggleBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.tealSoft, alignItems: 'center', justifyContent: 'center' },
+  mapToggleBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   activeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -456,7 +461,7 @@ const styles = StyleSheet.create({
   cardToday: {
     borderColor: Colors.primary,
     borderWidth: 1.5,
-    backgroundColor: Colors.tealSoft,
+    backgroundColor: Colors.accentSoft,
   },
   cardPast: {
     backgroundColor: Colors.background,
@@ -526,4 +531,4 @@ const styles = StyleSheet.create({
   },
   emptyEmoji: { fontSize: 48, lineHeight: 58 },
   emptySub: { color: Colors.textSecondary, marginTop: Spacing.xs, lineHeight: 20 },
-});
+})));

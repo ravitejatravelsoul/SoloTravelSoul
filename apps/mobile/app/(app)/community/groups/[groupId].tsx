@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useEffect, useState } from 'react';
 import {
   View,
@@ -22,9 +24,12 @@ import {
 import type { CommunityGroup, CommunityGroupMember, RequestStatus } from '@solotravelsoul/shared';
 import { useAuthStore } from '@/stores/authStore';
 import { getUserInitials, isListed } from '@solotravelsoul/shared';
-import { Colors, Gradients, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts, TapTarget } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts, TapTarget } from '@/constants/theme';
 
 export default function GroupDetailScreen() {
+  const theme = useAppTheme();
+  const { Colors, Gradients } = theme;
+  const styles = getStyles(theme);
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const profile = useAuthStore((s) => s.profile);
@@ -243,6 +248,8 @@ export default function GroupDetailScreen() {
 }
 
 function NavBar() {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   return (
     <View style={styles.navBar}>
       <BackButton />
@@ -253,6 +260,8 @@ function NavBar() {
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   return (
     <View style={styles.section}>
       <Text style={styles.sectionLabel} accessibilityRole="header">{title.charAt(0) + title.slice(1).toLowerCase()}</Text>
@@ -261,7 +270,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   noticeBox: { marginHorizontal: Spacing.lg, marginTop: Spacing.md, padding: Spacing.md, borderRadius: Radius.md, backgroundColor: Colors.warning + '22', borderWidth: 1, borderColor: Colors.warning + '66' },
   noticeText: { fontSize: FontSize.sm, color: Colors.textPrimary },
   safe: { flex: 1, backgroundColor: Colors.background },
@@ -336,4 +345,4 @@ const styles = StyleSheet.create({
   ownerBadge: { fontSize: FontSize.sm, color: Colors.primaryDark, fontWeight: FontWeight.bold },
   actionsCard: { marginHorizontal: Spacing.lg, marginTop: Spacing.lg },
   emptyTitle: { fontFamily: Fonts.display, fontSize: FontSize.xl, color: Colors.textPrimary },
-});
+})));

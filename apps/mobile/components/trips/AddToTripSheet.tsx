@@ -1,3 +1,5 @@
+import { EDITORIAL_APPEARANCE_ENABLED, useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useEffect } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import {
@@ -17,8 +19,6 @@ import { useAddToTrip } from '@/hooks/useAddToTrip';
 import { buildItineraryDays } from '@solotravelsoul/shared';
 import { tripStatus, formatDateRange, formatDayLabel } from '@/utils/dateUtils';
 import {
-  Colors,
-  Gradients,
   Spacing,
   Radius,
   FontSize,
@@ -30,12 +30,12 @@ import { ShadowTouchable } from '@/components/ui/ShadowClip';
 import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 // Pre-defined pill colors — avoids runtime hex concat which varies across RN versions
-const STATUS_CONFIG: Record<string, {
+const getStatusConfig = themed(({ Colors, Gradients }): Record<string, {
   gradient: readonly [string, string];
   label: string;
   pillBg: string;
   pillText: string;
-}> = {
+}> => ({
   active: {
     gradient: Gradients.heroActive,
     label: 'Active',
@@ -45,8 +45,8 @@ const STATUS_CONFIG: Record<string, {
   upcoming: {
     gradient: Gradients.hero,
     label: 'Upcoming',
-    pillBg: 'rgba(0,137,123,0.12)',
-    pillText: '#00695F',
+    pillBg: EDITORIAL_APPEARANCE_ENABLED ? Colors.accentSoft : 'rgba(0,137,123,0.12)',
+    pillText: EDITORIAL_APPEARANCE_ENABLED ? Colors.primaryDark : '#00695F',
   },
   past: {
     gradient: ['#6B7280', '#374151'] as const,
@@ -54,7 +54,7 @@ const STATUS_CONFIG: Record<string, {
     pillBg: 'rgba(107,114,128,0.12)',
     pillText: '#6B7280',
   },
-};
+}));
 
 interface Props {
   visible: boolean;
@@ -63,6 +63,10 @@ interface Props {
 }
 
 export function AddToTripSheet({ visible, place, onClose }: Props) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const STATUS_CONFIG = getStatusConfig(theme);
+  const styles = getStyles(theme);
   const trips = useTripStore(useShallow((s) => s.trips.filter((t) => !t.isArchived)));
   const { addPlaceToDay, loading } = useAddToTrip();
   const [selectedTrip, setSelectedTrip] = useState<PlannedTrip | null>(null);
@@ -231,7 +235,7 @@ export function AddToTripSheet({ visible, place, onClose }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   sheet: {
     flex: 1,
     backgroundColor: Colors.background,
@@ -396,4 +400,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-});
+})));

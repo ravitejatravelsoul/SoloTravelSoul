@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, Linking } from 'react-native';
 import { isModerator } from '@solotravelsoul/firebase';
@@ -6,7 +8,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, BackButton } from '@/components/ui';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import { CONTACT_EMAIL } from '@/constants/contact';
 import { SAFETY_TIPS, PLATFORM_ROLE, COMPATIBILITY_NOTICE, NOT_EMERGENCY_SERVICE, REPORT_BLOCK_LEAVE } from '@solotravelsoul/shared';
 import { ShadowView } from '@/components/ui/ShadowClip';
@@ -40,6 +42,9 @@ const GUIDELINES = [
 ];
 
 export default function SafetyScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const [moderator, setModerator] = useState(false);
   useEffect(() => { if (uid) isModerator(uid).then(setModerator); }, [uid]);
@@ -181,7 +186,7 @@ export default function SafetyScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   navBar: {
     flexDirection: 'row',
@@ -271,4 +276,4 @@ const styles = StyleSheet.create({
     marginTop: Spacing['2xl'],
     lineHeight: 18,
   },
-});
+})));

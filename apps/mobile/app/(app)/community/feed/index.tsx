@@ -1,3 +1,4 @@
+import { useAppTheme } from '@/stores/appearanceStore';
 import { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -52,6 +53,7 @@ function feedItemIcon(type: FeedItem['type']): string {
 }
 
 export default function ActivityFeedScreen() {
+  const { Colors } = useAppTheme();
   const { blockedUids } = useBlockStore();
   const [feed, setFeed] = useState<FeedItem[]>(cachedFeed);
   const [loading, setLoading] = useState(cachedFeed.length === 0);

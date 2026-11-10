@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useMemo } from 'react';
 import {
   View,
@@ -18,7 +20,7 @@ import { useItinerary } from '@/hooks/useItinerary';
 import { useJournal } from '@/hooks/useJournal';
 import { useSavedPlaces } from '@/hooks/useSavedPlaces';
 import { formatDayLabel } from '@/utils/dateUtils';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow, Fonts } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 import type { PlaceCategory, BundledAttraction, JournalEntry } from '@solotravelsoul/shared';
 import { ToastContainer } from '@/components/ui/Toast';
 import { ShadowView } from '@/components/ui/ShadowClip';
@@ -29,13 +31,13 @@ const allAttractions: BundledAttraction[] = require('@/assets/attractions.json')
 
 const CATEGORIES: PlaceCategory[] = ['food', 'attraction', 'accommodation', 'transport', 'other'];
 
-const CATEGORY_COLOR: Record<PlaceCategory, string> = {
+const getCategoryColor = themed(({ Colors }): Record<PlaceCategory, string> => ({
   food: Colors.catFood,
   attraction: Colors.catCity,
   accommodation: Colors.catSolo,
   transport: Colors.textSecondary,
   other: Colors.catHidden,
-};
+}));
 
 const CATEGORY_ICON: Record<PlaceCategory, string> = {
   food: 'restaurant-outline',
@@ -62,6 +64,10 @@ const MOOD_EMOJI: Record<string, string> = {
 type AddTab = 'custom' | 'browse';
 
 export default function DayDetailScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const CATEGORY_COLOR = getCategoryColor(theme);
+  const styles = getStyles(theme);
   const { id: tripId, dayId } = useLocalSearchParams<{ id: string; dayId: string }>();
   const day = useTripStore((s) => s.itinerary.find((d) => d.id === dayId));
   const { addPlace, removePlace } = useItinerary(tripId);
@@ -547,8 +553,8 @@ export default function DayDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  addCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.tealSoft, alignItems: 'center', justifyContent: 'center' },
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
+  addCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -807,4 +813,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-});
+})));

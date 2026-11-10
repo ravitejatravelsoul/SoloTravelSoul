@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import React, { useCallback, useMemo, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,7 +14,6 @@ import {
   Radius,
   FontSize,
   FontWeight,
-  Shadow,
 } from '@/constants/theme';
 import type { BundledAttraction, ItineraryDay } from '@solotravelsoul/shared';
 
@@ -78,6 +79,9 @@ export function TripMapView({ itinerary }: Props) {
 // ── Native canvas map ─────────────────────────────────────────────────
 
 function TripWebMap({ places }: { places: MappablePlace[] }) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const { bottom } = useSafeAreaInsets();
 
@@ -97,7 +101,7 @@ function TripWebMap({ places }: { places: MappablePlace[] }) {
       };
     });
     return { pins: all, placeLookup: lookup };
-  }, [places]);
+  }, [places, Colors.primary]);
 
   const handlePinTap = useCallback(
     (pin: NativeMapPin) => {
@@ -132,6 +136,9 @@ function TripWebMap({ places }: { places: MappablePlace[] }) {
 // ── Native Mapbox map (EAS dev / production builds only) ──────────────
 
 function TripMapNative({ places }: { places: MappablePlace[] }) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const { bottom } = useSafeAreaInsets();
 
@@ -237,6 +244,8 @@ function TripMapNative({ places }: { places: MappablePlace[] }) {
 // ── Empty state (no mappable coordinates) ────────────────────────────
 
 function TripMapEmpty() {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   return (
     <View style={styles.emptyContainer}>
       <View style={styles.emptyIconWrap}>
@@ -252,7 +261,7 @@ function TripMapEmpty() {
 
 // ── Styles ────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   container: { flex: 1 },
   map: { flex: 1 },
 
@@ -323,4 +332,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-});
+})));

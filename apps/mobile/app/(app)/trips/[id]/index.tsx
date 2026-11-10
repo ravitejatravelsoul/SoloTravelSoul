@@ -1,3 +1,5 @@
+import { EDITORIAL_APPEARANCE_ENABLED, useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
@@ -13,6 +15,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text, ProgressBar, SyncStatusBar, PressableScale } from '@/components/ui';
+import { EditorialBackdrop, destinationCover } from '@/components/ui/EditorialCover';
 import { useTripStore } from '@/stores/tripStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useTrips } from '@/hooks/useTrips';
@@ -30,12 +33,10 @@ import {
 } from '@/utils/dateUtils';
 import {
   Colors,
-  Gradients,
   Spacing,
   Radius,
   FontSize,
   FontWeight,
-  Shadow,
   Fonts,
   TapTarget,
 } from '@/constants/theme';
@@ -44,11 +45,11 @@ import { ExportPreviewModal } from '@/components/trips/ExportPreviewModal';
 import { TripRemindersCard } from '@/components/trips/TripRemindersCard';
 import { cancelAllTripNotifications } from '@/services/notificationService';
 
-const STATUS_GRADIENT: Record<string, readonly [string, string]> = {
+const getStatusGradient = themed(({ Gradients }): Record<string, readonly [string, string]> => ({
   active: Gradients.heroActive,
   upcoming: Gradients.hero,
   past: ['#6B7280', '#374151'],
-};
+}));
 
 const STATUS_LABEL: Record<string, string> = {
   active: 'Currently Active',
@@ -63,6 +64,10 @@ const STATUS_ICON: Record<string, string> = {
 };
 
 export default function TripDetailScreen() {
+  const theme = useAppTheme();
+  const { Colors, Gradients } = theme;
+  const STATUS_GRADIENT = getStatusGradient(theme);
+  const styles = getStyles(theme);
   const { id } = useLocalSearchParams<{ id: string }>();
   const trip = useTripStore((s) => s.trips.find((t) => t.id === id));
   const { itinerary, currentItineraryTripId } = useTripStore(
@@ -191,6 +196,7 @@ export default function TripDetailScreen() {
         >
           <View style={styles.decCircle1} />
           <View style={styles.decCircle2} />
+          {EDITORIAL_APPEARANCE_ENABLED && <EditorialBackdrop source={destinationCover(trip.destination)} />}
 
           {/* Nav */}
           <View style={styles.heroNav}>
@@ -535,6 +541,9 @@ export default function TripDetailScreen() {
 // ── StatPill ──────────────────────────────────────────────────────────
 
 function StatPill({ icon, value, label }: { icon: string; value: string; label: string }) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   return (
     <View style={styles.statPill}>
       <Ionicons name={icon as never} size={14} color={Colors.primary} />
@@ -559,6 +568,8 @@ function ActionTile({
   sub: string;
   onPress: () => void;
 }) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   return (
     <PressableScale style={styles.tile} onPress={onPress} guardMs={500} accessibilityRole="button" accessibilityLabel={`${label}. ${sub}`}>
       <LinearGradient
@@ -590,6 +601,8 @@ function ChecklistRow({
   onToggle: () => void;
   onDelete: () => void;
 }) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   return (
     <View style={styles.checkRow}>
       <TouchableOpacity
@@ -626,7 +639,7 @@ function ChecklistRow({
 
 // ── Styles ────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   companionsRow: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg, marginTop: Spacing.md,
     borderRadius: Radius.lg, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
@@ -1097,4 +1110,4 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.semibold,
     color: Colors.error,
   },
-});
+})));

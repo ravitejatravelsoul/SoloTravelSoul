@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { acceptGroupInvite, declineGroupInvite } from '@solotravelsoul/firebase';
@@ -8,6 +10,8 @@ import { Colors, FontSize, FontWeight, Radius, Spacing, Fonts } from '@/constant
 
 /** A group chat invitation the person can accept or decline. Nothing happens to them until they choose. */
 export function GroupInviteCard({ invite }: { invite: GroupInvite }) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const user = useAuthStore((s) => s.user);
   const profile = useAuthStore((s) => s.profile);
   const [busy, setBusy] = useState<'accept' | 'decline' | null>(null);
@@ -52,7 +56,7 @@ export function GroupInviteCard({ invite }: { invite: GroupInvite }) {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   card: { backgroundColor: Colors.surface, marginHorizontal: Spacing.lg, marginTop: Spacing.sm, padding: Spacing.lg, borderRadius: Radius.xl, borderWidth: 1, borderColor: Colors.borderLight, borderLeftWidth: 5, borderLeftColor: Colors.coral, gap: Spacing.sm },
   title: { fontFamily: Fonts.display, fontSize: FontSize.lg, color: Colors.textPrimary },
   meta: { fontSize: FontSize.sm, color: Colors.textSecondary },
@@ -63,4 +67,4 @@ const styles = StyleSheet.create({
   declineText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.textSecondary },
   acceptText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.white },
   error: { fontSize: FontSize.xs, color: Colors.error },
-});
+})));

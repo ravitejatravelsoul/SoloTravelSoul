@@ -340,9 +340,12 @@ test('journal card: like control never overlapped; author and read time shrink/w
   });
   const countOf = (n) => textOf(nodes(like.LikeButton({ liked: false, count: n, onToggle() {} })).find((x) => x.type === 'Text') || '');
   assert.deepEqual([0, 7, 999, 1000, 1500, 999_949, 999_950, 2_400_000].map(countOf), ['', '7', '999', '1k', '1.5k', '999.9k', '1M', '2.4M']);
-  const card = component('apps/mobile/components/journals/JournalCard.tsx', {
+  const loadCard = (enabled) => component('apps/mobile/components/journals/JournalCard.tsx', {
     'react-native': rnStub, 'expo-router': { router: { push() {} } }, '@expo/vector-icons': { Ionicons: 'Ionicons' },
-    '@/hooks/useMediaSource': { useMediaSource: () => (u) => ({ uri: u }) },
+    '@/stores/appearanceStore': { EDITORIAL_APPEARANCE_ENABLED: enabled, useAppTheme: () => ({ Colors: {}, Shadow: { md: {} } }) },
+    '@/constants/appearance': { themed: (factory) => factory },
+    '@/components/ui/EditorialCover': { EditorialCover: 'EditorialCover' },
+    '@/hooks/useMediaSource': { useMediaSource: () => (uri) => ({ uri }) },
     '@/components/ui/ShadowClip': { ShadowView: 'View', ShadowTouchable: 'TouchableOpacity' },
     '@/components/ui': { Text: 'Text', Avatar: 'Avatar' }, '@/components/posts/LikeButton': { LikeButton: 'LikeButton' },
     '@/hooks/useJournals': { useLikeJournal: () => ({ liked: false, toggling: false, toggle() {} }) },
@@ -350,7 +353,11 @@ test('journal card: like control never overlapped; author and read time shrink/w
     '@/constants/theme': { Colors: {}, Spacing: { xs: 4, sm: 8, md: 12, '2xl': 24 }, Radius: {}, FontSize: { xs: 12, sm: 14, xl: 20 }, FontWeight: {}, Fonts: { display: 'Baloo2_700Bold' }, Shadow: {} },
   });
   const longName = 'Maximiliana Alexandrovna Featherstonehaugh-Whittingham';
-  const tree = card.JournalCard({ journal: { journalId: 'j', title: 'T', authorName: longName, readTimeMinutes: 1, likeCount: 1_234_567 } });
+  const props = { journal: { journalId: 'j', title: 'T', authorName: longName, readTimeMinutes: 1, likeCount: 1_234_567 } };
+  const tree = loadCard(true).JournalCard(props);
+  assert.ok(nodes(tree).some((node) => node.type === 'EditorialCover'), 'iOS uses editorial cover');
+  const legacyTree = loadCard(false).JournalCard(props);
+  assert.ok(!nodes(legacyTree).some((node) => node.type === 'EditorialCover'), 'Android retains the existing card');
   const all = nodes(tree);
   const footer = all.find((n) => n.props.children.some((c) => nodes(c).some((x) => x.type === 'LikeButton')) && flat(n.props.style).flexDirection === 'row');
   assert.ok(footer, 'footer row');
@@ -370,6 +377,27 @@ test('journal card: like control never overlapped; author and read time shrink/w
   const readTime = meta.props.children.find((c) => /min read/.test(textOf(c)));
   assert.ok(readTime && readTime !== author, 'read time is its own wrap unit');
   assert.equal(flat(readTime.props.style).flexShrink, 0, 'read time stays whole ("1 min read")');
+});
+
+test('custom accents validate hex and keep buttons and links readable across light and dark selections', () => {
+  const base = mobile('apps/mobile/constants/theme.ts', {});
+  const { createAppTheme, normalizeAccent, contrastRatio, DEFAULT_ACCENT } =
+    mobile('apps/mobile/constants/appearance.ts', { './theme': base });
+  assert.equal(normalizeAccent(' #a0f '), '#AA00FF');
+  assert.equal(normalizeAccent('123abc'), '#123ABC');
+  for (const invalid of ['', '#1234', 'red', '#GGGGGG', '#12345678']) {
+    assert.equal(normalizeAccent(invalid), null);
+  }
+  assert.equal(createAppTheme('invalid').Colors.primary, createAppTheme(DEFAULT_ACCENT).Colors.primary);
+  for (let sample = 0; sample <= 0xFFF; sample++) {
+    const { Colors, Gradients } = createAppTheme(sample.toString(16).padStart(3, '0'));
+    assert.ok(contrastRatio(Colors.primary, Colors.white) >= 4.5);
+    assert.ok(contrastRatio(Colors.primary, Colors.background) >= 5);
+    assert.ok(contrastRatio(Colors.primaryDark, Colors.background) >= 7);
+    assert.equal(Colors.chipSelected, Colors.primary);
+    for (const stop of Gradients.hero) assert.ok(contrastRatio(stop, Colors.white) >= 4.5);
+    assert.equal(Colors.error, base.Colors.error);
+  }
 });
 
 test('config plugin declares fontScale in MainActivity configChanges (manifest configuration only; runtime behaviour is verified on a device)', () => {

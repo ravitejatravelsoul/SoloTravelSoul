@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { View, StyleSheet, ActivityIndicator, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from './Text';
@@ -17,12 +19,12 @@ interface EmptyStateProps {
   style?: ViewStyle;
 }
 
-const VARIANT_DEFAULTS: Record<EmptyVariant, { icon?: string; iconColor: string; defaultEmoji: string }> = {
+const getVariantDefaults = themed(({ Colors }): Record<EmptyVariant, { icon?: string; iconColor: string; defaultEmoji: string }> => ({
   empty:   { iconColor: Colors.placeholder,    defaultEmoji: '🗺️' },
   error:   { icon: 'alert-circle-outline',     iconColor: Colors.error,   defaultEmoji: '⚠️' },
   offline: { icon: 'cloud-offline-outline',    iconColor: Colors.textSecondary, defaultEmoji: '📡' },
   loading: { iconColor: Colors.primary,        defaultEmoji: '⏳' },
-};
+}));
 
 export function EmptyState({
   emoji,
@@ -34,6 +36,9 @@ export function EmptyState({
   retrying = false,
   style,
 }: EmptyStateProps) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const VARIANT_DEFAULTS = getVariantDefaults(theme);
   const { icon, iconColor, defaultEmoji } = VARIANT_DEFAULTS[variant];
 
   return (

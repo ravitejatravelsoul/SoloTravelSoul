@@ -1,7 +1,9 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { View, Text, StyleSheet } from 'react-native';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { PressableScale } from '@/components/ui/PressableScale';
-import { Colors, FontSize, FontWeight, Radius, Spacing } from '@/constants/theme';
+import { FontSize, FontWeight, Radius, Spacing } from '@/constants/theme';
 
 interface ChatListItemProps {
   name: string;
@@ -46,6 +48,8 @@ export function ChatListItem({
   memberCount,
   onPress,
 }: ChatListItemProps) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const hasUnread = unreadCount > 0;
 
   return (
@@ -90,7 +94,7 @@ export function ChatListItem({
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -175,4 +179,4 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: FontWeight.bold,
   },
-});
+})));

@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import {
   View,
   TextInput,
@@ -25,6 +27,8 @@ export function Input({
   style,
   ...props
 }: InputProps) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const [visible, setVisible] = useState(false);
   const [focused, setFocused] = useState(false);
 
@@ -67,7 +71,7 @@ export function Input({
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   wrapper: { gap: 4 },
   label: { marginBottom: 2 },
   inputRow: {
@@ -90,4 +94,4 @@ const styles = StyleSheet.create({
   },
   eyeIcon: { paddingLeft: Spacing.sm },
   hint: { marginTop: 2, paddingHorizontal: 2 },
-});
+})));

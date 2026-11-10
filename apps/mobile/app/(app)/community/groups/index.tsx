@@ -1,3 +1,5 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -15,9 +17,12 @@ import { TravelGroupCard } from '@/components/community/TravelGroupCard';
 import { subscribePublicTravelGroups } from '@solotravelsoul/firebase';
 import type { CommunityGroup } from '@solotravelsoul/shared';
 import { useBlockStore } from '@/stores/blockStore';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constants/theme';
 
 export default function TravelGroupsScreen() {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const [groups, setGroups] = useState<CommunityGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -102,7 +107,7 @@ export default function TravelGroupsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   navBar: {
     flexDirection: 'row',
@@ -140,4 +145,4 @@ const styles = StyleSheet.create({
   emptySubtitle: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center' },
   createBtn: { paddingVertical: Spacing.sm, paddingHorizontal: Spacing.lg, backgroundColor: Colors.primary, borderRadius: Radius.lg },
   createBtnLabel: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.white },
-});
+})));

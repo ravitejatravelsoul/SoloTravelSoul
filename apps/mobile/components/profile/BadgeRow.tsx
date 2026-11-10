@@ -1,10 +1,12 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui';
 import { getReputation } from '@solotravelsoul/firebase';
 import { BADGE_META } from '@solotravelsoul/shared';
-import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import { Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 import type { BadgeType, TravelerReputation } from '@solotravelsoul/shared';
 
 interface Props {
@@ -13,6 +15,9 @@ interface Props {
 }
 
 export function BadgeRow({ uid, reputation: repProp }: Props) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const [rep, setRep] = useState<TravelerReputation | null>(repProp ?? null);
 
   useEffect(() => {
@@ -41,7 +46,7 @@ export function BadgeRow({ uid, reputation: repProp }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   wrap: {
     backgroundColor: Colors.surface,
     paddingVertical: Spacing.sm,
@@ -66,4 +71,4 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.semibold,
     color: Colors.primary,
   },
-});
+})));

@@ -1,3 +1,4 @@
+import { useAppTheme } from '@/stores/appearanceStore';
 import {
   ScrollView,
   View,
@@ -6,7 +7,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { KeyboardAvoid } from '@/components/ui/KeyboardAvoid';
 
 interface ScreenProps {
@@ -24,10 +25,11 @@ export function Screen({
   scroll = false,
   loading = false,
   padded = true,
-  backgroundColor = Colors.background,
+  backgroundColor,
   style,
   contentStyle,
 }: ScreenProps) {
+  const { Colors } = useAppTheme();
   const inner = loading ? (
     <View style={styles.loadingContainer}>
       <ActivityIndicator size="large" color={Colors.primary} />
@@ -47,7 +49,7 @@ export function Screen({
   );
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor }, style]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: backgroundColor ?? Colors.background }, style]}>
       <KeyboardAvoid
         style={styles.fill}
         behavior="padding"

@@ -1,3 +1,4 @@
+import { useAppTheme } from '@/stores/appearanceStore';
 import { View, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +11,7 @@ import { Colors, Spacing, Radius, FontSize, FontWeight, Fonts } from '@/constant
 import { formatDistanceToNowStrict } from 'date-fns';
 
 export default function GroupRequestsScreen() {
+  const { Colors } = useAppTheme();
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const uid = useAuthStore((s) => s.user?.uid ?? '');
   const { received: allRequests, loading, approve, reject } = useOwnerGroupJoinRequests(uid);

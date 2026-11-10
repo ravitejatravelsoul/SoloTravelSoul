@@ -1,8 +1,10 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useState } from 'react';
 import { View, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from './Text';
-import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
+import { FontSize, Radius, Spacing } from '@/constants/theme';
 
 interface TagInputProps {
   tags: string[];
@@ -12,6 +14,9 @@ interface TagInputProps {
 }
 
 export function TagInput({ tags, onChange, maxTags = 5, placeholder = 'Add…' }: TagInputProps) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const [input, setInput] = useState('');
 
   const addTag = () => {
@@ -60,7 +65,7 @@ export function TagInput({ tags, onChange, maxTags = 5, placeholder = 'Add…' }
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors }) => (StyleSheet.create({
   container: { gap: Spacing.sm },
   tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },
   tag: {
@@ -85,4 +90,4 @@ const styles = StyleSheet.create({
   input: { flex: 1, height: 42, fontSize: FontSize.md, color: Colors.textPrimary },
   addBtn: { padding: 4 },
   maxNote: { fontSize: FontSize.xs, color: Colors.placeholder },
-});
+})));

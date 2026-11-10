@@ -1,3 +1,5 @@
+import { EDITORIAL_APPEARANCE_ENABLED, useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,12 +9,10 @@ import { NativeMapCanvas } from './NativeMapCanvas';
 import type { NativeMapPin, UserLocation } from './NativeMapCanvas';
 import { canUseMapbox, getMapboxGL } from '@/services/mapboxService';
 import {
-  Colors,
   Spacing,
   Radius,
   FontSize,
   FontWeight,
-  Shadow,
 } from '@/constants/theme';
 import type { BundledAttraction, DiscoverItem } from '@solotravelsoul/shared';
 
@@ -43,6 +43,8 @@ type SelectedPin =
 // ── Entry point ───────────────────────────────────────────────────────
 
 export function DiscoverMapView(props: Props) {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
   const {
     userLocation,
     locationLoading,
@@ -90,6 +92,9 @@ function LocationButton({
   loading: boolean;
   onPress: () => void;
 }) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   return (
     <TouchableOpacity
       style={[styles.locateBtn, userLocation && styles.locateBtnActive]}
@@ -124,6 +129,9 @@ function DiscoverWebMap({
   onLiveAddToTrip,
   userLocation,
 }: Omit<Props, 'locationLoading' | 'onRequestLocation'>) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const [selected, setSelected] = useState<SelectedPin | null>(null);
 
   const { pins, pinLookup } = useMemo(() => {
@@ -159,7 +167,7 @@ function DiscoverWebMap({
       });
 
     return { pins: all, pinLookup: lookup };
-  }, [attractions, liveResults]);
+  }, [attractions, liveResults, Colors.accent, Colors.primary]);
 
   useEffect(() => {
     if (__DEV__) {
@@ -226,6 +234,9 @@ function DiscoverMapNative({
   onLiveAddToTrip,
   userLocation,
 }: Omit<Props, 'totalCount' | 'locationLoading' | 'onRequestLocation'>) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const [selected, setSelected] = useState<SelectedPin | null>(null);
 
   // Camera center + zoom — updated imperatively when user location arrives
@@ -300,7 +311,7 @@ function DiscoverMapNative({
             onSelected={() => setSelected({ type: 'live', data: r })}
           >
             <View style={styles.livePinMarker}>
-              <Ionicons name="location" size={22} color={Colors.accent} />
+              <Ionicons name="location" size={22} color={EDITORIAL_APPEARANCE_ENABLED ? Colors.primaryDark : Colors.accent} />
             </View>
           </PointAnnotation>
         ))}
@@ -343,6 +354,9 @@ function PinInfoCard({
   onLiveAddToTrip: (item: DiscoverItem) => void;
   onDismiss: () => void;
 }) {
+  const theme = useAppTheme();
+  const { Colors } = theme;
+  const styles = getStyles(theme);
   const { bottom } = useSafeAreaInsets();
   const isAttr = selected.type === 'attraction';
   const attrData = isAttr ? (selected.data as BundledAttraction) : null;
@@ -436,7 +450,7 @@ function PinInfoCard({
 
 // ── Styles ────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const getStyles = themed(({ Colors, Shadow }) => (StyleSheet.create({
   container: { flex: 1 },
   mapFill: { flex: 1 },
   map: { flex: 1 },
@@ -614,4 +628,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-});
+})));

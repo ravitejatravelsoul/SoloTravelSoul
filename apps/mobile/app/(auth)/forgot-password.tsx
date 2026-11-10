@@ -1,3 +1,4 @@
+import { useAppTheme } from '@/stores/appearanceStore';
 import { useState } from 'react';
 import { TouchableOpacity, View, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
@@ -8,6 +9,7 @@ import { Colors, Spacing } from '@/constants/theme';
 import { isValidEmail } from '@/utils/validations';
 
 export default function ForgotPasswordScreen() {
+  const { Colors } = useAppTheme();
   const { forgotPassword } = useAuth();
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');

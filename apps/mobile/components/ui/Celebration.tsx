@@ -1,9 +1,10 @@
+import { useAppTheme } from '@/stores/appearanceStore';
+import { themed } from '@/constants/appearance';
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
-import { Colors } from '@/constants/theme';
 import { isReducedMotion } from '@/hooks/useReducedMotion';
 
-const COLORS = [Colors.coral, Colors.accent, Colors.sun, Colors.primary, Colors.catMountain];
+const getColors = themed(({ Colors }) => ([Colors.coral, Colors.accent, Colors.sun, Colors.primary, Colors.catMountain]));
 const COUNT = 14;
 
 interface Props {
@@ -16,6 +17,8 @@ interface Props {
  * touches, never blocks content, is hidden from screen readers, and does nothing under reduced motion.
  */
 export function Celebration({ trigger }: Props) {
+  const theme = useAppTheme();
+  const COLORS = getColors(theme);
   const t = useRef(new Animated.Value(0)).current;
   const first = useRef(true);
 
